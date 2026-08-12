@@ -7,25 +7,24 @@ import json
 import socket
 import sys
 from pathlib import Path
-from typing import List, Sequence, TextIO
+from typing import List, TextIO
 
-import numpy as np
-import sounddevice as sd
-from scipy.signal import resample
-
-from core.audio_constants import CHUNK_SAMPLES, TARGET_SAMPLE_RATE
-from core.classifier import YAMNetClassifier
-from core.events import (
-    DEFAULT_MODEL_VERSION,
-    build_noise_event,
-    new_run_id,
+from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_SAMPLE_RATE
+from core.capture_alsa import AlsAudioCapture
+from core.classifier_tflite import (
+    DEFAULT_MODEL_PATH,
+    MODEL_VERSION,
+    YamnetTFLiteClassifier,
 )
-from core.metrics import calculate_rms
+from core.events import build_noise_event, new_run_id
+from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
+from core.pcm import int32_frames_to_float32
+from core.resampler import to_yamnet_waveform
 
-# INMP441 raw levels are quiet; scale before RMS + YAMNet.
-DIGITAL_GAIN = 15.0
-# I2S/ALSA devices often reject 16 kHz; try common hardware rates first.
-CAPTURE_RATE_CANDIDATES: Sequence[int] = (48_000, 44_100, 32_000, 22_050, 16_000)
+DEFAULT_ALSA_DEVICE = "plughw:3,0"
+# Classifier-only boost for quiet distant sources (window traffic, etc.).
+# Does not affect loudness / dBA metrics.
+DEFAULT_YAMNET_GAIN = 15.0
 
 
 def default_device_id() -> str:
@@ -33,24 +32,13 @@ def default_device_id() -> str:
     return socket.gethostname().strip() or "pi-unknown"
 
 
-def infer_model_version(model_path: str | None) -> str:
-    """Derive a short model_version string from a local path or use default."""
-    if not model_path:
-        return DEFAULT_MODEL_VERSION
-    path = Path(model_path)
-    # .../google/yamnet/TensorFlow2/yamnet/1 → TensorFlow2/yamnet/1
-    parts = path.parts
-    if len(parts) >= 3 and parts[-3] == "TensorFlow2":
-        return "/".join(parts[-3:])
-    return path.name or DEFAULT_MODEL_VERSION
-
-
 def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description=(
-            "Urban IoT Noise Classifier: "
-            "stream live INMP441 audio with YAMNet and emit JSON events."
+            "Urban IoT edge collector: capture INMP441 audio via ALSA, "
+            "compute A-weighted loudness, classify with YAMNet TFLite, "
+            "and emit JSONL events."
         )
     )
     parser.add_argument(
@@ -60,33 +48,37 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help=f"Logical device id for events (default: {default_device_id()})",
     )
     parser.add_argument(
-        "--device",
-        type=int,
-        default=None,
-        help="Optional sounddevice input device index (default: system default).",
+        "--alsa-device",
+        type=str,
+        default=DEFAULT_ALSA_DEVICE,
+        help=f"ALSA capture device (default: {DEFAULT_ALSA_DEVICE})",
     )
     parser.add_argument(
-        "--gain",
+        "--backend",
+        choices=("auto", "pyalsa", "arecord"),
+        default="auto",
+        help="ALSA capture backend (default: auto).",
+    )
+    parser.add_argument(
+        "--calib-offset",
         type=float,
-        default=DIGITAL_GAIN,
-        help=f"Digital gain multiplier for INMP441 (default: {DIGITAL_GAIN})",
-    )
-    parser.add_argument(
-        "--capture-rate",
-        type=int,
-        default=None,
-        help=(
-            "Optional hardware capture sample rate in Hz. "
-            "If omitted, auto-detect a rate the device accepts."
-        ),
+        default=DEFAULT_CALIB_OFFSET,
+        help=f"Relative dBA calibration offset (default: {DEFAULT_CALIB_OFFSET})",
     )
     parser.add_argument(
         "--model-path",
-        type=str,
-        default=None,
+        type=Path,
+        default=DEFAULT_MODEL_PATH,
+        help=f"Path to yamnet.tflite (default: {DEFAULT_MODEL_PATH})",
+    )
+    parser.add_argument(
+        "--yamnet-gain",
+        type=float,
+        default=DEFAULT_YAMNET_GAIN,
         help=(
-            "Optional local YAMNet SavedModel directory "
-            "(skips remote download)."
+            "Digital gain applied only to the YAMNet input waveform "
+            f"(default: {DEFAULT_YAMNET_GAIN}). Loudness metrics stay ungained. "
+            "Use 1.0 to disable."
         ),
     )
     parser.add_argument(
@@ -96,7 +88,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Write JSONL events to this file (one JSON object per line). "
-            "Recommended for long runs; data is flushed after each chunk."
+            "Data is flushed after each chunk."
         ),
     )
     parser.add_argument(
@@ -128,138 +120,72 @@ def emit_event(
         output_handle.flush()
 
 
-def resolve_capture_rate(device: int | None, preferred: int | None = None) -> int:
-    """Return a mono capture sample rate accepted by the input device."""
-    try:
-        info = sd.query_devices(device, kind="input")
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Could not query input device: {exc}") from exc
-
-    default_rate = int(round(float(info.get("default_sample_rate", 48_000))))
-    candidates: List[int] = []
-    for rate in (preferred, default_rate, *CAPTURE_RATE_CANDIDATES):
-        if rate is None:
-            continue
-        rate_i = int(rate)
-        if rate_i > 0 and rate_i not in candidates:
-            candidates.append(rate_i)
-
-    errors: List[str] = []
-    for rate in candidates:
-        try:
-            sd.check_input_settings(
-                device=device,
-                channels=1,
-                dtype="float32",
-                samplerate=rate,
-            )
-            return rate
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{rate} Hz: {exc}")
-
-    details = "; ".join(errors) if errors else "no candidates tried"
-    raise RuntimeError(
-        "No supported mono capture sample rate found for this device. "
-        f"Tried: {candidates}. Details: {details}"
-    )
-
-
-def to_yamnet_chunk(capture_audio: np.ndarray, capture_rate: int) -> np.ndarray:
-    """Resample one capture window to YAMNet's 16 kHz / 15,600-sample format."""
-    mono = np.asarray(capture_audio, dtype=np.float32).reshape(-1)
-    if capture_rate == TARGET_SAMPLE_RATE and mono.shape[0] == CHUNK_SAMPLES:
-        return mono
-
-    # scipy resample → exactly CHUNK_SAMPLES at TARGET_SAMPLE_RATE.
-    resampled = resample(mono, CHUNK_SAMPLES)
-    return np.asarray(resampled, dtype=np.float32)
-
-
 def stream_live(
-    classifier: YAMNetClassifier,
     *,
+    classifier: YamnetTFLiteClassifier,
     device_id: str,
     run_id: str,
-    model_version: str,
-    device: int | None = None,
-    gain: float = DIGITAL_GAIN,
-    capture_rate: int | None = None,
-    output_path: Path | None = None,
-    print_stdout: bool = True,
+    alsa_device: str,
+    backend: str,
+    calib_offset: float,
+    yamnet_gain: float,
+    output_path: Path,
+    print_stdout: bool,
 ) -> int:
-    """Capture live mono audio, classify each YAMNet window, emit JSON events.
+    """Capture audio, run dual-branch analysis, emit JSONL events.
 
-    Captures at a hardware-supported rate (often 48 kHz on I2S), resamples each
-    ~0.975 s window to 16 kHz / 15,600 samples for YAMNet, then applies gain.
+    Branch A: A-weighted loudness at 48 kHz (ungained).
+    Branch B: YAMNet TFLite at 16 kHz (optional classifier-only gain).
 
     Returns:
         Number of events written.
     """
-    chunk_duration = CHUNK_SAMPLES / TARGET_SAMPLE_RATE
-    resolved_rate = resolve_capture_rate(device, preferred=capture_rate)
-    capture_blocksize = int(round(chunk_duration * resolved_rate))
     chunk_index = 0
     events_written = 0
+    capture: AlsAudioCapture | None = None
+    output_handle: TextIO | None = None
+
+    loudness = LoudnessEngine(
+        sample_rate=float(CAPTURE_SAMPLE_RATE),
+        calib_offset=calib_offset,
+    )
 
     print(
         f"Opening INMP441 stream: device_id={device_id}, run_id={run_id}, "
-        f"capture={resolved_rate} Hz → YAMNet={TARGET_SAMPLE_RATE} Hz, "
-        f"mono (Left via L/R=GND), capture_blocksize={capture_blocksize}, "
-        f"gain={gain}",
+        f"alsa={alsa_device}, backend={backend}, rate={CAPTURE_SAMPLE_RATE} Hz, "
+        f"format=S32_LE, chunk_samples={CAPTURE_CHUNK_SAMPLES}, "
+        f"calib_offset={calib_offset}, yamnet_gain={yamnet_gain}, "
+        f"model={MODEL_VERSION}",
         file=sys.stderr,
     )
-    if output_path is not None:
-        print(f"Recording JSONL to: {output_path.resolve()}", file=sys.stderr)
+    print(f"Recording JSONL to: {output_path.resolve()}", file=sys.stderr)
     if print_stdout:
         print("Streaming JSON to stdout. Press Ctrl+C to stop.", file=sys.stderr)
-    elif output_path is not None:
-        print("JSON stdout disabled (--quiet). Press Ctrl+C to stop.", file=sys.stderr)
     else:
-        print("Press Ctrl+C to stop.", file=sys.stderr)
+        print("JSON stdout disabled (--quiet). Press Ctrl+C to stop.", file=sys.stderr)
 
-    stream: sd.InputStream | None = None
-    output_handle: TextIO | None = None
     try:
-        if output_path is not None:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_handle = output_path.open("w", encoding="utf-8")
-
-        # channels=1: hardware already routes Left when L/R is grounded.
-        stream = sd.InputStream(
-            samplerate=resolved_rate,
-            channels=1,
-            dtype="float32",
-            blocksize=capture_blocksize,
-            device=device,
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_handle = output_path.open("w", encoding="utf-8")
+        capture = AlsAudioCapture(
+            alsa_device,
+            CAPTURE_CHUNK_SAMPLES,
+            backend=backend,
         )
-        stream.start()
 
-        while True:
-            frames, overflowed = stream.read(capture_blocksize)
-            if overflowed:
-                print(
-                    f"  [WARN] Input overflow before chunk {chunk_index}",
-                    file=sys.stderr,
-                )
+        for raw_chunk in capture.iter_chunks():
+            pcm = int32_frames_to_float32(raw_chunk)
 
+            # Branch A — human loudness @ capture rate (no classifier gain).
+            metrics = loudness.analyse(pcm)
+
+            # Branch B — YAMNet classification @ 16 kHz (+ optional gain).
             try:
-                yamnet_chunk = to_yamnet_chunk(frames, resolved_rate)
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    f"  [WARN] Resample failed for chunk {chunk_index}: {exc}",
-                    file=sys.stderr,
-                )
-                chunk_index += 1
-                continue
-
-            amplified = yamnet_chunk * np.float32(gain)
-
-            try:
-                rms = calculate_rms(amplified)
-                predictions = classifier.predict(amplified)
+                waveform = to_yamnet_waveform(pcm, gain=yamnet_gain)
+                predictions = classifier.predict(waveform)
             except (ValueError, RuntimeError) as exc:
                 print(
-                    f"  [WARN] Chunk {chunk_index} failed: {exc}",
+                    f"  [WARN] Chunk {chunk_index} classification failed: {exc}",
                     file=sys.stderr,
                 )
                 chunk_index += 1
@@ -269,9 +195,10 @@ def stream_live(
                 device_id=device_id,
                 chunk_index=chunk_index,
                 run_id=run_id,
-                rms=rms,
+                rms_unweighted=metrics["rms_unweighted"],
+                rms_a_weighted=metrics["rms_a_weighted"],
+                dba_spl=metrics["dBA_spl"],
                 predictions=predictions,
-                model_version=model_version,
             )
             emit_event(
                 result,
@@ -284,15 +211,8 @@ def stream_live(
     except KeyboardInterrupt:
         print("\nStopping capture (KeyboardInterrupt).", file=sys.stderr)
     finally:
-        if stream is not None:
-            try:
-                stream.stop()
-            except Exception:  # noqa: BLE001 — best-effort shutdown
-                pass
-            try:
-                stream.close()
-            except Exception:  # noqa: BLE001 — best-effort shutdown
-                pass
+        if capture is not None:
+            capture.close()
             print("Audio stream closed.", file=sys.stderr)
         if output_handle is not None:
             output_handle.close()
@@ -305,51 +225,32 @@ def stream_live(
 
 
 def main(argv: List[str] | None = None) -> int:
-    """Run live INMP441 capture and classification.
+    """Run live INMP441 capture with loudness + YAMNet classification.
 
     Returns:
         Process exit code (0 on success, non-zero on failure).
     """
     args = parse_args(argv)
     run_id = new_run_id()
-    model_version = infer_model_version(args.model_path)
     output_path = args.output or default_output_path(args.device_id, run_id)
     print_stdout = not args.quiet
 
-    if args.model_path:
-        print(f"Loading YAMNet from local path: {args.model_path}", file=sys.stderr)
-    else:
-        print(
-            "Loading YAMNet from Kaggle Models "
-            "(first run may download ~18 MB, often silently)...",
-            file=sys.stderr,
-        )
-
+    print(f"Loading YAMNet TFLite from {args.model_path} ...", file=sys.stderr)
     try:
-        classifier = (
-            YAMNetClassifier(args.model_path)
-            if args.model_path
-            else YAMNetClassifier()
-        )
-    except KeyboardInterrupt:
-        print(
-            "\nCancelled while loading YAMNet (KeyboardInterrupt).",
-            file=sys.stderr,
-        )
-        return 130
-    except RuntimeError as exc:
+        classifier = YamnetTFLiteClassifier(model_path=args.model_path)
+    except (FileNotFoundError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     try:
         events_written = stream_live(
-            classifier,
+            classifier=classifier,
             device_id=args.device_id,
             run_id=run_id,
-            model_version=model_version,
-            device=args.device,
-            gain=args.gain,
-            capture_rate=args.capture_rate,
+            alsa_device=args.alsa_device,
+            backend=args.backend,
+            calib_offset=args.calib_offset,
+            yamnet_gain=args.yamnet_gain,
             output_path=output_path,
             print_stdout=print_stdout,
         )

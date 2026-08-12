@@ -1,16 +1,15 @@
 """Core audio processing and classification modules."""
 
-__all__ = ["YAMNetClassifier", "calculate_rms"]
+__all__ = ["YamnetTFLiteClassifier", "LoudnessEngine"]
 
 
 def __getattr__(name: str):
-    """Lazy-load submodules so lightweight imports avoid TensorFlow."""
-    if name == "YAMNetClassifier":
-        from .classifier import YAMNetClassifier
+    if name == "YamnetTFLiteClassifier":
+        from .classifier_tflite import YamnetTFLiteClassifier
 
-        return YAMNetClassifier
-    if name == "calculate_rms":
-        from .metrics import calculate_rms
+        return YamnetTFLiteClassifier
+    if name == "LoudnessEngine":
+        from .loudness import LoudnessEngine
 
-        return calculate_rms
+        return LoudnessEngine
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

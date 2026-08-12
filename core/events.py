@@ -1,13 +1,11 @@
-"""Edge collector event schema for live classification output."""
+"""Edge collector event schema."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-SCHEMA_VERSION = 1
-MODEL_NAME = "yamnet"
-DEFAULT_MODEL_VERSION = "TensorFlow2/yamnet/1"
+from core.classifier_tflite import MODEL_NAME, MODEL_VERSION
 
 
 def utc_now_iso() -> str:
@@ -29,16 +27,15 @@ def build_noise_event(
     device_id: str,
     chunk_index: int,
     run_id: str,
-    rms: float,
+    rms_unweighted: float,
+    rms_a_weighted: float,
+    dba_spl: float,
     predictions: List[Dict[str, Any]],
-    model_version: str = DEFAULT_MODEL_VERSION,
+    model_name: str = MODEL_NAME,
+    model_version: str = MODEL_VERSION,
     created_at: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build one canonical noise-event payload for stdout (and later Firestore).
-
-    ``chunk_index`` is a per-run counter only. Prefer ``created_at`` for
-    time-series ordering across restarts and devices.
-    """
+    """Build one dual-branch JSONL event (loudness + YAMNet predictions)."""
     top_label = predictions[0]["label"] if predictions else "n/a"
     top_confidence = float(predictions[0]["confidence"]) if predictions else 0.0
 
@@ -47,11 +44,12 @@ def build_noise_event(
         "created_at": created_at or utc_now_iso(),
         "chunk_index": chunk_index,
         "run_id": run_id,
-        "rms": round(float(rms), 8),
+        "rms_unweighted": round(float(rms_unweighted), 8),
+        "rms_a_weighted": round(float(rms_a_weighted), 8),
+        "dBA_spl": round(float(dba_spl), 1),
         "top_label": top_label,
         "top_confidence": float(top_confidence),
         "predictions": predictions,
-        "model_name": MODEL_NAME,
+        "model_name": model_name,
         "model_version": model_version,
-        "schema_version": SCHEMA_VERSION,
     }
