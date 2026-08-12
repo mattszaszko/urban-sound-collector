@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Local run output
+runs/
+*.jsonl
+*.log
+
+# Secrets / credentials
+secrets/
+*.json
+!requirements.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,7 @@
+tensorflow>=2.14.0
+tensorflow-hub>=0.16.0
+tf-keras>=2.14.0
+numpy>=1.26.0
+scipy>=1.11.0
+sounddevice>=0.4.6
+setuptools>=70,<81
