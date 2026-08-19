@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Urban Sound Collector</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0f172a;--surface:#1e293b;--border:#334155;
+    --text:#f1f5f9;--muted:#94a3b8;--accent:#0ea5e9;
+    --green:#22c55e;--red:#ef4444;--yellow:#f59e0b;
+  }
+  body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
+       min-height:100vh;padding:1rem}
+  header{display:flex;align-items:center;justify-content:space-between;
+         margin-bottom:1.5rem}
+  header h1{font-size:1.1rem;font-weight:700;color:var(--accent)}
+  header a{color:var(--muted);font-size:.85rem;text-decoration:none}
+  header a:hover{color:var(--text)}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+        padding:1.25rem;margin-bottom:1rem}
+  .card h2{font-size:.75rem;font-weight:600;text-transform:uppercase;
+           letter-spacing:.08em;color:var(--muted);margin-bottom:1rem}
+
+  /* Status badge */
+  .status-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem}
+  .badge{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .7rem;
+         border-radius:999px;font-size:.8rem;font-weight:600}
+  .badge.running{background:#14532d;color:var(--green)}
+  .badge.idle{background:#1e293b;border:1px solid var(--border);color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+  .running .dot{animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem}
+  .stat{background:var(--bg);border-radius:8px;padding:.75rem}
+  .stat-label{font-size:.7rem;color:var(--muted);margin-bottom:.2rem}
+  .stat-value{font-size:1.1rem;font-weight:700;color:var(--text)}
+
+  /* Forms */
+  label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:.25rem;margin-top:.75rem}
+  input,select{width:100%;padding:.6rem .75rem;border:1px solid var(--border);
+               border-radius:8px;background:var(--bg);color:var(--text);font-size:.95rem}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;
+       padding:.65rem 1.25rem;border:none;border-radius:8px;font-size:.95rem;
+       font-weight:600;cursor:pointer;width:100%;margin-top:.75rem}
+  .btn-start{background:var(--accent);color:#fff}
+  .btn-start:hover{background:#38bdf8}
+  .btn-stop{background:#7f1d1d;color:#fca5a5;border:1px solid var(--red)}
+  .btn-stop:hover{background:#991b1b}
+  .btn-disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
+
+  /* Log */
+  #log-box{background:var(--bg);border-radius:8px;padding:.75rem;
+           font-size:.72rem;font-family:monospace;color:#7dd3fc;
+           height:200px;overflow-y:auto;border:1px solid var(--border)}
+  #log-box p{margin:0;line-height:1.6;white-space:pre-wrap;word-break:break-all}
+
+  /* Runs table */
+  .run-row{display:grid;grid-template-columns:1fr auto auto;gap:.5rem;
+           align-items:center;padding:.6rem 0;border-bottom:1px solid var(--border);
+           font-size:.8rem}
+  .run-row:last-child{border-bottom:none}
+  .run-name{color:var(--text);word-break:break-all}
+  .run-meta{color:var(--muted);text-align:right;white-space:nowrap}
+  .dl-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
+          border-radius:6px;color:var(--accent);text-decoration:none;
+          font-size:.75rem;white-space:nowrap}
+  .dl-btn:hover{border-color:var(--accent)}
+
+  .empty{color:var(--muted);font-size:.85rem;text-align:center;padding:1rem 0}
+  .error-banner{background:#7f1d1d;color:#fca5a5;border-radius:8px;
+                padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem}
+  @media(min-width:640px){
+    body{max-width:640px;margin:0 auto;padding:1.5rem}
+    .stat-grid{grid-template-columns:repeat(4,1fr)}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎙 Urban Sound Collector</h1>
+  <a href="/logout">Sign out</a>
+</header>
+
+{% if error == 'already_running' %}
+<div class="error-banner">A run is already active. Stop it before starting a new one.</div>
+{% endif %}
+
+<!-- ── STATUS ── -->
+<div class="card" id="status-card">
+  <h2>Status</h2>
+
+  <div class="status-row">
+    {% if status.running %}
+    <span class="badge running"><span class="dot"></span>Recording</span>
+    {% else %}
+    <span class="badge idle"><span class="dot"></span>Idle</span>
+    {% endif %}
+    {% if status.run_id %}
+    <span style="color:var(--muted);font-size:.75rem">{{ status.run_id }}</span>
+    {% endif %}
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat">
+      <div class="stat-label">Chunks written</div>
+      <div class="stat-value" id="stat-chunks">{{ status.chunk_count or '—' }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Elapsed</div>
+      <div class="stat-value" id="stat-elapsed">
+        {% if status.elapsed_s %}
+          {% set h = (status.elapsed_s // 3600) %}
+          {% set m = (status.elapsed_s % 3600 // 60) %}
+          {% set s = (status.elapsed_s % 60) %}
+          {{ '%d:%02d:%02d' | format(h, m, s) }}
+        {% else %}—{% endif %}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Last label</div>
+      <div class="stat-value" id="stat-label" style="font-size:.85rem">
+        {{ status.last_label or '—' }}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">dBA SPL</div>
+      <div class="stat-value" id="stat-dba">{{ status.last_dba or '—' }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── CONTROL ── -->
+<div class="card">
+  <h2>Control</h2>
+
+  {% if not status.running %}
+  <form method="post" action="/api/start">
+    <label>Duration</label>
+    <select name="duration">
+      <option value="30m">30 minutes</option>
+      <option value="1h">1 hour</option>
+      <option value="2h">2 hours</option>
+      <option value="4h">4 hours</option>
+      <option value="6h">6 hours</option>
+      <option value="8h" selected>8 hours</option>
+      <option value="12h">12 hours</option>
+    </select>
+
+    <label>Device ID</label>
+    <input type="text" name="device_id" value="{{ default_device_id }}">
+
+    <label>ALSA device</label>
+    <input type="text" name="alsa_device" value="{{ default_alsa_device }}">
+
+    <label>YAMNet gain (classifier only)</label>
+    <input type="number" name="yamnet_gain" value="{{ default_gain }}" step="0.5" min="1" max="30">
+
+    <button class="btn btn-start" type="submit">▶ Start run</button>
+  </form>
+  {% else %}
+  <form method="post" action="/api/stop">
+    <button class="btn btn-stop" type="submit">■ Stop run</button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- ── LIVE LOG ── -->
+<div class="card">
+  <h2>Live log <span style="color:var(--muted);font-weight:400;font-size:.7rem">(auto-updates)</span></h2>
+  <div id="log-box"><p id="log-placeholder" style="color:var(--muted)">Connecting…</p></div>
+</div>
+
+<!-- ── PAST RUNS ── -->
+<div class="card">
+  <h2>Past runs</h2>
+  {% if runs %}
+    {% for run in runs %}
+    <div class="run-row">
+      <div>
+        <div class="run-name">{{ run.name }}</div>
+        <div class="run-meta">{{ run.mtime }} · {{ run.lines }} events · {{ run.size_kb }} KB</div>
+      </div>
+      <a class="dl-btn" href="/runs/{{ run.name }}" download>↓ Download</a>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty">No runs yet.</div>
+  {% endif %}
+</div>
+
+<script>
+// ── Live log via SSE ──────────────────────────────────────────────
+const box = document.getElementById('log-box');
+const placeholder = document.getElementById('log-placeholder');
+let seenFirst = false;
+
+const es = new EventSource('/api/log-stream');
+es.onmessage = (e) => {
+  if (!seenFirst) { placeholder.remove(); seenFirst = true; }
+  const p = document.createElement('p');
+  p.textContent = JSON.parse(e.data);
+  box.appendChild(p);
+  // keep last 200 lines
+  while (box.children.length > 200) box.firstChild.remove();
+  box.scrollTop = box.scrollHeight;
+};
+es.onerror = () => {
+  if (!seenFirst) placeholder.textContent = 'Not connected.';
+};
+
+// ── Status polling (every 10 s) ───────────────────────────────────
+function fmtElapsed(s) {
+  if (!s) return '—';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('stat-chunks').textContent = d.chunk_count || '—';
+    document.getElementById('stat-elapsed').textContent = fmtElapsed(d.elapsed_s);
+    document.getElementById('stat-label').textContent = d.last_label || '—';
+    document.getElementById('stat-dba').textContent = d.last_dba || '—';
+  } catch {}
+}
+
+setInterval(pollStatus, 10000);
+</script>
+</body>
+</html>

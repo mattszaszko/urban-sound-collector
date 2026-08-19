@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import socket
 import sys
 from pathlib import Path
@@ -25,6 +27,9 @@ DEFAULT_ALSA_DEVICE = "plughw:3,0"
 # Classifier-only boost for quiet distant sources (window traffic, etc.).
 # Does not affect loudness / dBA metrics.
 DEFAULT_YAMNET_GAIN = 15.0
+DEFAULT_LOG_DIR = Path("logs")
+
+logger = logging.getLogger("urban_sound_collector")
 
 
 def default_device_id() -> str:
@@ -88,8 +93,14 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Write JSONL events to this file (one JSON object per line). "
-            "Data is flushed after each chunk."
+            "Each line is flushed and fsync'd so a crash keeps prior chunks."
         ),
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=DEFAULT_LOG_DIR,
+        help=f"Directory for per-run log files (default: {DEFAULT_LOG_DIR})",
     )
     parser.add_argument(
         "--quiet",
@@ -105,19 +116,57 @@ def default_output_path(device_id: str, run_id: str) -> Path:
     return Path("runs") / f"{safe_device}_{run_id}.jsonl"
 
 
+def default_log_path(log_dir: Path, device_id: str, run_id: str) -> Path:
+    """Build a unique per-run log path (never overwrite previous runs)."""
+    safe_device = device_id.replace("/", "-").replace(" ", "_")
+    return log_dir / f"{safe_device}_{run_id}.log"
+
+
+def setup_logging(log_path: Path) -> None:
+    """Log to stderr and a durable per-run file under logs/."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(logging.INFO)
+
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%SZ",
+    )
+    # Force UTC timestamps in the log file.
+    formatter.converter = __import__("time").gmtime
+
+    file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.INFO)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.INFO)
+
+    root.addHandler(file_handler)
+    root.addHandler(stderr_handler)
+
+
 def emit_event(
     event: dict,
     *,
     stdout: bool,
     output_handle: TextIO | None,
 ) -> None:
-    """Print one JSON event to stdout and/or append to a JSONL file."""
+    """Print one JSON event to stdout and/or append to a JSONL file.
+
+    File writes flush + fsync so each chunk survives a hard crash/power loss
+    (at the cost of more SD-card wear).
+    """
     line = json.dumps(event, ensure_ascii=False)
     if stdout:
         print(line, flush=True)
     if output_handle is not None:
         output_handle.write(line + "\n")
         output_handle.flush()
+        os.fsync(output_handle.fileno())
 
 
 def stream_live(
@@ -150,23 +199,30 @@ def stream_live(
         calib_offset=calib_offset,
     )
 
-    print(
-        f"Opening INMP441 stream: device_id={device_id}, run_id={run_id}, "
-        f"alsa={alsa_device}, backend={backend}, rate={CAPTURE_SAMPLE_RATE} Hz, "
-        f"format=S32_LE, chunk_samples={CAPTURE_CHUNK_SAMPLES}, "
-        f"calib_offset={calib_offset}, yamnet_gain={yamnet_gain}, "
-        f"model={MODEL_VERSION}",
-        file=sys.stderr,
+    logger.info(
+        "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
+        "rate=%s Hz, format=S32_LE, chunk_samples=%s, calib_offset=%s, "
+        "yamnet_gain=%s, model=%s",
+        device_id,
+        run_id,
+        alsa_device,
+        backend,
+        CAPTURE_SAMPLE_RATE,
+        CAPTURE_CHUNK_SAMPLES,
+        calib_offset,
+        yamnet_gain,
+        MODEL_VERSION,
     )
-    print(f"Recording JSONL to: {output_path.resolve()}", file=sys.stderr)
+    logger.info("Recording JSONL to: %s", output_path.resolve())
     if print_stdout:
-        print("Streaming JSON to stdout. Press Ctrl+C to stop.", file=sys.stderr)
+        logger.info("Streaming JSON to stdout. Press Ctrl+C to stop.")
     else:
-        print("JSON stdout disabled (--quiet). Press Ctrl+C to stop.", file=sys.stderr)
+        logger.info("JSON stdout disabled (--quiet). Press Ctrl+C to stop.")
 
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_handle = output_path.open("w", encoding="utf-8")
+        # Append so a reused -o path never truncates prior data.
+        output_handle = output_path.open("a", encoding="utf-8")
         capture = AlsAudioCapture(
             alsa_device,
             CAPTURE_CHUNK_SAMPLES,
@@ -174,6 +230,8 @@ def stream_live(
         )
 
         for raw_chunk in capture.iter_chunks():
+            if events_written == 0:
+                logger.info("First audio chunk received; pipeline is live.")
             pcm = int32_frames_to_float32(raw_chunk)
 
             # Branch A — human loudness @ capture rate (no classifier gain).
@@ -184,10 +242,7 @@ def stream_live(
                 waveform = to_yamnet_waveform(pcm, gain=yamnet_gain)
                 predictions = classifier.predict(waveform)
             except (ValueError, RuntimeError) as exc:
-                print(
-                    f"  [WARN] Chunk {chunk_index} classification failed: {exc}",
-                    file=sys.stderr,
-                )
+                logger.warning("Chunk %s classification failed: %s", chunk_index, exc)
                 chunk_index += 1
                 continue
 
@@ -208,17 +263,32 @@ def stream_live(
             events_written += 1
             chunk_index += 1
 
+            # Heartbeat every ~60 chunks (~1 min) so logs show progress.
+            if events_written % 60 == 0:
+                logger.info(
+                    "Progress: %s event(s) written (chunk_index=%s, top=%s)",
+                    events_written,
+                    chunk_index - 1,
+                    result.get("top_label"),
+                )
+
     except KeyboardInterrupt:
-        print("\nStopping capture (KeyboardInterrupt).", file=sys.stderr)
+        logger.info("Stopping capture (KeyboardInterrupt).")
     finally:
         if capture is not None:
             capture.close()
-            print("Audio stream closed.", file=sys.stderr)
+            logger.info("Audio stream closed.")
         if output_handle is not None:
+            try:
+                output_handle.flush()
+                os.fsync(output_handle.fileno())
+            except OSError:
+                pass
             output_handle.close()
-            print(
-                f"Wrote {events_written} event(s) to {output_path.resolve()}",
-                file=sys.stderr,
+            logger.info(
+                "Wrote %s event(s) to %s",
+                events_written,
+                output_path.resolve(),
             )
 
     return events_written
@@ -233,13 +303,17 @@ def main(argv: List[str] | None = None) -> int:
     args = parse_args(argv)
     run_id = new_run_id()
     output_path = args.output or default_output_path(args.device_id, run_id)
+    log_path = default_log_path(args.log_dir, args.device_id, run_id)
     print_stdout = not args.quiet
 
-    print(f"Loading YAMNet TFLite from {args.model_path} ...", file=sys.stderr)
+    setup_logging(log_path)
+    logger.info("Logging to: %s", log_path.resolve())
+
+    logger.info("Loading YAMNet TFLite from %s ...", args.model_path)
     try:
         classifier = YamnetTFLiteClassifier(model_path=args.model_path)
     except (FileNotFoundError, RuntimeError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        logger.error("%s", exc)
         return 1
 
     try:
@@ -255,11 +329,11 @@ def main(argv: List[str] | None = None) -> int:
             print_stdout=print_stdout,
         )
     except Exception as exc:  # noqa: BLE001 — surface device/open errors cleanly
-        print(f"Error: {exc}", file=sys.stderr)
+        logger.exception("Fatal error: %s", exc)
         return 1
 
     if events_written == 0:
-        print("Warning: no events were recorded.", file=sys.stderr)
+        logger.warning("No events were recorded.")
         return 1
 
     return 0

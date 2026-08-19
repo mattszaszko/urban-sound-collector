@@ -8,6 +8,7 @@ venv/
 
 # Local run output
 runs/
+logs/
 *.jsonl
 *.log
 
@@ -15,6 +16,7 @@ runs/
 secrets/
 *.json
 !requirements.txt
+.env
 
 # OS / editor
 .DS_Store

@@ -76,21 +76,31 @@ flowchart LR
 
 ```text
 urban-sound-collector/
-├── main.py                 # CLI entry: capture loop, JSONL output
-├── requirements.txt        # numpy, scipy, pyalsaaudio, tflite-runtime
+├── main.py                     # CLI entry: capture loop, JSONL output
+├── requirements.txt            # collector deps (numpy, scipy, pyalsaaudio)
+├── .env.example                # web UI config template
+├── .gitattributes              # enforce LF line endings
 ├── README.md
 ├── core/
-│   ├── audio_constants.py  # 48 kHz capture / 16 kHz YAMNet window sizes
-│   ├── capture_alsa.py     # ALSA capture (pyalsa or arecord backend)
-│   ├── pcm.py              # int32 → aligned float32 normalization
-│   ├── loudness.py         # A-weighting + relative dBA SPL
-│   ├── resampler.py        # 48 kHz → 16 kHz for YAMNet
-│   ├── classifier_tflite.py# Bundled YAMNet TFLite inference
-│   └── events.py           # JSONL event schema builder
+│   ├── audio_constants.py      # 48 kHz capture / 16 kHz YAMNet window sizes
+│   ├── capture_alsa.py         # ALSA capture (pyalsa or arecord backend)
+│   ├── pcm.py                  # int32 → aligned float32 normalization
+│   ├── loudness.py             # A-weighting + relative dBA SPL
+│   ├── resampler.py            # 48 kHz → 16 kHz for YAMNet
+│   ├── classifier_tflite.py    # Bundled YAMNet TFLite inference
+│   └── events.py               # JSONL event schema builder
+├── web/
+│   ├── app.py                  # FastAPI web server
+│   ├── auth.py                 # Session-based password login
+│   ├── requirements-web.txt    # web-only deps (fastapi, uvicorn, …)
+│   ├── install.sh              # First-time setup script (deps + cloudflared)
+│   └── templates/
+│       └── index.html          # Mobile-friendly UI
 ├── models/
-│   ├── yamnet.tflite       # Bundled classifier (~4 MB)
+│   ├── yamnet.tflite           # Bundled classifier (~4 MB)
 │   └── yamnet_class_map.csv
-└── runs/                   # Local JSONL output (gitignored)
+├── runs/                       # Local JSONL output (gitignored)
+└── logs/                       # Collector + web server logs (gitignored)
 ```
 
 ### Module responsibilities
@@ -165,16 +175,47 @@ arecord -l
 
 ---
 
+## Durability (crash / power loss)
+
+JSONL is **append + flush + fsync** after every chunk (~1 Hz), so completed
+events survive a process crash or power cut. At most the in-progress chunk is
+lost.
+
+Status/errors go to a **new file per run** under `logs/` (not `/tmp`, never
+overwritten):
+
+```text
+logs/<device_id>_<run_id>.log
+```
+
+Heartbeat lines are written about once per minute so you can confirm progress
+after a crash.
+
+Do **not** redirect logs to `/tmp/urban-sound.log` — that path is wiped on
+reboot and overwrites itself if reused.
+
+---
+
 ## Run
 
 ```bash
-python main.py \
+mkdir -p runs logs
+nohup timeout 3h python main.py \
   --device-id pi-test-01 \
   --alsa-device plughw:3,0 \
   --backend arecord \
   --yamnet-gain 15 \
   --quiet \
-  -o runs/evening-test.jsonl
+  -o "runs/evening-$(date -u +%Y-%m-%dT%H-%MZ).jsonl" \
+  >/dev/null 2>&1 &
+```
+
+Collector logs still land in `logs/` (stderr is duplicated there). Check later:
+
+```bash
+pgrep -af "main.py"
+ls -lh runs/ logs/
+tail -n 20 logs/*.log
 ```
 
 ### Useful flags
@@ -186,14 +227,142 @@ python main.py \
 | `--yamnet-gain` | `15.0` | Classifier-only boost; use `1` to disable |
 | `--calib-offset` | `120.0` | Relative dBA offset |
 | `--quiet` | off | Suppress JSON on stdout |
-| `-o` | `runs/<device>_<run_id>.jsonl` | Output file |
+| `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
+| `--log-dir` | `logs` | Per-run log directory |
 
-Stop with **Ctrl+C**.
+Stop with **Ctrl+C**, or let `timeout` end the run.
+
+---
+
+## Web UI (remote control + monitoring)
+
+A FastAPI web interface lets you start/stop runs and monitor status from any
+device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
+(free, no port forwarding, automatic HTTPS).
+
+### Features
+
+- Start a run (choose duration, device, gain)
+- Stop a running run
+- Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
+- Live log tail via Server-Sent Events (no page refresh needed)
+- Download past JSONL files directly in the browser
+- Password-protected login (session cookie, 7-day expiry)
+
+---
+
+### How Cloudflare Tunnel works
+
+```
+Your phone / browser (anywhere on the internet)
+          ↓  HTTPS
+  *.trycloudflare.com  ←  Cloudflare's global network
+          ↓  encrypted outbound tunnel
+  cloudflared process on the Pi
+          ↓  localhost:8080
+  FastAPI web server
+```
+
+The Pi makes an **outbound** connection to Cloudflare — no open router ports,
+no static IP, no DNS setup required. Cloudflare relays browser traffic back
+through the tunnel.
+
+The free `trycloudflare.com` URL is **random and changes** every time
+`cloudflared` restarts. For a permanent URL, set up a named tunnel tied to a
+domain (free at [dash.cloudflare.com](https://dash.cloudflare.com)).
+
+---
+
+### First-time setup on the Pi
+
+**1. Push the code** (from PowerShell on your PC):
+
+```powershell
+scp -r "C:\path\to\urban-sound-collector\web" matt@192.168.178.11:~/urban-sound-collector/
+scp "C:\path\to\urban-sound-collector\.env.example" matt@192.168.178.11:~/urban-sound-collector/
+```
+
+**2. Run the install script** (on the Pi):
+
+```bash
+cd ~/urban-sound-collector
+source .venv/bin/activate
+# Strip Windows line endings if pushed from a Windows PC
+sed -i 's/\r//' web/install.sh web/requirements-web.txt
+bash web/install.sh
+```
+
+The script will:
+- Install the 7 web Python packages
+- Create `.env` from the template and prompt you to set a password (`nano .env`)
+- Install `cloudflared` (ARM64 `.deb`)
+- Start the web server in the background
+- Start a Cloudflare Tunnel and print your public HTTPS URL
+
+**3. Open the URL** on any device, enter your password, done.
+
+---
+
+### Starting the server + tunnel after first setup
+
+```bash
+cd ~/urban-sound-collector
+source .venv/bin/activate
+mkdir -p logs
+
+# Web server
+pkill -f "uvicorn web.app:app" 2>/dev/null; sleep 1
+nohup python -m uvicorn web.app:app --host 0.0.0.0 --port 8080 \
+  > logs/webserver.log 2>&1 &
+disown
+
+# Cloudflare Tunnel
+pkill -f "cloudflared tunnel" 2>/dev/null; sleep 1
+nohup cloudflared tunnel --url http://localhost:8080 \
+  > logs/tunnel.log 2>&1 &
+disown
+
+# Print the URL (wait a few seconds)
+sleep 6
+grep "trycloudflare.com" logs/tunnel.log
+```
+
+Save the URL — it stays valid until the Pi reboots or `cloudflared` is stopped.
+
+---
+
+### Environment variables (`.env`)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `USC_PASSWORD` | `changeme` | Web UI login password |
+| `SECRET_KEY` | `change-me-please` | Session cookie signing key (auto-generated by `install.sh`) |
+| `PORT` | `8080` | Web server port |
+| `DEVICE_ID` | `pi-test-01` | Default device ID shown in UI |
+| `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device shown in UI |
+| `YAMNET_GAIN` | `15.0` | Default YAMNet gain shown in UI |
+
+The `.env` file is gitignored — never commit it.
+
+---
+
+## Crash durability
+
+JSONL output uses **append + flush + `fsync`** after every chunk (~1 Hz), so
+completed events survive a process crash or power cut. At most the current
+~1 s chunk in progress is lost.
+
+Logs go to `logs/<device>_<run_id>.log` — one file per run, never overwritten,
+not in `/tmp`. A heartbeat line is written every ~60 chunks (~1 min) so you
+can confirm progress after a crash.
+
+Use `nohup ... & disown` when starting long runs so that closing SSH does not
+kill the collector.
 
 ---
 
 ## Future work
 
+- Named Cloudflare Tunnel for a stable, permanent URL
 - Firestore upload from the Pi (edge writer only)
-- Device registry + dashboard (separate web project)
 - Optional overlap / shorter hop for faster label updates

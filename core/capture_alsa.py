@@ -54,6 +54,8 @@ class _ArecordBackend(_CaptureBackend):
             raise RuntimeError("arecord not found. Install: sudo apt install alsa-utils")
 
         self._read_bytes = read_frames * 4
+        # DEVNULL for stderr avoids the classic deadlock where arecord fills
+        # the stderr pipe and then blocks, so stdout.read() hangs forever.
         self._proc = subprocess.Popen(
             [
                 "arecord",
@@ -71,7 +73,7 @@ class _ArecordBackend(_CaptureBackend):
                 "-",
             ],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
         )
         if self._proc.stdout is None:
             raise RuntimeError("Failed to open arecord stdout pipe.")
@@ -80,6 +82,9 @@ class _ArecordBackend(_CaptureBackend):
         assert self._proc.stdout is not None
         data = self._proc.stdout.read(self._read_bytes)
         if not data:
+            rc = self._proc.poll()
+            if rc is not None:
+                raise RuntimeError(f"arecord exited early (code {rc})")
             return np.array([], dtype=np.int32)
         usable = len(data) - (len(data) % 4)
         if usable == 0:
@@ -141,10 +146,19 @@ class AlsAudioCapture:
 
     def read_chunk(self) -> np.ndarray:
         """Block until ``chunk_samples`` int32 frames are available."""
+        empty_reads = 0
         while self._buffer.size < self.chunk_samples:
             block = self._backend.read_frames()
             if block.size == 0:
+                empty_reads += 1
+                if empty_reads >= 50:
+                    raise RuntimeError(
+                        "ALSA capture produced no audio frames. "
+                        "Check the mic device is free and working "
+                        f"(device={self.device}, backend={self.backend_name})."
+                    )
                 continue
+            empty_reads = 0
             self._buffer = np.concatenate((self._buffer, block))
 
         chunk = self._buffer[: self.chunk_samples]
