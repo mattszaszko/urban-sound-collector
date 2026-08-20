@@ -1,0 +1,19 @@
+﻿[Unit]
+Description=Urban Sound Collector Web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matt
+Group=matt
+WorkingDirectory=/home/matt/urban-sound-collector
+EnvironmentFile=/home/matt/urban-sound-collector/.env
+ExecStart=/home/matt/urban-sound-collector/.venv/bin/python -m uvicorn web.app:app --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+# Detach child collector processes from this service's cgroup on stop
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

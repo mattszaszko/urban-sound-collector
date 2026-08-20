@@ -94,6 +94,7 @@ urban-sound-collector/
 │   ├── auth.py                 # Session-based password login
 │   ├── requirements-web.txt    # web-only deps (fastapi, uvicorn, …)
 │   ├── install.sh              # First-time setup script (deps + cloudflared)
+│   ├── urban-sound-web.service # systemd unit — auto-start web UI on boot
 │   └── templates/
 │       └── index.html          # Mobile-friendly UI
 ├── models/
@@ -242,12 +243,19 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 
 ### Features
 
-- Start a run (choose duration, device, gain)
+- Start a run with:
+  - **Hours** input (e.g. `8`, or `0.5` for 30 minutes)
+  - **Output file name** prefix (prefilled from time of day: `morning` /
+    `day` / `evening` / `night`); UTC start stamp is always appended
+    (`evening-2026-08-20T09-32Z.jsonl`)
+  - Device ID, ALSA device, YAMNet gain
 - Stop a running run
 - Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
 - Live log tail via Server-Sent Events (no page refresh needed)
 - Download past JSONL files directly in the browser
 - Password-protected login (session cookie, 7-day expiry)
+- Optional **systemd** unit so the web UI auto-starts on Pi reboot
+- Named Cloudflare Tunnel for a stable public URL (e.g. `https://noise.mattszaszko.com`)
 
 ---
 
@@ -303,31 +311,50 @@ The script will:
 
 ---
 
-### Starting the server + tunnel after first setup
+### Named tunnel (stable URL)
+
+Preferred setup: a named Cloudflare Tunnel on your domain, e.g.
+`https://noise.mattszaszko.com` → `http://localhost:8080` on the Pi.
+
+Install `cloudflared` as a systemd service from the Cloudflare Zero Trust
+dashboard (Debian / 64-bit connector). Once that service is enabled, the tunnel
+survives reboots automatically.
+
+---
+
+### Auto-start the web UI on boot (systemd)
+
+Install the unit file so uvicorn starts after every reboot (no manual `nohup`):
 
 ```bash
-cd ~/urban-sound-collector
-source .venv/bin/activate
-mkdir -p logs
-
-# Web server
-pkill -f "uvicorn web.app:app" 2>/dev/null; sleep 1
-nohup python -m uvicorn web.app:app --host 0.0.0.0 --port 8080 \
-  > logs/webserver.log 2>&1 &
-disown
-
-# Cloudflare Tunnel
-pkill -f "cloudflared tunnel" 2>/dev/null; sleep 1
-nohup cloudflared tunnel --url http://localhost:8080 \
-  > logs/tunnel.log 2>&1 &
-disown
-
-# Print the URL (wait a few seconds)
-sleep 6
-grep "trycloudflare.com" logs/tunnel.log
+# On the Pi — copy the unit and enable it
+sudo cp ~/urban-sound-collector/web/urban-sound-web.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now urban-sound-web
+sudo systemctl status urban-sound-web
 ```
 
-Save the URL — it stays valid until the Pi reboots or `cloudflared` is stopped.
+Useful commands:
+
+```bash
+sudo systemctl status urban-sound-web   # is it running?
+sudo systemctl restart urban-sound-web  # after code/config changes
+sudo journalctl -u urban-sound-web -f   # live logs
+```
+
+Stop any old manual uvicorn first so port 8080 is free:
+
+```bash
+pkill -f "uvicorn web.app:app" 2>/dev/null
+```
+
+After reboot you should have:
+
+| Component | Status |
+|---|---|
+| `cloudflared` | Auto-starts (named tunnel) |
+| `urban-sound-web` | Auto-starts (uvicorn on :8080) |
+| Collector run | Manual via web UI when you want |
 
 ---
 
@@ -363,6 +390,5 @@ kill the collector.
 
 ## Future work
 
-- Named Cloudflare Tunnel for a stable, permanent URL
 - Firestore upload from the Pi (edge writer only)
 - Optional overlap / shorter hop for faster label updates

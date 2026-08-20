@@ -84,6 +84,35 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%MZ")
 
 
+def _default_run_name() -> str:
+    """Suggest a sensible prefix from the current UTC hour."""
+    hour = datetime.now(timezone.utc).hour
+    if 5 <= hour < 12:
+        return "morning"
+    if 12 <= hour < 18:
+        return "day"
+    if 18 <= hour < 23:
+        return "evening"
+    return "night"
+
+
+def _sanitize_run_name(name: str) -> str:
+    """Keep only safe filename characters; fall back to 'run'."""
+    cleaned = "".join(c for c in name.strip() if c.isalnum() or c in "-_")
+    return cleaned or "run"
+
+
+def _hours_to_timeout(hours: float) -> str:
+    """Convert hours to a GNU timeout duration string."""
+    if hours <= 0:
+        hours = 1.0
+    # Prefer whole hours; otherwise use minutes for fractional values.
+    if abs(hours - round(hours)) < 1e-9:
+        return f"{int(round(hours))}h"
+    minutes = max(1, int(round(hours * 60)))
+    return f"{minutes}m"
+
+
 def _find_collector_process() -> psutil.Process | None:
     """Return the running main.py Process, or None."""
     for proc in psutil.process_iter(["pid", "cmdline"]):
@@ -242,6 +271,7 @@ async def index(request: Request):
         default_device_id=DEFAULT_DEVICE_ID,
         default_alsa_device=DEFAULT_ALSA_DEVICE,
         default_gain=DEFAULT_YAMNET_GAIN,
+        default_run_name=_default_run_name(),
         error=error,
     )
 
@@ -253,7 +283,8 @@ async def index(request: Request):
 @app.post("/api/start")
 async def api_start(
     request: Request,
-    duration: str = Form("8h"),
+    hours: float = Form(8.0),
+    run_name: str = Form("run"),
     device_id: str = Form(DEFAULT_DEVICE_ID),
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
     yamnet_gain: float = Form(DEFAULT_YAMNET_GAIN),
@@ -267,7 +298,9 @@ async def api_start(
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    output = RUNS_DIR / f"run-{_utc_now()}.jsonl"
+    safe_name = _sanitize_run_name(run_name)
+    output = RUNS_DIR / f"{safe_name}-{_utc_now()}.jsonl"
+    duration = _hours_to_timeout(hours)
     cmd = [
         PYTHON, str(MAIN_PY),
         "--device-id", device_id,

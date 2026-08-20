@@ -141,16 +141,17 @@
 
   {% if not status.running %}
   <form method="post" action="/api/start">
-    <label>Duration</label>
-    <select name="duration">
-      <option value="30m">30 minutes</option>
-      <option value="1h">1 hour</option>
-      <option value="2h">2 hours</option>
-      <option value="4h">4 hours</option>
-      <option value="6h">6 hours</option>
-      <option value="8h" selected>8 hours</option>
-      <option value="12h">12 hours</option>
-    </select>
+    <label>Duration (hours)</label>
+    <input type="number" name="hours" value="8" min="0.25" max="72" step="0.25">
+
+    <label>Output file name</label>
+    <input type="text" name="run_name" value="{{ default_run_name }}"
+           placeholder="run" pattern="[A-Za-z0-9_-]+"
+           title="Letters, numbers, hyphens and underscores only">
+    <div style="font-size:.7rem;color:var(--muted);margin-top:.35rem">
+      Saved as <code style="color:var(--accent)">runs/&lt;name&gt;-YYYY-MM-DDTHH-MMZ.jsonl</code>
+      (UTC start time appended automatically)
+    </div>
 
     <label>Device ID</label>
     <input type="text" name="device_id" value="{{ default_device_id }}">
