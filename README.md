@@ -192,6 +192,10 @@ logs/<device_id>_<run_id>.log
 Heartbeat lines are written about once per minute so you can confirm progress
 after a crash.
 
+Optional **`--rotate-hours N`** closes the current JSONL and opens a new one
+every N hours (same capture session, same `run_id`). Closed files are
+immediately downloadable. `0` (default) writes a single file.
+
 Do **not** redirect logs to `/tmp/urban-sound.log` — that path is wiped on
 reboot and overwrites itself if reused.
 
@@ -229,6 +233,7 @@ tail -n 20 logs/*.log
 | `--calib-offset` | `120.0` | Relative dBA offset |
 | `--quiet` | off | Suppress JSON on stdout |
 | `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
+| `--rotate-hours` | `0` | New JSONL every N hours (`0` = off) |
 | `--log-dir` | `logs` | Per-run log directory |
 
 Stop with **Ctrl+C**, or let `timeout` end the run.
@@ -244,10 +249,12 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 ### Features
 
 - Start a run with:
-  - **Hours** input (e.g. `8`, or `0.5` for 30 minutes)
+  - **Hours** input (e.g. `8`, or `168` for a week)
+  - **Split files every (hours)** — `0` (default) = one JSONL for the
+    session; `24` = rotate to a new file every 24 hours without stopping
+    capture (`evening-2026-08-24T12-00Z.jsonl`, then `evening-2026-08-25T12-00Z.jsonl`, …)
   - **Output file name** prefix (prefilled from time of day: `morning` /
     `day` / `evening` / `night`); UTC start stamp is always appended
-    (`evening-2026-08-20T09-32Z.jsonl`)
   - Device ID, ALSA device, YAMNet gain
 - Stop a running run
 - Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)

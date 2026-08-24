@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -36,6 +37,7 @@ VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
 # Fall back to system python if venv not present (useful for dev on PC)
 PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
+_OUTPUT_STAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z$")
 
 # ---------------------------------------------------------------------------
 # Config from .env
@@ -113,6 +115,45 @@ def _hours_to_timeout(hours: float) -> str:
     return f"{minutes}m"
 
 
+def _output_prefix(path: Path) -> str:
+    stripped = _OUTPUT_STAMP_RE.sub("", path.stem)
+    return stripped or path.stem
+
+
+def _newest_matching_jsonl(cmd_output: Path) -> Path:
+    """Prefer the latest rotated file with the same name prefix."""
+    prefix = _output_prefix(cmd_output)
+    matches = [
+        p
+        for p in cmd_output.parent.glob(f"{prefix}-*.jsonl")
+        if p.is_file()
+    ]
+    if not matches:
+        return cmd_output
+    return max(matches, key=lambda p: p.stat().st_mtime)
+
+
+def _read_jsonl_event(path: Path, *, last: bool) -> dict | None:
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+    try:
+        if last:
+            with path.open("rb") as f:
+                try:
+                    f.seek(-4096, 2)
+                except OSError:
+                    f.seek(0)
+                lines = [ln for ln in f.read().splitlines() if ln.strip()]
+            if not lines:
+                return None
+            return json.loads(lines[-1])
+        with path.open(encoding="utf-8") as f:
+            line = f.readline()
+        return json.loads(line) if line.strip() else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def _find_collector_process() -> psutil.Process | None:
     """Return the running main.py Process, or None."""
     for proc in psutil.process_iter(["pid", "cmdline"]):
@@ -148,32 +189,20 @@ def _get_status() -> dict:
     run_id = None
 
     if output_file:
-        p = Path(output_file)
-        if p.exists() and p.stat().st_size > 0:
-            # Read last line without loading entire file
-            with p.open("rb") as f:
-                try:
-                    f.seek(-4096, 2)
-                except OSError:
-                    f.seek(0)
-                lines = f.read().splitlines()
-                last_lines = [l for l in lines if l.strip()]
-                if last_lines:
-                    try:
-                        last_event = json.loads(last_lines[-1])
-                        chunk_count = last_event.get("chunk_index", 0) + 1
-                        last_label = last_event.get("top_label")
-                        last_dba = last_event.get("dBA_spl")
-                        run_id = last_event.get("run_id")
-                    except (json.JSONDecodeError, KeyError):
-                        pass
-            # First line for start time
-            with p.open() as f:
-                try:
-                    first = json.loads(f.readline())
-                    started_at = first.get("created_at")
-                except (json.JSONDecodeError, KeyError):
-                    pass
+        first_path = Path(output_file)
+        latest_path = _newest_matching_jsonl(first_path)
+        last_event = _read_jsonl_event(latest_path, last=True)
+        if last_event:
+            chunk_count = last_event.get("chunk_index", 0) + 1
+            last_label = last_event.get("top_label")
+            last_dba = last_event.get("dBA_spl")
+            run_id = last_event.get("run_id")
+        first_event = _read_jsonl_event(first_path, last=False)
+        if first_event:
+            started_at = first_event.get("created_at")
+            if run_id is None:
+                run_id = first_event.get("run_id")
+        output_file = str(latest_path)
 
     elapsed_s = None
     if started_at:
@@ -284,6 +313,7 @@ async def index(request: Request):
 async def api_start(
     request: Request,
     hours: float = Form(8.0),
+    rotate_hours: float = Form(0.0),
     run_name: str = Form("run"),
     device_id: str = Form(DEFAULT_DEVICE_ID),
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
@@ -309,6 +339,7 @@ async def api_start(
         "--yamnet-gain", str(yamnet_gain),
         "--quiet",
         "-o", str(output),
+        "--rotate-hours", str(max(0.0, rotate_hours)),
     ]
     full_cmd = ["timeout", duration] + cmd
 

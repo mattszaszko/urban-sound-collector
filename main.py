@@ -6,8 +6,11 @@ import argparse
 import json
 import logging
 import os
+import re
 import socket
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, TextIO
 
@@ -28,6 +31,7 @@ DEFAULT_ALSA_DEVICE = "plughw:3,0"
 # Does not affect loudness / dBA metrics.
 DEFAULT_YAMNET_GAIN = 15.0
 DEFAULT_LOG_DIR = Path("logs")
+_OUTPUT_STAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z$")
 
 logger = logging.getLogger("urban_sound_collector")
 
@@ -97,6 +101,15 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--rotate-hours",
+        type=float,
+        default=0.0,
+        help=(
+            "Start a new JSONL file every N hours without stopping capture "
+            "(default: 0 = off, one file for the whole run)."
+        ),
+    )
+    parser.add_argument(
         "--log-dir",
         type=Path,
         default=DEFAULT_LOG_DIR,
@@ -108,6 +121,18 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help="Do not print JSON events to stdout (use with --output).",
     )
     return parser.parse_args(argv)
+
+
+def utc_file_stamp() -> str:
+    """UTC stamp used in JSONL filenames (minute precision)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%MZ")
+
+
+def output_name_prefix(path: Path) -> str:
+    """Strip a trailing UTC file stamp from a JSONL stem, if present."""
+    stem = path.stem
+    stripped = _OUTPUT_STAMP_RE.sub("", stem)
+    return stripped or stem
 
 
 def default_output_path(device_id: str, run_id: str) -> Path:
@@ -149,11 +174,57 @@ def setup_logging(log_path: Path) -> None:
     root.addHandler(stderr_handler)
 
 
+class RotatingJsonlWriter:
+    """Append JSONL with optional time-based file rotation (capture stays open)."""
+
+    def __init__(self, first_path: Path, rotate_hours: float) -> None:
+        self.rotate_seconds = rotate_hours * 3600.0 if rotate_hours > 0 else 0.0
+        self.directory = first_path.parent
+        self.prefix = output_name_prefix(first_path)
+        self.path = first_path
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.handle: TextIO = self.path.open("a", encoding="utf-8")
+        self.opened_at = time.monotonic()
+
+    def maybe_rotate(self) -> None:
+        if self.rotate_seconds <= 0:
+            return
+        if time.monotonic() - self.opened_at < self.rotate_seconds:
+            return
+        closed = self.path
+        self._close_handle()
+        self.path = self.directory / f"{self.prefix}-{utc_file_stamp()}.jsonl"
+        self.handle = self.path.open("a", encoding="utf-8")
+        self.opened_at = time.monotonic()
+        logger.info(
+            "Rotated JSONL (closed %s, now writing %s)",
+            closed.resolve(),
+            self.path.resolve(),
+        )
+
+    def write_line(self, line: str) -> None:
+        self.maybe_rotate()
+        self.handle.write(line + "\n")
+        self.handle.flush()
+        os.fsync(self.handle.fileno())
+
+    def _close_handle(self) -> None:
+        try:
+            self.handle.flush()
+            os.fsync(self.handle.fileno())
+        except OSError:
+            pass
+        self.handle.close()
+
+    def close(self) -> None:
+        self._close_handle()
+
+
 def emit_event(
     event: dict,
     *,
     stdout: bool,
-    output_handle: TextIO | None,
+    writer: RotatingJsonlWriter | None,
 ) -> None:
     """Print one JSON event to stdout and/or append to a JSONL file.
 
@@ -163,10 +234,8 @@ def emit_event(
     line = json.dumps(event, ensure_ascii=False)
     if stdout:
         print(line, flush=True)
-    if output_handle is not None:
-        output_handle.write(line + "\n")
-        output_handle.flush()
-        os.fsync(output_handle.fileno())
+    if writer is not None:
+        writer.write_line(line)
 
 
 def stream_live(
@@ -180,6 +249,7 @@ def stream_live(
     yamnet_gain: float,
     output_path: Path,
     print_stdout: bool,
+    rotate_hours: float = 0.0,
 ) -> int:
     """Capture audio, run dual-branch analysis, emit JSONL events.
 
@@ -192,7 +262,7 @@ def stream_live(
     chunk_index = 0
     events_written = 0
     capture: AlsAudioCapture | None = None
-    output_handle: TextIO | None = None
+    writer: RotatingJsonlWriter | None = None
 
     loudness = LoudnessEngine(
         sample_rate=float(CAPTURE_SAMPLE_RATE),
@@ -202,7 +272,7 @@ def stream_live(
     logger.info(
         "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
         "rate=%s Hz, format=S32_LE, chunk_samples=%s, calib_offset=%s, "
-        "yamnet_gain=%s, model=%s",
+        "yamnet_gain=%s, model=%s, rotate_hours=%s",
         device_id,
         run_id,
         alsa_device,
@@ -212,17 +282,21 @@ def stream_live(
         calib_offset,
         yamnet_gain,
         MODEL_VERSION,
+        rotate_hours,
     )
     logger.info("Recording JSONL to: %s", output_path.resolve())
+    if rotate_hours > 0:
+        logger.info(
+            "JSONL rotation enabled: new file every %s hour(s).",
+            rotate_hours,
+        )
     if print_stdout:
         logger.info("Streaming JSON to stdout. Press Ctrl+C to stop.")
     else:
         logger.info("JSON stdout disabled (--quiet). Press Ctrl+C to stop.")
 
     try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        # Append so a reused -o path never truncates prior data.
-        output_handle = output_path.open("a", encoding="utf-8")
+        writer = RotatingJsonlWriter(output_path, rotate_hours)
         capture = AlsAudioCapture(
             alsa_device,
             CAPTURE_CHUNK_SAMPLES,
@@ -258,7 +332,7 @@ def stream_live(
             emit_event(
                 result,
                 stdout=print_stdout,
-                output_handle=output_handle,
+                writer=writer,
             )
             events_written += 1
             chunk_index += 1
@@ -266,10 +340,11 @@ def stream_live(
             # Heartbeat every ~60 chunks (~1 min) so logs show progress.
             if events_written % 60 == 0:
                 logger.info(
-                    "Progress: %s event(s) written (chunk_index=%s, top=%s)",
+                    "Progress: %s event(s) written (chunk_index=%s, top=%s, file=%s)",
                     events_written,
                     chunk_index - 1,
                     result.get("top_label"),
+                    writer.path.name,
                 )
 
     except KeyboardInterrupt:
@@ -278,17 +353,13 @@ def stream_live(
         if capture is not None:
             capture.close()
             logger.info("Audio stream closed.")
-        if output_handle is not None:
-            try:
-                output_handle.flush()
-                os.fsync(output_handle.fileno())
-            except OSError:
-                pass
-            output_handle.close()
+        if writer is not None:
+            final_path = writer.path
+            writer.close()
             logger.info(
-                "Wrote %s event(s) to %s",
+                "Wrote %s event(s); last file %s",
                 events_written,
-                output_path.resolve(),
+                final_path.resolve(),
             )
 
     return events_written
@@ -327,6 +398,7 @@ def main(argv: List[str] | None = None) -> int:
             yamnet_gain=args.yamnet_gain,
             output_path=output_path,
             print_stdout=print_stdout,
+            rotate_hours=args.rotate_hours,
         )
     except Exception as exc:  # noqa: BLE001 — surface device/open errors cleanly
         logger.exception("Fatal error: %s", exc)
