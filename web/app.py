@@ -24,6 +24,8 @@ from fastapi.responses import (
 )
 from jinja2 import Environment, FileSystemLoader
 
+from core.host_identity import default_device_id, hostname
+
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 # ---------------------------------------------------------------------------
@@ -45,11 +47,13 @@ _OUTPUT_STAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z$")
 PASSWORD = os.environ.get("USC_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-please")
 PORT = int(os.environ.get("PORT", "8080"))
-DEFAULT_DEVICE_ID = os.environ.get("DEVICE_ID", "pi-test-01")
+DEFAULT_DEVICE_ID = default_device_id()
 DEFAULT_ALSA_DEVICE = os.environ.get(
     "ALSA_DEVICE", "plughw:CARD=sndrpigooglevoi,DEV=0"
 )
 DEFAULT_YAMNET_GAIN = float(os.environ.get("YAMNET_GAIN", "15.0"))
+SITE_LABEL = os.environ.get("SITE_LABEL", "").strip()
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip()
 
 os.environ["SECRET_KEY"] = SECRET_KEY
 
@@ -301,6 +305,10 @@ async def index(request: Request):
         default_alsa_device=DEFAULT_ALSA_DEVICE,
         default_gain=DEFAULT_YAMNET_GAIN,
         default_run_name=_default_run_name(),
+        device_id=DEFAULT_DEVICE_ID,
+        pi_hostname=hostname(),
+        site_label=SITE_LABEL,
+        public_url=PUBLIC_URL,
         error=error,
     )
 

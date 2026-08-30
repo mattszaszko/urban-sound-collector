@@ -7,12 +7,15 @@ import json
 import logging
 import os
 import re
-import socket
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, TextIO
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_SAMPLE_RATE
 from core.capture_alsa import AlsAudioCapture
@@ -22,6 +25,7 @@ from core.classifier_tflite import (
     YamnetTFLiteClassifier,
 )
 from core.events import build_noise_event, new_run_id
+from core.host_identity import default_device_id
 from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
 from core.pcm import int32_frames_to_float32
 from core.resampler import to_yamnet_waveform
@@ -34,11 +38,6 @@ DEFAULT_LOG_DIR = Path("logs")
 _OUTPUT_STAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z$")
 
 logger = logging.getLogger("urban_sound_collector")
-
-
-def default_device_id() -> str:
-    """Use the machine hostname as a stable-enough default device id."""
-    return socket.gethostname().strip() or "pi-unknown"
 
 
 def parse_args(argv: List[str] | None = None) -> argparse.Namespace:

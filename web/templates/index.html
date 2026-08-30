@@ -16,6 +16,9 @@
   header{display:flex;align-items:center;justify-content:space-between;
          margin-bottom:1.5rem}
   header h1{font-size:1.1rem;font-weight:700;color:var(--accent)}
+  .device-meta{font-size:.72rem;color:var(--muted);margin-top:.25rem;line-height:1.4}
+  .device-meta a{color:var(--accent);text-decoration:none}
+  .device-meta a:hover{text-decoration:underline}
   header a{color:var(--muted);font-size:.85rem;text-decoration:none}
   header a:hover{color:var(--text)}
 
@@ -83,7 +86,16 @@
 <body>
 
 <header>
-  <h1>🎙 Urban Sound Collector</h1>
+  <div>
+    <h1>🎙 Urban Sound Collector</h1>
+    {% if site_label %}
+    <div class="device-meta"><strong>{{ site_label }}</strong></div>
+    {% endif %}
+    <div class="device-meta">
+      Device <code>{{ device_id }}</code> · host {{ pi_hostname }}
+      {% if public_url %} · <a href="{{ public_url }}" target="_blank" rel="noopener">{{ public_url }}</a>{% endif %}
+    </div>
+  </div>
   <a href="/logout">Sign out</a>
 </header>
 
