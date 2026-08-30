@@ -55,7 +55,7 @@ sudo apt install -y git python3-venv python3-dev libasound2-dev alsa-utils curl
 python3 --version
 ```
 
-Prefer **Python 3.11** if `tflite-runtime` fails on 3.13:
+Prefer **Python 3.11** if neither TFLite package works on 3.13:
 
 ```bash
 sudo apt install -y python3.11 python3.11-venv
@@ -77,9 +77,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install numpy scipy pyalsaaudio
-pip install tflite-runtime
-# if that fails on 3.13:
-# pip install tflite-runtime --extra-index-url https://google-coral.github.io/py-pkgs-coral-apt/simple/
+pip install ai-edge-litert
+# if that fails, try legacy runtime (Python 3.11 only):
+# pip install tflite-runtime
+# or use: python3.11 -m venv .venv
 pip install -r web/requirements-web.txt
 mkdir -p runs logs
 ```
@@ -206,7 +207,7 @@ sudo systemctl restart urban-sound-web
 | Wrong Pi responds at URL | Two Pis share one tunnel token — create separate tunnels |
 | 502 on website | `sudo systemctl status urban-sound-web` — uvicorn not running |
 | Mic not working | `arecord -l`; confirm `ALSA_DEVICE` uses `CARD=sndrpigooglevoi` |
-| `tflite-runtime` install fails | Use Python 3.11 venv |
+| `tflite-runtime` / `ai-edge-litert` install fails | Try `pip install ai-edge-litert`; else Python 3.11 venv + `tflite-runtime` |
 | Can't tell which Pi in UI | Set `SITE_LABEL` and `PUBLIC_URL` in `.env`, restart web service |
 
 ---

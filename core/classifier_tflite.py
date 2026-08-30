@@ -21,17 +21,21 @@ DEFAULT_CLASS_MAP_PATH = _ROOT / "models" / "yamnet_class_map.csv"
 
 
 def _load_interpreter(model_path: Path):
-    """Prefer tflite-runtime on Pi; fall back to full TensorFlow Lite."""
+    """Load a TFLite Interpreter (Pi: tflite-runtime or ai-edge-litert)."""
     try:
         from tflite_runtime.interpreter import Interpreter  # type: ignore
     except ImportError:
         try:
-            from tensorflow.lite.python.interpreter import Interpreter  # type: ignore
-        except ImportError as exc:
-            raise RuntimeError(
-                "No TFLite interpreter found. Install tflite-runtime "
-                "(Raspberry Pi) or tensorflow."
-            ) from exc
+            from ai_edge_litert.interpreter import Interpreter  # type: ignore
+        except ImportError:
+            try:
+                from tensorflow.lite.python.interpreter import Interpreter  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError(
+                    "No TFLite interpreter found. On Raspberry Pi install "
+                    "tflite-runtime (Python 3.11) or ai-edge-litert (3.12+): "
+                    "pip install ai-edge-litert"
+                ) from exc
     return Interpreter
 
 
