@@ -29,6 +29,7 @@ from core.host_identity import default_device_id
 from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
 from core.pcm import int32_frames_to_float32
 from core.resampler import to_yamnet_waveform
+from core.spectrum import SpectrumEngine
 
 DEFAULT_ALSA_DEVICE = "plughw:3,0"
 # Classifier-only boost for quiet distant sources (window traffic, etc.).
@@ -46,7 +47,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         description=(
             "Urban IoT edge collector: capture INMP441 audio via ALSA, "
             "compute A-weighted loudness, classify with YAMNet TFLite, "
-            "and emit JSONL events."
+            "analyse spectrum (Z + A 1/3-octave), and emit JSONL events."
         )
     )
     parser.add_argument(
@@ -118,6 +119,11 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         "--quiet",
         action="store_true",
         help="Do not print JSON events to stdout (use with --output).",
+    )
+    parser.add_argument(
+        "--no-spectrum",
+        action="store_true",
+        help="Disable Branch C spectral analysis (1/3-octave Z + A summaries).",
     )
     return parser.parse_args(argv)
 
@@ -249,11 +255,13 @@ def stream_live(
     output_path: Path,
     print_stdout: bool,
     rotate_hours: float = 0.0,
+    enable_spectrum: bool = True,
 ) -> int:
-    """Capture audio, run dual-branch analysis, emit JSONL events.
+    """Capture audio, run triple-branch analysis, emit JSONL events.
 
     Branch A: A-weighted loudness at 48 kHz (ungained).
     Branch B: YAMNet TFLite at 16 kHz (optional classifier-only gain).
+    Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
 
     Returns:
         Number of events written.
@@ -267,11 +275,14 @@ def stream_live(
         sample_rate=float(CAPTURE_SAMPLE_RATE),
         calib_offset=calib_offset,
     )
+    spectrum_engine: SpectrumEngine | None = None
+    if enable_spectrum:
+        spectrum_engine = SpectrumEngine(sample_rate=float(CAPTURE_SAMPLE_RATE))
 
     logger.info(
         "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
         "rate=%s Hz, format=S32_LE, chunk_samples=%s, calib_offset=%s, "
-        "yamnet_gain=%s, model=%s, rotate_hours=%s",
+        "yamnet_gain=%s, model=%s, rotate_hours=%s, spectrum=%s",
         device_id,
         run_id,
         alsa_device,
@@ -282,6 +293,7 @@ def stream_live(
         yamnet_gain,
         MODEL_VERSION,
         rotate_hours,
+        enable_spectrum,
     )
     logger.info("Recording JSONL to: %s", output_path.resolve())
     if rotate_hours > 0:
@@ -310,6 +322,11 @@ def stream_live(
             # Branch A — human loudness @ capture rate (no classifier gain).
             metrics = loudness.analyse(pcm)
 
+            # Branch C — Z- and A-weighted spectrum @ capture rate (no gain).
+            spectrum = (
+                spectrum_engine.analyse(pcm) if spectrum_engine is not None else None
+            )
+
             # Branch B — YAMNet classification @ 16 kHz (+ optional gain).
             try:
                 waveform = to_yamnet_waveform(pcm, gain=yamnet_gain)
@@ -327,6 +344,7 @@ def stream_live(
                 rms_a_weighted=metrics["rms_a_weighted"],
                 dba_spl=metrics["dBA_spl"],
                 predictions=predictions,
+                spectrum=spectrum,
             )
             emit_event(
                 result,
@@ -398,6 +416,7 @@ def main(argv: List[str] | None = None) -> int:
             output_path=output_path,
             print_stdout=print_stdout,
             rotate_hours=args.rotate_hours,
+            enable_spectrum=not args.no_spectrum,
         )
     except Exception as exc:  # noqa: BLE001 — surface device/open errors cleanly
         logger.exception("Fatal error: %s", exc)

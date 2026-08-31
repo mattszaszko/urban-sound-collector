@@ -31,15 +31,16 @@ def build_noise_event(
     rms_a_weighted: float,
     dba_spl: float,
     predictions: List[Dict[str, Any]],
+    spectrum: Optional[Dict[str, Any]] = None,
     model_name: str = MODEL_NAME,
     model_version: str = MODEL_VERSION,
     created_at: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build one dual-branch JSONL event (loudness + YAMNet predictions)."""
+    """Build one JSONL event (loudness + optional spectrum + YAMNet)."""
     top_label = predictions[0]["label"] if predictions else "n/a"
     top_confidence = float(predictions[0]["confidence"]) if predictions else 0.0
 
-    return {
+    event: Dict[str, Any] = {
         "device_id": device_id,
         "created_at": created_at or utc_now_iso(),
         "chunk_index": chunk_index,
@@ -53,3 +54,6 @@ def build_noise_event(
         "model_name": model_name,
         "model_version": model_version,
     }
+    if spectrum is not None:
+        event["spectrum"] = spectrum
+    return event

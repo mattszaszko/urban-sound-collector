@@ -45,6 +45,10 @@ INMP441 (I2S) → ALSA S32_LE @ 48 kHz
         │   A-weighting IIR (stateful)                     │
         │   rms_unweighted, rms_a_weighted, dBA_spl        │
         │                                                  │
+        ├─ Branch C (48 kHz) ──────────────────────────────┤
+        │   Welch PSD → Z + A 1/3-octave summaries         │
+        │   (ungained; peaks, centroid, rolloff, L/M/H)    │
+        │                                                  │
         └─ Branch B (16 kHz) ──────────────────────────────┤
             resample_poly (48k → 16k)                      │
             optional --yamnet-gain (classifier only)       │
@@ -59,14 +63,17 @@ flowchart LR
     alsa[ALSA S32_LE 48kHz]
     pcm[PCM align]
     loud[LoudnessEngine]
+    spec[SpectrumEngine]
     res[resample_poly]
     yam[YAMNet TFLite]
     json[JSONL event]
 
     mic --> alsa --> pcm
     pcm --> loud
+    pcm --> spec
     pcm --> res --> yam
     loud --> json
+    spec --> json
     yam --> json
 ```
 
@@ -87,9 +94,12 @@ urban-sound-collector/
 │   ├── pcm.py                  # int32 → aligned float32 normalization
 │   ├── host_identity.py        # Hostname / DEVICE_ID defaults (multi-Pi)
 │   ├── loudness.py             # A-weighting + relative dBA SPL
+│   ├── spectrum.py             # Z + A 1/3-octave spectral summaries
 │   ├── resampler.py            # 48 kHz → 16 kHz for YAMNet
 │   ├── classifier_tflite.py    # Bundled YAMNet TFLite inference
 │   └── events.py               # JSONL event schema builder
+├── tests/
+│   └── test_spectrum.py        # Spectrum unit tests (sine tones)
 ├── web/
 │   ├── app.py                  # FastAPI web server
 │   ├── auth.py                 # Session-based password login
@@ -113,6 +123,7 @@ urban-sound-collector/
 | `capture_alsa.py` | Opens ALSA device, yields fixed-size int32 chunks |
 | `pcm.py` | INMP441 24-bit alignment into unit-scale float samples |
 | `loudness.py` | IEC 61672-style A-weighting, RMS, relative `dBA_spl` |
+| `spectrum.py` | Welch PSD, 1/3-octave Z + A bands, peaks, centroid, rolloff |
 | `resampler.py` | Polyphase resample + optional classifier gain + clip |
 | `classifier_tflite.py` | Loads TFLite model, returns top-3 AudioSet labels |
 | `events.py` | Builds one JSON object per chunk |
@@ -140,13 +151,37 @@ One JSON object per line (~1 Hz):
     {"label": "Car", "confidence": 0.08203125}
   ],
   "model_name": "yamnet",
-  "model_version": "tflite/1"
+  "model_version": "tflite/1",
+  "spectrum": {
+    "band_type": "third_octave",
+    "centers_hz": [31.5, 40, 50, "..."],
+    "z": {
+      "levels_db": [-38.2, -35.1, "..."],
+      "peaks": [{"hz": 50.2, "db": -15.1}, {"hz": 240.1, "db": -22.7}],
+      "centroid_hz": 420.0,
+      "rolloff_85_hz": 1800.0,
+      "energy_pct": {"low": 62.0, "mid": 28.0, "high": 10.0}
+    },
+    "a": {
+      "levels_db": [-42.0, -38.5, "..."],
+      "peaks": [{"hz": 980.0, "db": -18.2}],
+      "centroid_hz": 890.0,
+      "rolloff_85_hz": 2100.0,
+      "energy_pct": {"low": 35.0, "mid": 48.0, "high": 17.0}
+    }
+  }
 }
 ```
 
 - **`created_at`**: UTC timestamp for time-series use
 - **`chunk_index`**: per-run counter (resets on restart)
 - **`dBA_spl`**: relative SPL (not absolute; no calibrated mic yet)
+- **`spectrum.z`**: unweighted (physical) frequency content — use for hum/rumble
+- **`spectrum.a`**: A-weighted bands — aligns with human perception / `dBA_spl`
+- **`spectrum.*.levels_db`**: relative band levels (not absolute per-band SPL)
+- **`spectrum.*.energy_pct`**: low 31.5–500 Hz, mid 500–2000 Hz, high 2–16 kHz
+
+Disable spectrum with **`--no-spectrum`** (Branch A + B only).
 
 ---
 
@@ -235,9 +270,16 @@ tail -n 20 logs/*.log
 | `--quiet` | off | Suppress JSON on stdout |
 | `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
 | `--rotate-hours` | `0` | New JSONL every N hours (`0` = off) |
+| `--no-spectrum` | off | Disable Branch C spectral analysis |
 | `--log-dir` | `logs` | Per-run log directory |
 
 Stop with **Ctrl+C**, or let `timeout` end the run.
+
+### Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
 
 ---
 
