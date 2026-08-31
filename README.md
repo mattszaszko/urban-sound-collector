@@ -364,6 +364,14 @@ After reboot you should have:
 | `urban-sound-web` | Auto-starts (uvicorn on :8080) |
 | Collector run | Manual via web UI when you want |
 
+**Shut down from the web UI:** the **Power** section has a **Shut down Pi** button. It stops any active recording, waits one minute (configurable), then powers off. One-time setup so the web user can power off without a password:
+
+```bash
+sudo bash ~/urban-sound-collector/web/setup-shutdown-sudoers.sh
+```
+
+Keep the page open until the countdown finishes and you see **Safe to unplug power now**.
+
 ---
 
 ### Environment variables (`.env`)
@@ -378,6 +386,7 @@ After reboot you should have:
 | `PUBLIC_URL` | *(empty)* | This Pi's public URL (set per Pi) |
 | `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device in UI |
 | `YAMNET_GAIN` | `15.0` | Default YAMNet gain in UI |
+| `SHUTDOWN_GRACE_SEC` | `60` | Countdown before poweroff from web UI |
 
 The `.env` file is gitignored — never commit it. Copy `.env.example` on each Pi.
 

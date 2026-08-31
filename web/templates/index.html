@@ -54,7 +54,25 @@
   .btn-start:hover{background:#38bdf8}
   .btn-stop{background:#7f1d1d;color:#fca5a5;border:1px solid var(--red)}
   .btn-stop:hover{background:#991b1b}
+  .btn-shutdown{background:#450a0a;color:#fecaca;border:1px solid #b91c1c}
+  .btn-shutdown:hover{background:#7f1d1d}
   .btn-disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
+  .power-note{font-size:.75rem;color:var(--muted);margin-top:.5rem;line-height:1.45}
+
+  /* Shutdown overlay */
+  #shutdown-overlay{display:none;position:fixed;inset:0;z-index:1000;
+    background:rgba(15,23,42,.92);align-items:center;justify-content:center;
+    padding:1.5rem}
+  #shutdown-overlay.active{display:flex}
+  .shutdown-panel{background:var(--surface);border:1px solid var(--border);
+    border-radius:16px;padding:1.5rem;max-width:420px;width:100%;
+    text-align:center}
+  .shutdown-panel h3{font-size:1.15rem;margin-bottom:.75rem;color:var(--yellow)}
+  .shutdown-panel p{font-size:.9rem;color:var(--muted);line-height:1.5;margin-bottom:1rem}
+  .shutdown-countdown{font-size:2.5rem;font-weight:700;color:var(--text);
+    font-variant-numeric:tabular-nums;margin:.5rem 0 1rem}
+  .shutdown-safe{color:var(--green);font-size:1rem;font-weight:600;line-height:1.5}
+  .shutdown-host{font-size:.8rem;color:var(--muted);margin-top:1rem}
 
   /* Log */
   #log-box{background:var(--bg);border-radius:8px;padding:.75rem;
@@ -191,6 +209,18 @@
   {% endif %}
 </div>
 
+<!-- ── POWER ── -->
+<div class="card">
+  <h2>Power</h2>
+  <p class="power-note">
+    Safely shut down this Raspberry Pi before unplugging power.
+    Any active recording is stopped first.
+  </p>
+  <button class="btn btn-shutdown" type="button" id="shutdown-btn">
+    ⏻ Shut down Pi
+  </button>
+</div>
+
 <!-- ── LIVE LOG ── -->
 <div class="card">
   <h2>Live log <span style="color:var(--muted);font-weight:400;font-size:.7rem">(auto-updates)</span></h2>
@@ -213,6 +243,19 @@
   {% else %}
   <div class="empty">No runs yet.</div>
   {% endif %}
+</div>
+
+<div id="shutdown-overlay" aria-live="polite" aria-busy="true">
+  <div class="shutdown-panel">
+    <h3 id="shutdown-title">Shutting down…</h3>
+    <p id="shutdown-message">Stopping services and preparing to power off.</p>
+    <div class="shutdown-countdown" id="shutdown-countdown">—</div>
+    <p id="shutdown-safe" class="shutdown-safe" hidden>
+      Safe to unplug power now.<br>
+      Wait until the Pi’s activity LED is off, then disconnect USB power.
+    </p>
+    <p class="shutdown-host" id="shutdown-host"></p>
+  </div>
 </div>
 
 <script>
@@ -257,6 +300,89 @@ async function pollStatus() {
 }
 
 setInterval(pollStatus, 10000);
+
+// ── Shutdown ──────────────────────────────────────────────────────
+const shutdownBtn = document.getElementById('shutdown-btn');
+const shutdownOverlay = document.getElementById('shutdown-overlay');
+const shutdownTitle = document.getElementById('shutdown-title');
+const shutdownMessage = document.getElementById('shutdown-message');
+const shutdownCountdown = document.getElementById('shutdown-countdown');
+const shutdownSafe = document.getElementById('shutdown-safe');
+const shutdownHost = document.getElementById('shutdown-host');
+
+function fmtCountdown(totalSec) {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+let countdownTimer = null;
+
+function showShutdownOverlay(data) {
+  shutdownOverlay.classList.add('active');
+  shutdownBtn.disabled = true;
+  shutdownBtn.classList.add('btn-disabled');
+  shutdownHost.textContent = data.hostname ? `Device: ${data.hostname}` : '';
+
+  if (data.stopped_recording) {
+    shutdownMessage.textContent =
+      'Recording stopped. Shutting down in…';
+  } else {
+    shutdownMessage.textContent =
+      'Shutdown requested. Power off in…';
+  }
+
+  let remaining = data.grace_seconds;
+  shutdownCountdown.textContent = fmtCountdown(remaining);
+  shutdownCountdown.hidden = false;
+  shutdownSafe.hidden = true;
+  shutdownTitle.textContent = 'Shutting down…';
+
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    remaining -= 1;
+    if (remaining > 0) {
+      shutdownCountdown.textContent = fmtCountdown(remaining);
+      return;
+    }
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    shutdownTitle.textContent = 'Shutdown complete';
+    shutdownMessage.textContent =
+      'The Pi should now be powering off. You can close this page.';
+    shutdownCountdown.hidden = true;
+    shutdownSafe.hidden = false;
+    shutdownOverlay.setAttribute('aria-busy', 'false');
+  }, 1000);
+}
+
+shutdownBtn.addEventListener('click', async () => {
+  const ok = window.confirm(
+    'Shut down this Raspberry Pi?\n\n' +
+    'Any active recording will be stopped. ' +
+    'Keep this page open until you are told it is safe to unplug power.'
+  );
+  if (!ok) return;
+
+  shutdownBtn.disabled = true;
+  shutdownBtn.textContent = 'Shutting down…';
+
+  try {
+    const r = await fetch('/api/shutdown', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok || !data.ok) {
+      throw new Error(data.error || 'Shutdown failed');
+    }
+    showShutdownOverlay(data);
+  } catch (err) {
+    shutdownBtn.disabled = false;
+    shutdownBtn.textContent = '⏻ Shut down Pi';
+    alert(
+      'Could not start shutdown. On the Pi, run once:\n\n' +
+      'sudo bash web/setup-shutdown-sudoers.sh'
+    );
+  }
+});
 </script>
 </body>
 </html>

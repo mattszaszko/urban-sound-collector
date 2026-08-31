@@ -8,6 +8,8 @@ import re
 import signal
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator
@@ -19,6 +21,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
+    JSONResponse,
     RedirectResponse,
     StreamingResponse,
 )
@@ -54,6 +57,7 @@ DEFAULT_ALSA_DEVICE = os.environ.get(
 DEFAULT_YAMNET_GAIN = float(os.environ.get("YAMNET_GAIN", "15.0"))
 SITE_LABEL = os.environ.get("SITE_LABEL", "").strip()
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip()
+SHUTDOWN_GRACE_SEC = max(15, int(os.environ.get("SHUTDOWN_GRACE_SEC", "60")))
 
 os.environ["SECRET_KEY"] = SECRET_KEY
 
@@ -158,8 +162,37 @@ def _read_jsonl_event(path: Path, *, last: bool) -> dict | None:
         return None
 
 
+def _stop_collector() -> bool:
+    """Stop a running collector process. Returns True if one was stopped."""
+    proc = _find_collector_process()
+    if proc is None:
+        return False
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        proc.terminate()
+    return True
+
+
+def _run_poweroff() -> None:
+    """Flush filesystems and power off the Pi (requires passwordless sudo)."""
+    subprocess.run(["sudo", "sync"], check=False)
+    result = subprocess.run(["sudo", "systemctl", "poweroff"], check=False)
+    if result.returncode != 0:
+        subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
+
+
+def _schedule_poweroff_after(grace_seconds: int) -> None:
+    """Power off after a delay so the UI can show a countdown."""
+
+    def _worker() -> None:
+        time.sleep(grace_seconds)
+        _run_poweroff()
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def _find_collector_process() -> psutil.Process | None:
-    """Return the running main.py Process, or None."""
     for proc in psutil.process_iter(["pid", "cmdline"]):
         try:
             cmd = proc.info["cmdline"] or []
@@ -365,22 +398,36 @@ async def api_stop(request: Request):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
 
-    proc = _find_collector_process()
-    if proc:
-        try:
-            # Send SIGTERM to the process group so timeout + python both stop
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            proc.terminate()
-
+    _stop_collector()
     return RedirectResponse("/", status_code=303)
+
+
+@app.post("/api/shutdown")
+async def api_shutdown(request: Request):
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    stopped_recording = _stop_collector()
+    _schedule_poweroff_after(SHUTDOWN_GRACE_SEC)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "grace_seconds": SHUTDOWN_GRACE_SEC,
+            "stopped_recording": stopped_recording,
+            "hostname": hostname(),
+            "message": (
+                "Shutdown scheduled. Keep this page open until the countdown "
+                "finishes, then unplug power."
+            ),
+        }
+    )
 
 
 @app.get("/api/status")
 async def api_status(request: Request):
     if not is_authenticated(request):
         return HTMLResponse("", status_code=401)
-    from fastapi.responses import JSONResponse
     return JSONResponse(_get_status())
 
 
