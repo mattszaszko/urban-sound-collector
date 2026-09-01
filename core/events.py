@@ -32,6 +32,7 @@ def build_noise_event(
     dba_spl: float,
     predictions: List[Dict[str, Any]],
     spectrum: Optional[Dict[str, Any]] = None,
+    yamnet_preprocess: Optional[Dict[str, Any]] = None,
     model_name: str = MODEL_NAME,
     model_version: str = MODEL_VERSION,
     created_at: Optional[str] = None,
@@ -56,4 +57,6 @@ def build_noise_event(
     }
     if spectrum is not None:
         event["spectrum"] = spectrum
+    if yamnet_preprocess is not None:
+        event["yamnet_preprocess"] = yamnet_preprocess
     return event

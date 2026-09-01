@@ -26,8 +26,8 @@ This refactor targets a **modular, Pi-native edge pipeline**:
 | Single RMS metric | **Dual branch**: loudness + classification |
 | WAV/file testing path | Live capture only |
 
-Classifier-only **`--yamnet-gain`** remains optional for quiet outdoor sources
-(window traffic). Loudness metrics are always ungained.
+Classifier input uses **dynamic preprocessing** (HPF, L90 adaptive silence gate, RMS
+normalization with peak limiting, gain smoothing). Loudness and spectrum stay ungained.
 
 ---
 
@@ -50,9 +50,9 @@ INMP441 (I2S) → ALSA S32_LE @ 48 kHz
         │   (ungained; peaks, centroid, rolloff, L/M/H)    │
         │                                                  │
         └─ Branch B (16 kHz) ──────────────────────────────┤
-            resample_poly (48k → 16k)                      │
-            optional --yamnet-gain (classifier only)       │
-            YAMNet TFLite → top-3 predictions              │
+            HPF ~175 Hz → L90 silence gate → RMS normalize  │
+            (smoothed gain, peak limiter) → resample     │
+            YAMNet TFLite → top-3 predictions            │
                                                            ▼
                                               JSONL event per chunk
 ```
@@ -71,7 +71,8 @@ flowchart LR
     mic --> alsa --> pcm
     pcm --> loud
     pcm --> spec
-    pcm --> res --> yam
+    pcm --> yprep[YamnetPreprocessor]
+    yprep --> yam
     loud --> json
     spec --> json
     yam --> json
@@ -95,11 +96,13 @@ urban-sound-collector/
 │   ├── host_identity.py        # Hostname / DEVICE_ID defaults (multi-Pi)
 │   ├── loudness.py             # A-weighting + relative dBA SPL
 │   ├── spectrum.py             # Z + A 1/3-octave spectral summaries
+│   ├── yamnet_preprocess.py    # HPF, dynamic normalize, silence gate
 │   ├── resampler.py            # 48 kHz → 16 kHz for YAMNet
 │   ├── classifier_tflite.py    # Bundled YAMNet TFLite inference
 │   └── events.py               # JSONL event schema builder
 ├── tests/
-│   └── test_spectrum.py        # Spectrum unit tests (sine tones)
+│   ├── test_spectrum.py        # Spectrum unit tests (sine tones)
+│   └── test_yamnet_preprocess.py
 ├── web/
 │   ├── app.py                  # FastAPI web server
 │   ├── auth.py                 # Session-based password login
@@ -124,7 +127,8 @@ urban-sound-collector/
 | `pcm.py` | INMP441 24-bit alignment into unit-scale float samples |
 | `loudness.py` | IEC 61672-style A-weighting, RMS, relative `dBA_spl` |
 | `spectrum.py` | Welch PSD, 1/3-octave Z + A bands, peaks, centroid, rolloff |
-| `resampler.py` | Polyphase resample + optional classifier gain + clip |
+| `yamnet_preprocess.py` | Branch B HPF, RMS normalize, gain smooth, silence gate |
+| `resampler.py` | Polyphase resample 48 kHz → 16 kHz |
 | `classifier_tflite.py` | Loads TFLite model, returns top-3 AudioSet labels |
 | `events.py` | Builds one JSON object per chunk |
 
@@ -169,6 +173,25 @@ One JSON object per line (~1 Hz):
       "rolloff_85_hz": 2100.0,
       "energy_pct": {"low": 35.0, "mid": 48.0, "high": 17.0}
     }
+  },
+  "yamnet_preprocess": {
+    "gate_mode": "dynamic_l90",
+    "gated": false,
+    "applied_gain": 4.2,
+    "raw_rms_dbfs": -42.1,
+    "smoothed_rms_dbfs": -41.8,
+    "hpf_hz": 175,
+    "target_dbfs": -23,
+    "ambient_noise_floor_dbfs": -78.2,
+    "ambient_sample_count": 145,
+    "ambient_window_chunks": 300,
+    "ambient_percentile": 10,
+    "gate_sensitivity_db": 8,
+    "gate_hysteresis_db": 3,
+    "silence_gate_open_dbfs": -70.2,
+    "silence_gate_close_dbfs": -73.2,
+    "gate_open": true,
+    "gain_smooth_chunks": 5
   }
 }
 ```
@@ -176,6 +199,12 @@ One JSON object per line (~1 Hz):
 - **`created_at`**: UTC timestamp for time-series use
 - **`chunk_index`**: per-run counter (resets on restart)
 - **`dBA_spl`**: relative SPL (not absolute; no calibrated mic yet)
+- **`yamnet_preprocess`**: Branch B diagnostics (dynamic gain, L90 silence gate)
+- **`yamnet_preprocess.gated`**: `true` when YAMNet was skipped (labeled Silence)
+- **`yamnet_preprocess.gate_open`**: hysteresis state — `false` when gated
+- **`ambient_noise_floor_dbfs`**: L90 background floor (10th percentile of last ~5 min)
+- **`silence_gate_open_dbfs` / `silence_gate_close_dbfs`**: per-chunk dynamic thresholds (open = floor + 8 dB, close = open − 3 dB)
+- **`gate_sensitivity_db` / `gate_hysteresis_db`**: tuning parameters for the dynamic gate
 - **`spectrum.z`**: unweighted (physical) frequency content — use for hum/rumble
 - **`spectrum.a`**: A-weighted bands — aligns with human perception / `dBA_spl`
 - **`spectrum.*.levels_db`**: relative band levels (not absolute per-band SPL)
@@ -228,10 +257,6 @@ logs/<device_id>_<run_id>.log
 Heartbeat lines are written about once per minute so you can confirm progress
 after a crash.
 
-Optional **`--rotate-hours N`** closes the current JSONL and opens a new one
-every N hours (same capture session, same `run_id`). Closed files are
-immediately downloadable. `0` (default) writes a single file.
-
 Do **not** redirect logs to `/tmp/urban-sound.log` — that path is wiped on
 reboot and overwrites itself if reused.
 
@@ -245,7 +270,6 @@ nohup timeout 3h python main.py \
   --device-id pi-test-01 \
   --alsa-device plughw:3,0 \
   --backend arecord \
-  --yamnet-gain 15 \
   --quiet \
   -o "runs/evening-$(date -u +%Y-%m-%dT%H-%MZ).jsonl" \
   >/dev/null 2>&1 &
@@ -265,11 +289,16 @@ tail -n 20 logs/*.log
 |---|---|---|
 | `--alsa-device` | `plughw:3,0` | ALSA capture device |
 | `--backend` | `auto` | `pyalsa`, `arecord`, or `auto` |
-| `--yamnet-gain` | `15.0` | Classifier-only boost; use `1` to disable |
+| `--yamnet-hpf-hz` | `175` | Branch B high-pass cutoff (Hz) |
+| `--yamnet-target-dbfs` | `-23` | Branch B RMS normalization target |
+| `--yamnet-gate-sensitivity-db` | `8` | Open offset above L90 ambient floor (dB) |
+| `--yamnet-gate-hysteresis-db` | `3` | Close offset below open threshold (dB) |
+| `--yamnet-gate-ambient-chunks` | `300` | Rolling window for ambient floor (~5 min) |
+| `--yamnet-gate-percentile` | `10` | Ambient floor percentile (L90 = 10) |
+| `--yamnet-gain-smooth-chunks` | `5` | Gain smoothing window (chunks) |
 | `--calib-offset` | `120.0` | Relative dBA offset |
 | `--quiet` | off | Suppress JSON on stdout |
 | `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
-| `--rotate-hours` | `0` | New JSONL every N hours (`0` = off) |
 | `--no-spectrum` | off | Disable Branch C spectral analysis |
 | `--log-dir` | `logs` | Per-run log directory |
 
@@ -293,12 +322,11 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 
 - Start a run with:
   - **Hours** input (e.g. `8`, or `168` for a week)
-  - **Split files every (hours)** — `0` (default) = one JSONL for the
-    session; `24` = rotate to a new file every 24 hours without stopping
-    capture (`evening-2026-08-24T12-00Z.jsonl`, then `evening-2026-08-25T12-00Z.jsonl`, …)
   - **Output file name** prefix (prefilled from time of day: `morning` /
     `day` / `evening` / `night`); UTC start stamp is always appended
-  - Device ID, ALSA device, YAMNet gain
+  - Device ID and ALSA device
+  - **Gate sensitivity (dB above ambient)** — default `8`; L90 dynamic gate adapts
+    to urban background over a ~5-minute window (300 chunks)
 - Stop a running run
 - Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
 - Live log tail via Server-Sent Events (no page refresh needed)
@@ -427,7 +455,6 @@ Keep the page open until the countdown finishes and you see **Safe to unplug pow
 | `SITE_LABEL` | *(empty)* | Human label shown in web UI (set per Pi) |
 | `PUBLIC_URL` | *(empty)* | This Pi's public URL (set per Pi) |
 | `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device in UI |
-| `YAMNET_GAIN` | `15.0` | Default YAMNet gain in UI |
 | `SHUTDOWN_GRACE_SEC` | `60` | Countdown before poweroff from web UI |
 
 The `.env` file is gitignored — never commit it. Copy `.env.example` on each Pi.

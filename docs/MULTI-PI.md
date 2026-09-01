@@ -109,7 +109,6 @@ SITE_LABEL=Site B balcony
 PUBLIC_URL=https://noise-site-b.mattszaszko.com
 DEVICE_ID=
 ALSA_DEVICE=plughw:CARD=sndrpigooglevoi,DEV=0
-YAMNET_GAIN=15.0
 ```
 
 Leave `DEVICE_ID` empty to use the Pi hostname in JSONL events.
@@ -121,7 +120,6 @@ source .venv/bin/activate
 timeout 1m python main.py \
   --alsa-device plughw:CARD=sndrpigooglevoi,DEV=0 \
   --backend arecord \
-  --yamnet-gain 15 \
   --quiet \
   -o "runs/test-$(date -u +%Y-%m-%dT%H-%MZ).jsonl"
 wc -l runs/test-*.jsonl

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -28,6 +27,7 @@ from fastapi.responses import (
 from jinja2 import Environment, FileSystemLoader
 
 from core.host_identity import default_device_id, hostname
+from core.yamnet_preprocess import DEFAULT_GATE_SENSITIVITY_DB
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
@@ -42,7 +42,6 @@ VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
 # Fall back to system python if venv not present (useful for dev on PC)
 PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
-_OUTPUT_STAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z$")
 
 # ---------------------------------------------------------------------------
 # Config from .env
@@ -54,7 +53,6 @@ DEFAULT_DEVICE_ID = default_device_id()
 DEFAULT_ALSA_DEVICE = os.environ.get(
     "ALSA_DEVICE", "plughw:CARD=sndrpigooglevoi,DEV=0"
 )
-DEFAULT_YAMNET_GAIN = float(os.environ.get("YAMNET_GAIN", "15.0"))
 SITE_LABEL = os.environ.get("SITE_LABEL", "").strip()
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip()
 SHUTDOWN_GRACE_SEC = max(15, int(os.environ.get("SHUTDOWN_GRACE_SEC", "60")))
@@ -121,24 +119,6 @@ def _hours_to_timeout(hours: float) -> str:
         return f"{int(round(hours))}h"
     minutes = max(1, int(round(hours * 60)))
     return f"{minutes}m"
-
-
-def _output_prefix(path: Path) -> str:
-    stripped = _OUTPUT_STAMP_RE.sub("", path.stem)
-    return stripped or path.stem
-
-
-def _newest_matching_jsonl(cmd_output: Path) -> Path:
-    """Prefer the latest rotated file with the same name prefix."""
-    prefix = _output_prefix(cmd_output)
-    matches = [
-        p
-        for p in cmd_output.parent.glob(f"{prefix}-*.jsonl")
-        if p.is_file()
-    ]
-    if not matches:
-        return cmd_output
-    return max(matches, key=lambda p: p.stat().st_mtime)
 
 
 def _read_jsonl_event(path: Path, *, last: bool) -> dict | None:
@@ -226,20 +206,19 @@ def _get_status() -> dict:
     run_id = None
 
     if output_file:
-        first_path = Path(output_file)
-        latest_path = _newest_matching_jsonl(first_path)
-        last_event = _read_jsonl_event(latest_path, last=True)
+        output_path = Path(output_file)
+        last_event = _read_jsonl_event(output_path, last=True)
         if last_event:
             chunk_count = last_event.get("chunk_index", 0) + 1
             last_label = last_event.get("top_label")
             last_dba = last_event.get("dBA_spl")
             run_id = last_event.get("run_id")
-        first_event = _read_jsonl_event(first_path, last=False)
+        first_event = _read_jsonl_event(output_path, last=False)
         if first_event:
             started_at = first_event.get("created_at")
             if run_id is None:
                 run_id = first_event.get("run_id")
-        output_file = str(latest_path)
+        output_file = str(output_path)
 
     elapsed_s = None
     if started_at:
@@ -336,8 +315,8 @@ async def index(request: Request):
         runs=runs,
         default_device_id=DEFAULT_DEVICE_ID,
         default_alsa_device=DEFAULT_ALSA_DEVICE,
-        default_gain=DEFAULT_YAMNET_GAIN,
         default_run_name=_default_run_name(),
+        default_gate_sensitivity_db=DEFAULT_GATE_SENSITIVITY_DB,
         device_id=DEFAULT_DEVICE_ID,
         pi_hostname=hostname(),
         site_label=SITE_LABEL,
@@ -354,11 +333,10 @@ async def index(request: Request):
 async def api_start(
     request: Request,
     hours: float = Form(8.0),
-    rotate_hours: float = Form(0.0),
     run_name: str = Form("run"),
     device_id: str = Form(DEFAULT_DEVICE_ID),
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
-    yamnet_gain: float = Form(DEFAULT_YAMNET_GAIN),
+    gate_sensitivity_db: float = Form(DEFAULT_GATE_SENSITIVITY_DB),
 ):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
@@ -377,10 +355,9 @@ async def api_start(
         "--device-id", device_id,
         "--alsa-device", alsa_device,
         "--backend", "arecord",
-        "--yamnet-gain", str(yamnet_gain),
         "--quiet",
         "-o", str(output),
-        "--rotate-hours", str(max(0.0, rotate_hours)),
+        "--yamnet-gate-sensitivity-db", str(gate_sensitivity_db),
     ]
     full_cmd = ["timeout", duration] + cmd
 

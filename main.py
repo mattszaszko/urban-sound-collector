@@ -6,9 +6,7 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, TextIO
@@ -28,15 +26,21 @@ from core.events import build_noise_event, new_run_id
 from core.host_identity import default_device_id
 from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
 from core.pcm import int32_frames_to_float32
-from core.resampler import to_yamnet_waveform
 from core.spectrum import SpectrumEngine
+from core.yamnet_preprocess import (
+    DEFAULT_AMBIENT_PERCENTILE,
+    DEFAULT_AMBIENT_WINDOW_CHUNKS,
+    DEFAULT_GAIN_SMOOTH_CHUNKS,
+    DEFAULT_GATE_HYSTERESIS_DB,
+    DEFAULT_GATE_SENSITIVITY_DB,
+    DEFAULT_HPF_HZ,
+    DEFAULT_TARGET_DBFS,
+    YamnetPreprocessor,
+    silence_predictions,
+)
 
 DEFAULT_ALSA_DEVICE = "plughw:3,0"
-# Classifier-only boost for quiet distant sources (window traffic, etc.).
-# Does not affect loudness / dBA metrics.
-DEFAULT_YAMNET_GAIN = 15.0
 DEFAULT_LOG_DIR = Path("logs")
-_OUTPUT_STAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z$")
 
 logger = logging.getLogger("urban_sound_collector")
 
@@ -81,13 +85,63 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help=f"Path to yamnet.tflite (default: {DEFAULT_MODEL_PATH})",
     )
     parser.add_argument(
-        "--yamnet-gain",
+        "--yamnet-hpf-hz",
         type=float,
-        default=DEFAULT_YAMNET_GAIN,
+        default=DEFAULT_HPF_HZ,
+        help=f"YAMNet high-pass cutoff in Hz (default: {DEFAULT_HPF_HZ}).",
+    )
+    parser.add_argument(
+        "--yamnet-target-dbfs",
+        type=float,
+        default=DEFAULT_TARGET_DBFS,
         help=(
-            "Digital gain applied only to the YAMNet input waveform "
-            f"(default: {DEFAULT_YAMNET_GAIN}). Loudness metrics stay ungained. "
-            "Use 1.0 to disable."
+            "YAMNet RMS normalization target in dBFS "
+            f"(default: {DEFAULT_TARGET_DBFS})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gate-sensitivity-db",
+        type=float,
+        default=DEFAULT_GATE_SENSITIVITY_DB,
+        help=(
+            "Silence gate open offset above L90 ambient floor in dB "
+            f"(default: {DEFAULT_GATE_SENSITIVITY_DB})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gate-hysteresis-db",
+        type=float,
+        default=DEFAULT_GATE_HYSTERESIS_DB,
+        help=(
+            "Silence gate close offset below open threshold in dB "
+            f"(default: {DEFAULT_GATE_HYSTERESIS_DB})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gate-ambient-chunks",
+        type=int,
+        default=DEFAULT_AMBIENT_WINDOW_CHUNKS,
+        help=(
+            "Rolling window size for L90 ambient floor in chunks "
+            f"(default: {DEFAULT_AMBIENT_WINDOW_CHUNKS}, ~5 min)."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gate-percentile",
+        type=float,
+        default=DEFAULT_AMBIENT_PERCENTILE,
+        help=(
+            "Percentile for ambient noise floor (L90 = 10th percentile; "
+            f"default: {DEFAULT_AMBIENT_PERCENTILE})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gain-smooth-chunks",
+        type=int,
+        default=DEFAULT_GAIN_SMOOTH_CHUNKS,
+        help=(
+            "Chunks over which to smooth YAMNet normalization gain "
+            f"(default: {DEFAULT_GAIN_SMOOTH_CHUNKS})."
         ),
     )
     parser.add_argument(
@@ -98,15 +152,6 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help=(
             "Write JSONL events to this file (one JSON object per line). "
             "Each line is flushed and fsync'd so a crash keeps prior chunks."
-        ),
-    )
-    parser.add_argument(
-        "--rotate-hours",
-        type=float,
-        default=0.0,
-        help=(
-            "Start a new JSONL file every N hours without stopping capture "
-            "(default: 0 = off, one file for the whole run)."
         ),
     )
     parser.add_argument(
@@ -126,18 +171,6 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help="Disable Branch C spectral analysis (1/3-octave Z + A summaries).",
     )
     return parser.parse_args(argv)
-
-
-def utc_file_stamp() -> str:
-    """UTC stamp used in JSONL filenames (minute precision)."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%MZ")
-
-
-def output_name_prefix(path: Path) -> str:
-    """Strip a trailing UTC file stamp from a JSONL stem, if present."""
-    stem = path.stem
-    stripped = _OUTPUT_STAMP_RE.sub("", stem)
-    return stripped or stem
 
 
 def default_output_path(device_id: str, run_id: str) -> Path:
@@ -179,41 +212,20 @@ def setup_logging(log_path: Path) -> None:
     root.addHandler(stderr_handler)
 
 
-class RotatingJsonlWriter:
-    """Append JSONL with optional time-based file rotation (capture stays open)."""
+class JsonlWriter:
+    """Append JSONL with flush + fsync after each line."""
 
-    def __init__(self, first_path: Path, rotate_hours: float) -> None:
-        self.rotate_seconds = rotate_hours * 3600.0 if rotate_hours > 0 else 0.0
-        self.directory = first_path.parent
-        self.prefix = output_name_prefix(first_path)
-        self.path = first_path
-        self.directory.mkdir(parents=True, exist_ok=True)
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.handle: TextIO = self.path.open("a", encoding="utf-8")
-        self.opened_at = time.monotonic()
-
-    def maybe_rotate(self) -> None:
-        if self.rotate_seconds <= 0:
-            return
-        if time.monotonic() - self.opened_at < self.rotate_seconds:
-            return
-        closed = self.path
-        self._close_handle()
-        self.path = self.directory / f"{self.prefix}-{utc_file_stamp()}.jsonl"
-        self.handle = self.path.open("a", encoding="utf-8")
-        self.opened_at = time.monotonic()
-        logger.info(
-            "Rotated JSONL (closed %s, now writing %s)",
-            closed.resolve(),
-            self.path.resolve(),
-        )
 
     def write_line(self, line: str) -> None:
-        self.maybe_rotate()
         self.handle.write(line + "\n")
         self.handle.flush()
         os.fsync(self.handle.fileno())
 
-    def _close_handle(self) -> None:
+    def close(self) -> None:
         try:
             self.handle.flush()
             os.fsync(self.handle.fileno())
@@ -221,15 +233,12 @@ class RotatingJsonlWriter:
             pass
         self.handle.close()
 
-    def close(self) -> None:
-        self._close_handle()
-
 
 def emit_event(
     event: dict,
     *,
     stdout: bool,
-    writer: RotatingJsonlWriter | None,
+    writer: JsonlWriter | None,
 ) -> None:
     """Print one JSON event to stdout and/or append to a JSONL file.
 
@@ -251,16 +260,15 @@ def stream_live(
     alsa_device: str,
     backend: str,
     calib_offset: float,
-    yamnet_gain: float,
+    yamnet_preprocessor: YamnetPreprocessor,
     output_path: Path,
     print_stdout: bool,
-    rotate_hours: float = 0.0,
     enable_spectrum: bool = True,
 ) -> int:
     """Capture audio, run triple-branch analysis, emit JSONL events.
 
     Branch A: A-weighted loudness at 48 kHz (ungained).
-    Branch B: YAMNet TFLite at 16 kHz (optional classifier-only gain).
+    Branch B: YAMNet TFLite at 16 kHz (dynamic HPF + RMS normalize).
     Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
 
     Returns:
@@ -268,8 +276,9 @@ def stream_live(
     """
     chunk_index = 0
     events_written = 0
+    gated_chunks = 0
     capture: AlsAudioCapture | None = None
-    writer: RotatingJsonlWriter | None = None
+    writer: JsonlWriter | None = None
 
     loudness = LoudnessEngine(
         sample_rate=float(CAPTURE_SAMPLE_RATE),
@@ -282,7 +291,10 @@ def stream_live(
     logger.info(
         "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
         "rate=%s Hz, format=S32_LE, chunk_samples=%s, calib_offset=%s, "
-        "yamnet_gain=%s, model=%s, rotate_hours=%s, spectrum=%s",
+        "yamnet_hpf_hz=%s, yamnet_target_dbfs=%s, yamnet_gate_mode=dynamic_l90, "
+        "yamnet_gate_sensitivity_db=%s, yamnet_gate_hysteresis_db=%s, "
+        "yamnet_gate_ambient_chunks=%s, yamnet_gate_percentile=%s, "
+        "yamnet_gain_smooth_chunks=%s, model=%s, spectrum=%s",
         device_id,
         run_id,
         alsa_device,
@@ -290,24 +302,24 @@ def stream_live(
         CAPTURE_SAMPLE_RATE,
         CAPTURE_CHUNK_SAMPLES,
         calib_offset,
-        yamnet_gain,
+        yamnet_preprocessor.hpf_hz,
+        yamnet_preprocessor.target_dbfs,
+        yamnet_preprocessor.gate_sensitivity_db,
+        yamnet_preprocessor.gate_hysteresis_db,
+        yamnet_preprocessor.ambient_window_chunks,
+        yamnet_preprocessor.ambient_percentile,
+        yamnet_preprocessor.gain_smooth_chunks,
         MODEL_VERSION,
-        rotate_hours,
         enable_spectrum,
     )
     logger.info("Recording JSONL to: %s", output_path.resolve())
-    if rotate_hours > 0:
-        logger.info(
-            "JSONL rotation enabled: new file every %s hour(s).",
-            rotate_hours,
-        )
     if print_stdout:
         logger.info("Streaming JSON to stdout. Press Ctrl+C to stop.")
     else:
         logger.info("JSON stdout disabled (--quiet). Press Ctrl+C to stop.")
 
     try:
-        writer = RotatingJsonlWriter(output_path, rotate_hours)
+        writer = JsonlWriter(output_path)
         capture = AlsAudioCapture(
             alsa_device,
             CAPTURE_CHUNK_SAMPLES,
@@ -327,10 +339,14 @@ def stream_live(
                 spectrum_engine.analyse(pcm) if spectrum_engine is not None else None
             )
 
-            # Branch B — YAMNet classification @ 16 kHz (+ optional gain).
+            # Branch B — YAMNet @ 16 kHz (HPF, dynamic normalize, silence gate).
             try:
-                waveform = to_yamnet_waveform(pcm, gain=yamnet_gain)
-                predictions = classifier.predict(waveform)
+                prep = yamnet_preprocessor.prepare(pcm)
+                if prep.gated:
+                    predictions = silence_predictions()
+                    gated_chunks += 1
+                else:
+                    predictions = classifier.predict(prep.waveform_16k)
             except (ValueError, RuntimeError) as exc:
                 logger.warning("Chunk %s classification failed: %s", chunk_index, exc)
                 chunk_index += 1
@@ -345,6 +361,7 @@ def stream_live(
                 dba_spl=metrics["dBA_spl"],
                 predictions=predictions,
                 spectrum=spectrum,
+                yamnet_preprocess=prep.metadata,
             )
             emit_event(
                 result,
@@ -357,10 +374,13 @@ def stream_live(
             # Heartbeat every ~60 chunks (~1 min) so logs show progress.
             if events_written % 60 == 0:
                 logger.info(
-                    "Progress: %s event(s) written (chunk_index=%s, top=%s, file=%s)",
+                    "Progress: %s event(s) written (chunk_index=%s, top=%s, "
+                    "gated=%s/%s, file=%s)",
                     events_written,
                     chunk_index - 1,
                     result.get("top_label"),
+                    gated_chunks,
+                    events_written,
                     writer.path.name,
                 )
 
@@ -405,6 +425,16 @@ def main(argv: List[str] | None = None) -> int:
         return 1
 
     try:
+        yamnet_preprocessor = YamnetPreprocessor(
+            sample_rate=float(CAPTURE_SAMPLE_RATE),
+            hpf_hz=args.yamnet_hpf_hz,
+            target_dbfs=args.yamnet_target_dbfs,
+            gain_smooth_chunks=max(1, args.yamnet_gain_smooth_chunks),
+            ambient_window_chunks=max(1, args.yamnet_gate_ambient_chunks),
+            gate_sensitivity_db=args.yamnet_gate_sensitivity_db,
+            gate_hysteresis_db=args.yamnet_gate_hysteresis_db,
+            ambient_percentile=args.yamnet_gate_percentile,
+        )
         events_written = stream_live(
             classifier=classifier,
             device_id=args.device_id,
@@ -412,12 +442,14 @@ def main(argv: List[str] | None = None) -> int:
             alsa_device=args.alsa_device,
             backend=args.backend,
             calib_offset=args.calib_offset,
-            yamnet_gain=args.yamnet_gain,
+            yamnet_preprocessor=yamnet_preprocessor,
             output_path=output_path,
             print_stdout=print_stdout,
-            rotate_hours=args.rotate_hours,
             enable_spectrum=not args.no_spectrum,
         )
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 2
     except Exception as exc:  # noqa: BLE001 — surface device/open errors cleanly
         logger.exception("Fatal error: %s", exc)
         return 1

@@ -25,8 +25,8 @@ def to_yamnet_waveform(
     """Polyphase-resample a capture buffer to a fixed YAMNet-length waveform.
 
     For the default 48 kHz → 16 kHz path this is an exact 3:1 downsample.
-    Optional ``gain`` is applied only for classifier input (not loudness) and
-    hard-clipped to [-1, 1] after scaling.
+    Optional ``gain`` scales the resampled waveform for legacy callers; Branch B
+    uses dynamic normalization in ``core.yamnet_preprocess`` instead.
     """
     mono = np.asarray(pcm_48k, dtype=np.float32).reshape(-1)
     if mono.size == 0:
