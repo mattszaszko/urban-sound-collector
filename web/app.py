@@ -11,7 +11,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Iterator
 
 import psutil
 import uvicorn
@@ -26,6 +26,7 @@ from fastapi.responses import (
 )
 from jinja2 import Environment, FileSystemLoader
 
+from core.export_filter import export_filename, iter_filtered_jsonl
 from core.host_identity import default_device_id, hostname
 from core.yamnet_preprocess import DEFAULT_GATE_SENSITIVITY_DB
 
@@ -465,6 +466,14 @@ async def log_stream(request: Request):
 # File download
 # ---------------------------------------------------------------------------
 
+def _query_flag(request: Request, name: str, *, default: bool = True) -> bool:
+    """Parse a boolean query flag (1/true/yes/on vs 0/false/no/off)."""
+    raw = request.query_params.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @app.get("/runs/{filename}")
 async def download_run(filename: str, request: Request):
     if not is_authenticated(request):
@@ -475,7 +484,40 @@ async def download_run(filename: str, request: Request):
         return HTMLResponse("Not found", status_code=404)
     if not path.exists():
         return HTMLResponse("Not found", status_code=404)
-    return FileResponse(path, filename=filename, media_type="application/octet-stream")
+
+    include_spectrum = _query_flag(request, "spectrum", default=True)
+    include_yamnet_preprocess = _query_flag(
+        request, "yamnet_preprocess", default=True
+    )
+    download_name = export_filename(
+        filename,
+        include_spectrum=include_spectrum,
+        include_yamnet_preprocess=include_yamnet_preprocess,
+    )
+
+    # Full export: stream the original file unchanged.
+    if include_spectrum and include_yamnet_preprocess:
+        return FileResponse(
+            path,
+            filename=download_name,
+            media_type="application/octet-stream",
+        )
+
+    def _stream() -> Iterator[str]:
+        yield from iter_filtered_jsonl(
+            path,
+            include_spectrum=include_spectrum,
+            include_yamnet_preprocess=include_yamnet_preprocess,
+        )
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{download_name}"',
+    }
+    return StreamingResponse(
+        _stream(),
+        media_type="application/x-ndjson",
+        headers=headers,
+    )
 
 
 # ---------------------------------------------------------------------------

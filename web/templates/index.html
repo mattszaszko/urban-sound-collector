@@ -91,6 +91,15 @@
           border-radius:6px;color:var(--accent);text-decoration:none;
           font-size:.75rem;white-space:nowrap}
   .dl-btn:hover{border-color:var(--accent)}
+  .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
+                  padding:.85rem;background:var(--bg);border:1px solid var(--border);
+                  border-radius:8px}
+  .export-options .export-title{font-size:.72rem;font-weight:600;text-transform:uppercase;
+                                letter-spacing:.06em;color:var(--muted);margin-bottom:.15rem}
+  .check-row{display:flex;align-items:flex-start;gap:.55rem;font-size:.82rem;
+             color:var(--text);cursor:pointer;line-height:1.35}
+  .check-row input{width:auto;margin-top:.15rem;accent-color:var(--accent)}
+  .check-row span{color:var(--muted);font-size:.72rem;display:block;margin-top:.1rem}
 
   .empty{color:var(--muted);font-size:.85rem;text-align:center;padding:1rem 0}
   .error-banner{background:#7f1d1d;color:#fca5a5;border-radius:8px;
@@ -230,13 +239,31 @@
 <div class="card">
   <h2>Past runs</h2>
   {% if runs %}
+  <div class="export-options" id="export-options">
+    <div class="export-title">Download options</div>
+    <label class="check-row">
+      <input type="checkbox" id="dl-include-spectrum" checked>
+      <div>
+        Include spectrum
+        <span>Z + A 1/3-octave bands (~bulk of each line). Uncheck for smaller files.</span>
+      </div>
+    </label>
+    <label class="check-row">
+      <input type="checkbox" id="dl-include-preprocess" checked>
+      <div>
+        Include gate diagnostics
+        <span>yamnet_preprocess (L90 floor, thresholds, applied gain).</span>
+      </div>
+    </label>
+  </div>
     {% for run in runs %}
     <div class="run-row">
       <div>
         <div class="run-name">{{ run.name }}</div>
         <div class="run-meta">{{ run.mtime }} · {{ run.lines }} events · {{ run.size_kb }} KB</div>
       </div>
-      <a class="dl-btn" href="/runs/{{ run.name }}" download>↓ Download</a>
+      <a class="dl-btn" href="/runs/{{ run.name }}"
+         data-filename="{{ run.name }}" download>↓ Download</a>
     </div>
     {% endfor %}
   {% else %}
@@ -299,6 +326,26 @@ async function pollStatus() {
 }
 
 setInterval(pollStatus, 10000);
+
+// ── Download field options ────────────────────────────────────────
+const spectrumToggle = document.getElementById('dl-include-spectrum');
+const preprocessToggle = document.getElementById('dl-include-preprocess');
+
+function updateDownloadLinks() {
+  if (!spectrumToggle || !preprocessToggle) return;
+  const spectrum = spectrumToggle.checked ? '1' : '0';
+  const preprocess = preprocessToggle.checked ? '1' : '0';
+  document.querySelectorAll('.dl-btn[data-filename]').forEach((link) => {
+    const name = link.getAttribute('data-filename');
+    link.href = `/runs/${encodeURIComponent(name)}?spectrum=${spectrum}&yamnet_preprocess=${preprocess}`;
+  });
+}
+
+if (spectrumToggle && preprocessToggle) {
+  spectrumToggle.addEventListener('change', updateDownloadLinks);
+  preprocessToggle.addEventListener('change', updateDownloadLinks);
+  updateDownloadLinks();
+}
 
 // ── Shutdown ──────────────────────────────────────────────────────
 const shutdownBtn = document.getElementById('shutdown-btn');

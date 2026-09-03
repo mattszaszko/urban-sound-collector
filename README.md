@@ -330,7 +330,8 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 - Stop a running run
 - Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
 - Live log tail via Server-Sent Events (no page refresh needed)
-- Download past JSONL files directly in the browser
+- Download past JSONL files directly in the browser, with optional
+  **download granularity** (omit `spectrum` and/or `yamnet_preprocess` to shrink files)
 - Password-protected login (session cookie, 7-day expiry)
 - Optional **systemd** unit so the web UI auto-starts on Pi reboot
 - Named Cloudflare Tunnel for a stable public URL (e.g. `https://noise.mattszaszko.com`)
