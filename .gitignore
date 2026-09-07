@@ -16,6 +16,7 @@ logs/
 secrets/
 *.json
 !requirements.txt
+!config/*.json
 .env
 
 # OS / editor

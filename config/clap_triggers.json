@@ -1,0 +1,41 @@
+{
+  "cooldown_seconds": 5.0,
+  "carry_ttl_seconds": 30.0,
+  "dba_threshold": 55.0,
+  "trigger_labels": [
+    "Vehicle",
+    "Car",
+    "Truck",
+    "Bus",
+    "Motorcycle",
+    "Traffic noise, roadway noise",
+    "Emergency vehicle",
+    "Police car (siren)",
+    "Ambulance (siren)",
+    "Fire engine, fire truck (siren)",
+    "Siren",
+    "Vehicle horn, car horn, honking",
+    "Train",
+    "Aircraft",
+    "Power tool",
+    "Jackhammer",
+    "Chainsaw",
+    "Dog",
+    "Bark",
+    "Speech",
+    "Music",
+    "Explosion",
+    "Gunshot, gunfire",
+    "Fire alarm"
+  ],
+  "ambiguous_labels": [
+    "Noise",
+    "White noise",
+    "Pink noise",
+    "Static",
+    "Hum",
+    "Environmental noise",
+    "Sound effect",
+    "Field recording"
+  ]
+}

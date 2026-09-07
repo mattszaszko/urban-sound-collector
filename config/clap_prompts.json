@@ -1,0 +1,68 @@
+{
+  "prompts": [
+    {
+      "label": "ambulance_siren",
+      "prompt": "An ambulance emergency siren wailing outdoors on a city street"
+    },
+    {
+      "label": "police_siren",
+      "prompt": "A police car siren sounding while driving through urban streets"
+    },
+    {
+      "label": "car_passing",
+      "prompt": "A passenger car driving past on a nearby road"
+    },
+    {
+      "label": "heavy_truck",
+      "prompt": "A heavy diesel truck accelerating and rumbling past on a road"
+    },
+    {
+      "label": "motorcycle",
+      "prompt": "A motorcycle engine revving and passing by outdoors"
+    },
+    {
+      "label": "car_horn",
+      "prompt": "A car horn honking briefly in city traffic"
+    },
+    {
+      "label": "people_talking",
+      "prompt": "People talking nearby in an outdoor urban environment"
+    },
+    {
+      "label": "dog_barking",
+      "prompt": "A dog barking outdoors near a street or courtyard"
+    },
+    {
+      "label": "jackhammer",
+      "prompt": "A jackhammer or pneumatic drill breaking pavement on a construction site"
+    },
+    {
+      "label": "drilling",
+      "prompt": "Power drilling or construction drilling outdoors"
+    },
+    {
+      "label": "birdsong",
+      "prompt": "Birds singing outdoors in a neighborhood or park"
+    },
+    {
+      "label": "rain_on_street",
+      "prompt": "Rain falling on pavement and streets in a city"
+    },
+    {
+      "label": "wind_noise",
+      "prompt": "Strong wind noise blowing across an outdoor microphone"
+    },
+    {
+      "label": "music_from_car",
+      "prompt": "Loud music playing from a car stereo outdoors"
+    },
+    {
+      "label": "bicycle_bell",
+      "prompt": "A bicycle bell ringing on a path or street"
+    },
+    {
+      "label": "silence",
+      "prompt": "Quiet outdoor ambient environment with little activity"
+    }
+  ]
+}
