@@ -26,8 +26,10 @@ This refactor targets a **modular, Pi-native edge pipeline**:
 | Single RMS metric | **Dual branch**: loudness + classification |
 | WAV/file testing path | Live capture only |
 
-Classifier input uses **dynamic preprocessing** (HPF, L90 adaptive silence gate, RMS
-normalization with peak limiting, gain smoothing). Loudness and spectrum stay ungained.
+Classifier input uses **dynamic preprocessing** (HPF → L90 adaptive silence gate →
+RMS normalize with peak limiting / gain cap / smoothing). The gate runs **after**
+the high-pass so it measures the same band YAMNet will classify. Loudness and
+spectrum stay ungained.
 
 ---
 
@@ -50,7 +52,7 @@ INMP441 (I2S) → ALSA S32_LE @ 48 kHz
         │   (ungained; peaks, centroid, rolloff, L/M/H)    │
         │                                                  │
         └─ Branch B (16 kHz) ──────────────────────────────┤
-            HPF ~175 Hz → L90 silence gate → RMS normalize  │
+            HPF ~175 Hz (order 4) → L90 silence gate → RMS normalize │
             (smoothed gain, peak limiter) → resample     │
             YAMNet TFLite → top-3 predictions            │
                                                            ▼
@@ -181,17 +183,20 @@ One JSON object per line (~1 Hz):
     "raw_rms_dbfs": -42.1,
     "smoothed_rms_dbfs": -41.8,
     "hpf_hz": 175,
+    "hpf_order": 4,
     "target_dbfs": -23,
+    "max_gain_db": 24,
     "ambient_noise_floor_dbfs": -78.2,
     "ambient_sample_count": 145,
     "ambient_window_chunks": 300,
     "ambient_percentile": 10,
     "gate_sensitivity_db": 5,
-    "gate_hysteresis_db": 3,
     "gate_delta_db": 4,
+    "gate_delta_min_dbfs": -55,
     "gate_subwindow_ms": 200,
+    "gate_release_chunks": 2,
+    "below_open_streak": 0,
     "silence_gate_open_dbfs": -73.2,
-    "silence_gate_close_dbfs": -76.2,
     "gate_level_dbfs": -71.2,
     "delta_rms_dbfs": 5.1,
     "gate_open_reason": "delta",
@@ -206,13 +211,16 @@ One JSON object per line (~1 Hz):
 - **`dBA_spl`**: relative SPL (not absolute; no calibrated mic yet)
 - **`yamnet_preprocess`**: Branch B diagnostics (dynamic gain, L90 silence gate)
 - **`yamnet_preprocess.gated`**: `true` when YAMNet was skipped (`top_label` = `gated`)
-- **`yamnet_preprocess.gate_open`**: hysteresis state — `false` when gated
+- **`yamnet_preprocess.gate_open`**: gate state — `false` when gated
 - **`ambient_noise_floor_dbfs`**: L90 background floor (10th percentile of last ~5 min)
-- **`silence_gate_open_dbfs` / `silence_gate_close_dbfs`**: per-chunk dynamic thresholds (open = floor + 5 dB, close = open − 3 dB)
-- **`gate_level_dbfs`**: peak 200 ms sub-window RMS used for open/close and ΔRMS
+- **`silence_gate_open_dbfs`**: per-chunk open threshold (floor + sensitivity)
+- **`gate_release_chunks`**: close after this many consecutive chunks below open
+- **`gate_level_dbfs`**: peak 200 ms sub-window RMS (post-HPF) used for open/ΔRMS
 - **`delta_rms_dbfs`**: change in `gate_level_dbfs` vs previous chunk (`null` on first chunk)
 - **`gate_open_reason`**: `closed` | `l90` | `delta` | `hold`
-- **`gate_sensitivity_db` / `gate_hysteresis_db` / `gate_delta_db`**: absolute and derivative tuning
+- **`gate_delta_min_dbfs`**: absolute floor required for a ΔRMS force-open
+- **`max_gain_db`**: AGC boost ceiling (linear `applied_gain` ≤ 10^(max/20))
+- **`gate_sensitivity_db` / `gate_delta_db`**: absolute and derivative tuning
 - **`spectrum.z`**: unweighted (physical) frequency content — use for hum/rumble
 - **`spectrum.a`**: A-weighted bands — aligns with human perception / `dBA_spl`
 - **`spectrum.*.levels_db`**: relative band levels (not absolute per-band SPL)
@@ -297,13 +305,15 @@ tail -n 20 logs/*.log
 |---|---|---|
 | `--alsa-device` | `plughw:3,0` | ALSA capture device |
 | `--backend` | `auto` | `pyalsa`, `arecord`, or `auto` |
-| `--yamnet-hpf-hz` | `175` | Branch B high-pass cutoff (Hz) |
+| `--yamnet-hpf-hz` | `175` | Branch B high-pass cutoff (Hz; order 4) |
 | `--yamnet-target-dbfs` | `-23` | Branch B RMS normalization target |
+| `--yamnet-max-gain-db` | `24` | Max AGC boost (dB) |
 | `--yamnet-gate-sensitivity-db` | `5` | Open offset above L90 ambient floor (dB) |
-| `--yamnet-gate-hysteresis-db` | `3` | Close offset below open threshold (dB) |
+| `--yamnet-gate-release-chunks` | `2` | Close after N chunks below open |
 | `--yamnet-gate-ambient-chunks` | `300` | Rolling window for ambient floor (~5 min) |
 | `--yamnet-gate-percentile` | `10` | Ambient floor percentile (L90 = 10) |
 | `--yamnet-gate-delta-db` | `4` | Force open on ΔRMS jump (0 disables) |
+| `--yamnet-gate-delta-min-dbfs` | `-55` | Min `gate_level` for ΔRMS force-open |
 | `--yamnet-gate-subwindow-ms` | `200` | Peak RMS sub-window for gate level (0 = full chunk) |
 | `--yamnet-gain-smooth-chunks` | `5` | Gain smoothing window (chunks) |
 | `--calib-offset` | `120.0` | Relative dBA offset |
@@ -336,8 +346,9 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
     `day` / `evening` / `night`); UTC start stamp is always appended
   - Device ID and ALSA device
   - **Gate sensitivity (dB above ambient)** — default `5`; L90 dynamic gate adapts
-    to urban background over a ~5-minute window (300 chunks); ΔRMS and 200 ms
-    peak sub-windows catch short impulses
+    to urban background over a ~5-minute window (300 chunks); ΔRMS (with absolute
+    floor) and 200 ms peak sub-windows catch short impulses; gate closes after
+    2 chunks below open; AGC capped at +24 dB
 - Stop a running run
 - Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
 - Live log tail via Server-Sent Events (no page refresh needed)

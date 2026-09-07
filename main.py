@@ -32,10 +32,12 @@ from core.yamnet_preprocess import (
     DEFAULT_AMBIENT_WINDOW_CHUNKS,
     DEFAULT_GAIN_SMOOTH_CHUNKS,
     DEFAULT_GATE_DELTA_DB,
-    DEFAULT_GATE_HYSTERESIS_DB,
+    DEFAULT_GATE_DELTA_MIN_DBFS,
+    DEFAULT_GATE_RELEASE_CHUNKS,
     DEFAULT_GATE_SENSITIVITY_DB,
     DEFAULT_GATE_SUBWINDOW_MS,
     DEFAULT_HPF_HZ,
+    DEFAULT_MAX_GAIN_DB,
     DEFAULT_TARGET_DBFS,
     YamnetPreprocessor,
     silence_predictions,
@@ -111,15 +113,6 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--yamnet-gate-hysteresis-db",
-        type=float,
-        default=DEFAULT_GATE_HYSTERESIS_DB,
-        help=(
-            "Silence gate close offset below open threshold in dB "
-            f"(default: {DEFAULT_GATE_HYSTERESIS_DB})."
-        ),
-    )
-    parser.add_argument(
         "--yamnet-gate-ambient-chunks",
         type=int,
         default=DEFAULT_AMBIENT_WINDOW_CHUNKS,
@@ -147,12 +140,39 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--yamnet-gate-delta-min-dbfs",
+        type=float,
+        default=DEFAULT_GATE_DELTA_MIN_DBFS,
+        help=(
+            "Minimum gate_level_dbfs required for a ΔRMS force-open "
+            f"(default: {DEFAULT_GATE_DELTA_MIN_DBFS})."
+        ),
+    )
+    parser.add_argument(
         "--yamnet-gate-subwindow-ms",
         type=float,
         default=DEFAULT_GATE_SUBWINDOW_MS,
         help=(
             "Sub-window length in ms for peak RMS gate level "
             f"(default: {DEFAULT_GATE_SUBWINDOW_MS}; 0 = full-chunk RMS)."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gate-release-chunks",
+        type=int,
+        default=DEFAULT_GATE_RELEASE_CHUNKS,
+        help=(
+            "Close gate after this many consecutive chunks below open "
+            f"(default: {DEFAULT_GATE_RELEASE_CHUNKS})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-max-gain-db",
+        type=float,
+        default=DEFAULT_MAX_GAIN_DB,
+        help=(
+            "Maximum YAMNet AGC boost in dB "
+            f"(default: {DEFAULT_MAX_GAIN_DB})."
         ),
     )
     parser.add_argument(
@@ -311,11 +331,13 @@ def stream_live(
     logger.info(
         "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
         "rate=%s Hz, format=S32_LE, chunk_samples=%s, calib_offset=%s, "
-        "yamnet_hpf_hz=%s, yamnet_target_dbfs=%s, yamnet_gate_mode=dynamic_l90, "
-        "yamnet_gate_sensitivity_db=%s, yamnet_gate_hysteresis_db=%s, "
+        "yamnet_hpf_hz=%s, yamnet_hpf_order=%s, yamnet_target_dbfs=%s, "
+        "yamnet_max_gain_db=%s, yamnet_gate_mode=dynamic_l90, "
+        "yamnet_gate_sensitivity_db=%s, yamnet_gate_release_chunks=%s, "
         "yamnet_gate_ambient_chunks=%s, yamnet_gate_percentile=%s, "
-        "yamnet_gate_delta_db=%s, yamnet_gate_subwindow_ms=%s, "
-        "yamnet_gain_smooth_chunks=%s, model=%s, spectrum=%s",
+        "yamnet_gate_delta_db=%s, yamnet_gate_delta_min_dbfs=%s, "
+        "yamnet_gate_subwindow_ms=%s, yamnet_gain_smooth_chunks=%s, "
+        "model=%s, spectrum=%s",
         device_id,
         run_id,
         alsa_device,
@@ -324,12 +346,15 @@ def stream_live(
         CAPTURE_CHUNK_SAMPLES,
         calib_offset,
         yamnet_preprocessor.hpf_hz,
+        yamnet_preprocessor.hpf_order,
         yamnet_preprocessor.target_dbfs,
+        yamnet_preprocessor.max_gain_db,
         yamnet_preprocessor.gate_sensitivity_db,
-        yamnet_preprocessor.gate_hysteresis_db,
+        yamnet_preprocessor.gate_release_chunks,
         yamnet_preprocessor.ambient_window_chunks,
         yamnet_preprocessor.ambient_percentile,
         yamnet_preprocessor.gate_delta_db,
+        yamnet_preprocessor.gate_delta_min_dbfs,
         yamnet_preprocessor.gate_subwindow_ms,
         yamnet_preprocessor.gain_smooth_chunks,
         MODEL_VERSION,
@@ -452,13 +477,15 @@ def main(argv: List[str] | None = None) -> int:
             sample_rate=float(CAPTURE_SAMPLE_RATE),
             hpf_hz=args.yamnet_hpf_hz,
             target_dbfs=args.yamnet_target_dbfs,
+            max_gain_db=args.yamnet_max_gain_db,
             gain_smooth_chunks=max(1, args.yamnet_gain_smooth_chunks),
             ambient_window_chunks=max(1, args.yamnet_gate_ambient_chunks),
             gate_sensitivity_db=args.yamnet_gate_sensitivity_db,
-            gate_hysteresis_db=args.yamnet_gate_hysteresis_db,
             ambient_percentile=args.yamnet_gate_percentile,
             gate_delta_db=args.yamnet_gate_delta_db,
+            gate_delta_min_dbfs=args.yamnet_gate_delta_min_dbfs,
             gate_subwindow_ms=args.yamnet_gate_subwindow_ms,
+            gate_release_chunks=max(1, args.yamnet_gate_release_chunks),
         )
         events_written = stream_live(
             classifier=classifier,

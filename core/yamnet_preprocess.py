@@ -15,17 +15,20 @@ from core.pcm import chunk_stats
 from core.resampler import to_yamnet_waveform
 
 DEFAULT_HPF_HZ = 175.0
+DEFAULT_HPF_ORDER = 4
 DEFAULT_TARGET_DBFS = -23.0
 DEFAULT_PEAK_CEILING = 0.9
 DEFAULT_GAIN_SMOOTH_CHUNKS = 5
+DEFAULT_MAX_GAIN_DB = 24.0
 
 # L90 dynamic gate defaults (~5 min window @ 0.975 s/chunk).
 DEFAULT_AMBIENT_WINDOW_CHUNKS = 300
 DEFAULT_GATE_SENSITIVITY_DB = 5.0
-DEFAULT_GATE_HYSTERESIS_DB = 3.0
 DEFAULT_AMBIENT_PERCENTILE = 10.0  # L90: level exceeded 90% of the time
 DEFAULT_GATE_DELTA_DB = 4.0
+DEFAULT_GATE_DELTA_MIN_DBFS = -55.0
 DEFAULT_GATE_SUBWINDOW_MS = 200.0
+DEFAULT_GATE_RELEASE_CHUNKS = 2
 
 GATE_MODE_DYNAMIC_L90 = "dynamic_l90"
 
@@ -112,33 +115,32 @@ class YamnetPreprocessor:
 
     sample_rate: float = float(CAPTURE_SAMPLE_RATE)
     hpf_hz: float = DEFAULT_HPF_HZ
+    hpf_order: int = DEFAULT_HPF_ORDER
     target_dbfs: float = DEFAULT_TARGET_DBFS
     peak_ceiling: float = DEFAULT_PEAK_CEILING
     gain_smooth_chunks: int = DEFAULT_GAIN_SMOOTH_CHUNKS
+    max_gain_db: float = DEFAULT_MAX_GAIN_DB
     ambient_window_chunks: int = DEFAULT_AMBIENT_WINDOW_CHUNKS
     gate_sensitivity_db: float = DEFAULT_GATE_SENSITIVITY_DB
-    gate_hysteresis_db: float = DEFAULT_GATE_HYSTERESIS_DB
     ambient_percentile: float = DEFAULT_AMBIENT_PERCENTILE
     gate_delta_db: float = DEFAULT_GATE_DELTA_DB
+    gate_delta_min_dbfs: float = DEFAULT_GATE_DELTA_MIN_DBFS
     gate_subwindow_ms: float = DEFAULT_GATE_SUBWINDOW_MS
+    gate_release_chunks: int = DEFAULT_GATE_RELEASE_CHUNKS
     hpf_sos: np.ndarray = field(init=False)
     _hpf_zi: np.ndarray | None = field(init=False, default=None)
     _rms_history: Deque[float] = field(init=False)
     _ambient_rms_dbfs: Deque[float] = field(init=False)
     _gate_open: bool = field(init=False, default=False)
+    _below_open_streak: int = field(init=False, default=0)
     _prev_gate_level_dbfs: float | None = field(init=False, default=None)
     _last_ambient_floor_dbfs: float = field(init=False, default=0.0)
     _last_gate_open_dbfs: float = field(init=False, default=0.0)
-    _last_gate_close_dbfs: float = field(init=False, default=0.0)
     _last_gate_level_dbfs: float = field(init=False, default=0.0)
     _last_delta_rms_dbfs: float | None = field(init=False, default=None)
     _last_gate_open_reason: str = field(init=False, default=GATE_REASON_CLOSED)
 
     def __post_init__(self) -> None:
-        if self.gate_hysteresis_db <= 0:
-            raise ValueError(
-                f"gate_hysteresis_db must be positive (got {self.gate_hysteresis_db})"
-            )
         if self.ambient_window_chunks < 1:
             raise ValueError(
                 f"ambient_window_chunks must be >= 1 (got {self.ambient_window_chunks})"
@@ -151,9 +153,19 @@ class YamnetPreprocessor:
             raise ValueError(
                 f"gate_subwindow_ms must be >= 0 (got {self.gate_subwindow_ms})"
             )
+        if self.gate_release_chunks < 1:
+            raise ValueError(
+                f"gate_release_chunks must be >= 1 (got {self.gate_release_chunks})"
+            )
+        if self.max_gain_db < 0:
+            raise ValueError(f"max_gain_db must be >= 0 (got {self.max_gain_db})")
+        if self.hpf_order < 1:
+            raise ValueError(f"hpf_order must be >= 1 (got {self.hpf_order})")
         nyquist = self.sample_rate / 2.0
         cutoff = min(max(self.hpf_hz, 1.0), nyquist * 0.99)
-        self.hpf_sos = butter(2, cutoff, btype="high", fs=self.sample_rate, output="sos")
+        self.hpf_sos = butter(
+            self.hpf_order, cutoff, btype="high", fs=self.sample_rate, output="sos"
+        )
         self._rms_history = deque(maxlen=max(1, self.gain_smooth_chunks))
         self._ambient_rms_dbfs = deque(maxlen=self.ambient_window_chunks)
 
@@ -179,27 +191,27 @@ class YamnetPreprocessor:
             )
         )
 
-    def _compute_thresholds(
-        self, raw_rms_dbfs: float
-    ) -> tuple[float, float, float]:
-        """Return (ambient_floor, open_dbfs, close_dbfs) for the current chunk."""
+    def _compute_thresholds(self, raw_rms_dbfs: float) -> tuple[float, float]:
+        """Return (ambient_floor, open_dbfs) for the current chunk."""
         floor = self._ambient_noise_floor(raw_rms_dbfs)
         open_dbfs = floor + self.gate_sensitivity_db
-        close_dbfs = open_dbfs - self.gate_hysteresis_db
         self._last_ambient_floor_dbfs = floor
         self._last_gate_open_dbfs = open_dbfs
-        self._last_gate_close_dbfs = close_dbfs
-        return floor, open_dbfs, close_dbfs
+        return floor, open_dbfs
 
-    def _apply_absolute_gate(
-        self, gate_level_dbfs: float, open_dbfs: float, close_dbfs: float
-    ) -> str:
-        """Apply L90 hysteresis using gate_level; return provisional open reason."""
+    def _apply_gate(self, gate_level_dbfs: float, open_dbfs: float) -> str:
+        """Open on L90 threshold; close after release_chunks below open."""
         if self._gate_open:
-            if gate_level_dbfs < close_dbfs:
+            if gate_level_dbfs >= open_dbfs:
+                self._below_open_streak = 0
+                return GATE_REASON_HOLD
+            self._below_open_streak += 1
+            if self._below_open_streak >= self.gate_release_chunks:
                 self._gate_open = False
+                self._below_open_streak = 0
                 return GATE_REASON_CLOSED
             return GATE_REASON_HOLD
+        self._below_open_streak = 0
         if gate_level_dbfs >= open_dbfs:
             self._gate_open = True
             return GATE_REASON_L90
@@ -208,13 +220,16 @@ class YamnetPreprocessor:
     def _maybe_force_delta_open(
         self, gate_level_dbfs: float, delta_rms_dbfs: float | None
     ) -> str | None:
-        """Force gate open on ΔRMS jump; return reason if applied."""
+        """Force gate open on ΔRMS jump above an absolute floor; return reason."""
         if self._gate_open:
             return None
         if self.gate_delta_db <= 0 or delta_rms_dbfs is None:
             return None
+        if gate_level_dbfs < self.gate_delta_min_dbfs:
+            return None
         if delta_rms_dbfs >= self.gate_delta_db:
             self._gate_open = True
+            self._below_open_streak = 0
             return GATE_REASON_DELTA
         return None
 
@@ -222,17 +237,20 @@ class YamnetPreprocessor:
         meta: dict[str, Any] = {
             "gate_mode": GATE_MODE_DYNAMIC_L90,
             "hpf_hz": self.hpf_hz,
+            "hpf_order": self.hpf_order,
             "target_dbfs": self.target_dbfs,
+            "max_gain_db": self.max_gain_db,
             "ambient_noise_floor_dbfs": round(self._last_ambient_floor_dbfs, 1),
             "ambient_sample_count": len(self._ambient_rms_dbfs),
             "ambient_window_chunks": self.ambient_window_chunks,
             "ambient_percentile": self.ambient_percentile,
             "gate_sensitivity_db": self.gate_sensitivity_db,
-            "gate_hysteresis_db": self.gate_hysteresis_db,
             "gate_delta_db": self.gate_delta_db,
+            "gate_delta_min_dbfs": self.gate_delta_min_dbfs,
             "gate_subwindow_ms": self.gate_subwindow_ms,
+            "gate_release_chunks": self.gate_release_chunks,
+            "below_open_streak": self._below_open_streak,
             "silence_gate_open_dbfs": round(self._last_gate_open_dbfs, 1),
-            "silence_gate_close_dbfs": round(self._last_gate_close_dbfs, 1),
             "gate_level_dbfs": round(self._last_gate_level_dbfs, 1),
             "gate_open_reason": self._last_gate_open_reason,
             "gate_open": gate_open,
@@ -264,8 +282,8 @@ class YamnetPreprocessor:
             delta_rms_dbfs = gate_level_dbfs - self._prev_gate_level_dbfs
         self._last_delta_rms_dbfs = delta_rms_dbfs
 
-        _, open_dbfs, close_dbfs = self._compute_thresholds(raw_rms_dbfs)
-        reason = self._apply_absolute_gate(gate_level_dbfs, open_dbfs, close_dbfs)
+        _, open_dbfs = self._compute_thresholds(raw_rms_dbfs)
+        reason = self._apply_gate(gate_level_dbfs, open_dbfs)
         delta_reason = self._maybe_force_delta_open(gate_level_dbfs, delta_rms_dbfs)
         if delta_reason is not None:
             reason = delta_reason
@@ -300,6 +318,9 @@ class YamnetPreprocessor:
         if peak > _RMS_EPSILON:
             peak_limited_gain = self.peak_ceiling / peak
             gain = min(gain, peak_limited_gain)
+
+        max_gain_linear = dbfs_to_linear(self.max_gain_db)
+        gain = min(gain, max_gain_linear)
 
         normalized = np.clip(filtered * np.float32(gain), -1.0, 1.0)
         waveform_16k = to_yamnet_waveform(normalized, gain=1.0)

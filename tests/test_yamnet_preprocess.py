@@ -10,8 +10,12 @@ import numpy as np
 from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_SAMPLE_RATE
 from core.yamnet_preprocess import (
     DEFAULT_GATE_SENSITIVITY_DB,
+    DEFAULT_HPF_ORDER,
+    DEFAULT_MAX_GAIN_DB,
     GATE_MODE_DYNAMIC_L90,
+    GATE_REASON_CLOSED,
     GATE_REASON_DELTA,
+    GATE_REASON_HOLD,
     GATE_REASON_L90,
     YamnetPreprocessor,
     dbfs_to_linear,
@@ -27,10 +31,6 @@ def _sine_chunk(frequency_hz: float, amplitude: float = 0.05) -> np.ndarray:
     return (amplitude * np.sin(2.0 * math.pi * frequency_hz * t)).astype(np.float32)
 
 
-def _constant_chunk(amplitude: float) -> np.ndarray:
-    return np.full(CAPTURE_CHUNK_SAMPLES, amplitude, dtype=np.float32)
-
-
 def _sine_at_dbfs(frequency_hz: float, dbfs: float) -> np.ndarray:
     return _sine_chunk(frequency_hz, amplitude=dbfs_to_linear(dbfs))
 
@@ -42,12 +42,17 @@ class YamnetPreprocessorTests(unittest.TestCase):
             gain_smooth_chunks=5,
             ambient_window_chunks=300,
             gate_sensitivity_db=5.0,
-            gate_hysteresis_db=3.0,
             gate_delta_db=0.0,
         )
 
     def test_default_sensitivity_is_five(self) -> None:
         self.assertEqual(DEFAULT_GATE_SENSITIVITY_DB, 5.0)
+
+    def test_default_max_gain_and_hpf_order(self) -> None:
+        self.assertEqual(DEFAULT_MAX_GAIN_DB, 24.0)
+        self.assertEqual(DEFAULT_HPF_ORDER, 4)
+        self.assertEqual(self.engine.hpf_order, 4)
+        self.assertEqual(self.engine.max_gain_db, 24.0)
 
     def test_silence_predictions_shape(self) -> None:
         preds = silence_predictions()
@@ -63,6 +68,8 @@ class YamnetPreprocessorTests(unittest.TestCase):
         self.assertIsNone(result.waveform_16k)
         self.assertEqual(result.metadata["gated"], True)
         self.assertEqual(result.metadata["gate_mode"], GATE_MODE_DYNAMIC_L90)
+        self.assertNotIn("gate_hysteresis_db", result.metadata)
+        self.assertNotIn("silence_gate_close_dbfs", result.metadata)
 
     def test_one_khz_tone_produces_waveform(self) -> None:
         engine = YamnetPreprocessor(
@@ -90,12 +97,28 @@ class YamnetPreprocessorTests(unittest.TestCase):
         assert result.waveform_16k is not None
         self.assertLessEqual(float(np.max(np.abs(result.waveform_16k))), 0.9 + 1e-6)
 
+    def test_max_gain_db_caps_applied_gain(self) -> None:
+        engine = YamnetPreprocessor(
+            sample_rate=float(CAPTURE_SAMPLE_RATE),
+            gate_sensitivity_db=-100.0,
+            gate_delta_db=0.0,
+            max_gain_db=24.0,
+            gain_smooth_chunks=1,
+        )
+        quiet = _sine_at_dbfs(1000.0, -70.0)
+        result = engine.prepare(quiet)
+        self.assertFalse(result.gated)
+        max_linear = dbfs_to_linear(24.0)
+        self.assertLessEqual(result.applied_gain, max_linear + 1e-6)
+        self.assertAlmostEqual(result.applied_gain, max_linear, places=3)
+
     def test_smoothing_uses_history(self) -> None:
         engine = YamnetPreprocessor(
             sample_rate=float(CAPTURE_SAMPLE_RATE),
             gain_smooth_chunks=5,
             gate_sensitivity_db=-100.0,
             gate_delta_db=0.0,
+            max_gain_db=80.0,
         )
         loud = _sine_chunk(1000.0, amplitude=0.05)
         quiet = _sine_chunk(1000.0, amplitude=0.001)
@@ -124,11 +147,10 @@ class YamnetPreprocessorTests(unittest.TestCase):
             result.metadata["raw_rms_dbfs"],
         )
 
-    def test_dynamic_open_close_offsets(self) -> None:
+    def test_dynamic_open_offset(self) -> None:
         engine = YamnetPreprocessor(
             ambient_window_chunks=10,
             gate_sensitivity_db=5.0,
-            gate_hysteresis_db=3.0,
             gate_delta_db=0.0,
             gate_subwindow_ms=0.0,
         )
@@ -138,16 +160,14 @@ class YamnetPreprocessorTests(unittest.TestCase):
         result = engine.prepare(quiet)
         floor = result.metadata["ambient_noise_floor_dbfs"]
         open_dbfs = result.metadata["silence_gate_open_dbfs"]
-        close_dbfs = result.metadata["silence_gate_close_dbfs"]
         self.assertAlmostEqual(open_dbfs, floor + 5.0, places=1)
-        self.assertAlmostEqual(close_dbfs, open_dbfs - 3.0, places=1)
+        self.assertEqual(result.metadata["gate_release_chunks"], 2)
 
     def test_near_miss_floor_plus_six_opens(self) -> None:
         """Levels at floor+6 open with sensitivity 5 (would miss at +8)."""
         engine = YamnetPreprocessor(
             ambient_window_chunks=20,
             gate_sensitivity_db=5.0,
-            gate_hysteresis_db=3.0,
             gate_delta_db=0.0,
             gate_subwindow_ms=0.0,
         )
@@ -165,30 +185,48 @@ class YamnetPreprocessorTests(unittest.TestCase):
             floor + 5.0 - 0.5,
         )
 
-    def test_delta_opens_below_absolute_threshold(self) -> None:
+    def test_delta_opens_above_min_floor(self) -> None:
         engine = YamnetPreprocessor(
             ambient_window_chunks=20,
-            gate_sensitivity_db=12.0,
-            gate_hysteresis_db=3.0,
+            gate_sensitivity_db=30.0,
             gate_delta_db=4.0,
+            gate_delta_min_dbfs=-55.0,
             gate_subwindow_ms=0.0,
         )
-        quiet = _sine_at_dbfs(1000.0, -80.0)
+        # Amplitude targets: sine RMS is ~3 dB below peak amplitude.
+        quiet = _sine_at_dbfs(1000.0, -52.0)  # ~-55 dBFS RMS
         for _ in range(10):
             engine.prepare(quiet)
 
-        # Jump ~5 dB but stay well below floor+12 open threshold.
-        jump = _sine_at_dbfs(1000.0, -75.0)
+        jump = _sine_at_dbfs(1000.0, -47.0)  # ~-50 dBFS RMS, Δ≈5
         result = engine.prepare(jump)
         self.assertFalse(result.gated)
         self.assertEqual(result.metadata["gate_open_reason"], GATE_REASON_DELTA)
         self.assertGreaterEqual(result.metadata["delta_rms_dbfs"], 4.0)
+        self.assertGreaterEqual(result.metadata["gate_level_dbfs"], -55.0)
+
+    def test_delta_blocked_below_min_floor(self) -> None:
+        engine = YamnetPreprocessor(
+            ambient_window_chunks=20,
+            gate_sensitivity_db=30.0,
+            gate_delta_db=4.0,
+            gate_delta_min_dbfs=-55.0,
+            gate_subwindow_ms=0.0,
+        )
+        quiet = _sine_at_dbfs(1000.0, -72.0)
+        for _ in range(10):
+            engine.prepare(quiet)
+
+        jump = _sine_at_dbfs(1000.0, -67.0)  # +5 dB but still below -55
+        result = engine.prepare(jump)
+        self.assertTrue(result.gated)
+        self.assertEqual(result.metadata["gate_open_reason"], GATE_REASON_CLOSED)
+        self.assertLess(result.metadata["gate_level_dbfs"], -55.0)
 
     def test_subwindow_detects_diluted_impulse(self) -> None:
         engine = YamnetPreprocessor(
             ambient_window_chunks=20,
             gate_sensitivity_db=5.0,
-            gate_hysteresis_db=3.0,
             gate_delta_db=0.0,
             gate_subwindow_ms=200.0,
         )
@@ -203,7 +241,9 @@ class YamnetPreprocessorTests(unittest.TestCase):
         burst = _sine_chunk(1000.0, amplitude=dbfs_to_linear(-70.0))[:window]
         chunk[start : start + window] = burst
 
-        full_rms = linear_to_dbfs(float(np.sqrt(np.mean(np.square(chunk.astype(np.float64))))))
+        full_rms = linear_to_dbfs(
+            float(np.sqrt(np.mean(np.square(chunk.astype(np.float64)))))
+        )
         peak_sub = peak_subwindow_rms_dbfs(
             chunk,
             sample_rate=float(CAPTURE_SAMPLE_RATE),
@@ -215,7 +255,9 @@ class YamnetPreprocessorTests(unittest.TestCase):
         # Peak sub-window near -70 with floor ~-80 → about +10 dB → should open.
         self.assertFalse(result.gated)
         self.assertEqual(result.metadata["gate_subwindow_ms"], 200.0)
-        self.assertGreater(result.metadata["gate_level_dbfs"], result.metadata["raw_rms_dbfs"])
+        self.assertGreater(
+            result.metadata["gate_level_dbfs"], result.metadata["raw_rms_dbfs"]
+        )
 
     def test_l90_ignores_spikes(self) -> None:
         engine = YamnetPreprocessor(
@@ -258,43 +300,52 @@ class YamnetPreprocessorTests(unittest.TestCase):
             places=1,
         )
 
-    def test_hysteresis_with_dynamic_thresholds(self) -> None:
+    def test_release_closes_after_two_chunks_below_open(self) -> None:
         engine = YamnetPreprocessor(
             gate_sensitivity_db=5.0,
-            gate_hysteresis_db=3.0,
             gate_delta_db=0.0,
+            gate_release_chunks=2,
+            gate_subwindow_ms=0.0,
         )
         for dbfs in [-80.0] * 15:
             engine._ambient_rms_dbfs.append(dbfs)
 
-        floor, open_dbfs, close_dbfs = engine._compute_thresholds(-80.0)
-        self.assertAlmostEqual(open_dbfs, floor + 5.0, places=1)
-        self.assertAlmostEqual(close_dbfs, open_dbfs - 3.0, places=1)
+        _, open_dbfs = engine._compute_thresholds(-80.0)
+        self.assertAlmostEqual(open_dbfs, -75.0, places=1)
 
-        self.assertEqual(
-            engine._apply_absolute_gate(-78.0, open_dbfs, close_dbfs),
-            "closed",
-        )
+        self.assertEqual(engine._apply_gate(-78.0, open_dbfs), GATE_REASON_CLOSED)
 
         engine._gate_open = False
-        self.assertEqual(
-            engine._apply_absolute_gate(open_dbfs, open_dbfs, close_dbfs),
-            GATE_REASON_L90,
-        )
+        self.assertEqual(engine._apply_gate(open_dbfs, open_dbfs), GATE_REASON_L90)
 
-        self.assertEqual(
-            engine._apply_absolute_gate(close_dbfs + 0.5, open_dbfs, close_dbfs),
-            "hold",
-        )
+        # First chunk below open: still hold.
+        self.assertEqual(engine._apply_gate(open_dbfs - 1.0, open_dbfs), GATE_REASON_HOLD)
+        self.assertEqual(engine._below_open_streak, 1)
+        self.assertTrue(engine._gate_open)
 
+        # Second consecutive below open: close.
         self.assertEqual(
-            engine._apply_absolute_gate(close_dbfs - 0.5, open_dbfs, close_dbfs),
-            "closed",
+            engine._apply_gate(open_dbfs - 1.0, open_dbfs), GATE_REASON_CLOSED
         )
+        self.assertFalse(engine._gate_open)
+        self.assertEqual(engine._below_open_streak, 0)
 
-    def test_invalid_gate_hysteresis(self) -> None:
+    def test_release_resets_streak_when_above_open(self) -> None:
+        engine = YamnetPreprocessor(gate_release_chunks=2)
+        open_dbfs = -70.0
+        engine._gate_open = True
+        self.assertEqual(engine._apply_gate(-71.0, open_dbfs), GATE_REASON_HOLD)
+        self.assertEqual(engine._below_open_streak, 1)
+        self.assertEqual(engine._apply_gate(-69.0, open_dbfs), GATE_REASON_HOLD)
+        self.assertEqual(engine._below_open_streak, 0)
+
+    def test_invalid_gate_release_chunks(self) -> None:
         with self.assertRaises(ValueError):
-            YamnetPreprocessor(gate_hysteresis_db=0.0)
+            YamnetPreprocessor(gate_release_chunks=0)
+
+    def test_invalid_max_gain_db(self) -> None:
+        with self.assertRaises(ValueError):
+            YamnetPreprocessor(max_gain_db=-1.0)
 
     def test_invalid_ambient_window(self) -> None:
         with self.assertRaises(ValueError):
@@ -303,6 +354,26 @@ class YamnetPreprocessorTests(unittest.TestCase):
     def test_invalid_gate_delta(self) -> None:
         with self.assertRaises(ValueError):
             YamnetPreprocessor(gate_delta_db=-1.0)
+
+    def test_gate_uses_post_hpf_levels(self) -> None:
+        """Strong sub-cutoff tone is attenuated before gate RMS."""
+        engine = YamnetPreprocessor(
+            ambient_window_chunks=5,
+            gate_sensitivity_db=0.0,
+            gate_delta_db=0.0,
+            gate_subwindow_ms=0.0,
+            hpf_hz=175.0,
+            hpf_order=4,
+        )
+        # Bootstrap with mid-band quiet floor.
+        quiet = _sine_at_dbfs(1000.0, -80.0)
+        for _ in range(3):
+            engine.prepare(quiet)
+
+        rumble = _sine_at_dbfs(40.0, -40.0)
+        result = engine.prepare(rumble)
+        # Post-HPF level should be far below the raw -40 dBFS tone.
+        self.assertLess(result.metadata["raw_rms_dbfs"], -50.0)
 
 
 if __name__ == "__main__":
