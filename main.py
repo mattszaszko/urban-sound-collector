@@ -28,8 +28,10 @@ from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
 from core.pcm import int32_frames_to_float32
 from core.spectrum import SpectrumEngine
 from core.yamnet_preprocess import (
+    DEFAULT_AMBIENT_GAIN_MARGIN_DB,
     DEFAULT_AMBIENT_PERCENTILE,
     DEFAULT_AMBIENT_WINDOW_CHUNKS,
+    DEFAULT_EFFECTIVE_SLACK_DB,
     DEFAULT_GAIN_SMOOTH_CHUNKS,
     DEFAULT_GATE_DELTA_DB,
     DEFAULT_GATE_DELTA_MIN_DBFS,
@@ -37,7 +39,8 @@ from core.yamnet_preprocess import (
     DEFAULT_GATE_SENSITIVITY_DB,
     DEFAULT_GATE_SUBWINDOW_MS,
     DEFAULT_HPF_HZ,
-    DEFAULT_MAX_GAIN_DB,
+    DEFAULT_MAX_GAIN_CEILING_DB,
+    DEFAULT_MAX_GAIN_MIN_DB,
     DEFAULT_TARGET_DBFS,
     YamnetPreprocessor,
     silence_predictions,
@@ -167,12 +170,39 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--yamnet-max-gain-db",
+        "--yamnet-ambient-gain-margin-db",
         type=float,
-        default=DEFAULT_MAX_GAIN_DB,
+        default=DEFAULT_AMBIENT_GAIN_MARGIN_DB,
         help=(
-            "Maximum YAMNet AGC boost in dB "
-            f"(default: {DEFAULT_MAX_GAIN_DB})."
+            "L90-tied AGC: max_gain = target - floor - margin (dB) "
+            f"(default: {DEFAULT_AMBIENT_GAIN_MARGIN_DB})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-effective-slack-db",
+        type=float,
+        default=DEFAULT_EFFECTIVE_SLACK_DB,
+        help=(
+            "Require gate_level + max_gain >= target - slack before YAMNet "
+            f"(default: {DEFAULT_EFFECTIVE_SLACK_DB})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-max-gain-min-db",
+        type=float,
+        default=DEFAULT_MAX_GAIN_MIN_DB,
+        help=(
+            "Minimum dynamic AGC boost cap in dB "
+            f"(default: {DEFAULT_MAX_GAIN_MIN_DB})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-max-gain-ceiling-db",
+        type=float,
+        default=DEFAULT_MAX_GAIN_CEILING_DB,
+        help=(
+            "Hard ceiling on dynamic AGC boost in dB "
+            f"(default: {DEFAULT_MAX_GAIN_CEILING_DB})."
         ),
     )
     parser.add_argument(
@@ -332,7 +362,9 @@ def stream_live(
         "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
         "rate=%s Hz, format=S32_LE, chunk_samples=%s, calib_offset=%s, "
         "yamnet_hpf_hz=%s, yamnet_hpf_order=%s, yamnet_target_dbfs=%s, "
-        "yamnet_max_gain_db=%s, yamnet_gate_mode=dynamic_l90, "
+        "yamnet_ambient_gain_margin_db=%s, yamnet_effective_slack_db=%s, "
+        "yamnet_max_gain_min_db=%s, yamnet_max_gain_ceiling_db=%s, "
+        "yamnet_gate_mode=dynamic_l90, "
         "yamnet_gate_sensitivity_db=%s, yamnet_gate_release_chunks=%s, "
         "yamnet_gate_ambient_chunks=%s, yamnet_gate_percentile=%s, "
         "yamnet_gate_delta_db=%s, yamnet_gate_delta_min_dbfs=%s, "
@@ -348,7 +380,10 @@ def stream_live(
         yamnet_preprocessor.hpf_hz,
         yamnet_preprocessor.hpf_order,
         yamnet_preprocessor.target_dbfs,
-        yamnet_preprocessor.max_gain_db,
+        yamnet_preprocessor.ambient_gain_margin_db,
+        yamnet_preprocessor.effective_slack_db,
+        yamnet_preprocessor.max_gain_min_db,
+        yamnet_preprocessor.max_gain_ceiling_db,
         yamnet_preprocessor.gate_sensitivity_db,
         yamnet_preprocessor.gate_release_chunks,
         yamnet_preprocessor.ambient_window_chunks,
@@ -477,7 +512,10 @@ def main(argv: List[str] | None = None) -> int:
             sample_rate=float(CAPTURE_SAMPLE_RATE),
             hpf_hz=args.yamnet_hpf_hz,
             target_dbfs=args.yamnet_target_dbfs,
-            max_gain_db=args.yamnet_max_gain_db,
+            ambient_gain_margin_db=args.yamnet_ambient_gain_margin_db,
+            effective_slack_db=args.yamnet_effective_slack_db,
+            max_gain_min_db=args.yamnet_max_gain_min_db,
+            max_gain_ceiling_db=args.yamnet_max_gain_ceiling_db,
             gain_smooth_chunks=max(1, args.yamnet_gain_smooth_chunks),
             ambient_window_chunks=max(1, args.yamnet_gate_ambient_chunks),
             gate_sensitivity_db=args.yamnet_gate_sensitivity_db,

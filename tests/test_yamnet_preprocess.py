@@ -9,9 +9,13 @@ import numpy as np
 
 from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_SAMPLE_RATE
 from core.yamnet_preprocess import (
+    DEFAULT_AMBIENT_GAIN_MARGIN_DB,
+    DEFAULT_EFFECTIVE_SLACK_DB,
     DEFAULT_GATE_SENSITIVITY_DB,
     DEFAULT_HPF_ORDER,
-    DEFAULT_MAX_GAIN_DB,
+    DEFAULT_MAX_GAIN_CEILING_DB,
+    DEFAULT_MAX_GAIN_MIN_DB,
+    DEFAULT_TARGET_DBFS,
     GATE_MODE_DYNAMIC_L90,
     GATE_REASON_CLOSED,
     GATE_REASON_DELTA,
@@ -48,11 +52,13 @@ class YamnetPreprocessorTests(unittest.TestCase):
     def test_default_sensitivity_is_five(self) -> None:
         self.assertEqual(DEFAULT_GATE_SENSITIVITY_DB, 5.0)
 
-    def test_default_max_gain_and_hpf_order(self) -> None:
-        self.assertEqual(DEFAULT_MAX_GAIN_DB, 24.0)
+    def test_default_dynamic_gain_constants(self) -> None:
         self.assertEqual(DEFAULT_HPF_ORDER, 4)
+        self.assertEqual(DEFAULT_AMBIENT_GAIN_MARGIN_DB, 18.0)
+        self.assertEqual(DEFAULT_EFFECTIVE_SLACK_DB, 12.0)
+        self.assertEqual(DEFAULT_MAX_GAIN_MIN_DB, 12.0)
+        self.assertEqual(DEFAULT_MAX_GAIN_CEILING_DB, 40.0)
         self.assertEqual(self.engine.hpf_order, 4)
-        self.assertEqual(self.engine.max_gain_db, 24.0)
 
     def test_silence_predictions_shape(self) -> None:
         preds = silence_predictions()
@@ -69,13 +75,15 @@ class YamnetPreprocessorTests(unittest.TestCase):
         self.assertEqual(result.metadata["gated"], True)
         self.assertEqual(result.metadata["gate_mode"], GATE_MODE_DYNAMIC_L90)
         self.assertNotIn("gate_hysteresis_db", result.metadata)
-        self.assertNotIn("silence_gate_close_dbfs", result.metadata)
+        self.assertIn("effective_level_dbfs", result.metadata)
+        self.assertIn("ambient_gain_margin_db", result.metadata)
 
     def test_one_khz_tone_produces_waveform(self) -> None:
         engine = YamnetPreprocessor(
             sample_rate=float(CAPTURE_SAMPLE_RATE),
             gate_sensitivity_db=0.0,
             gate_delta_db=0.0,
+            effective_slack_db=80.0,  # disable warmth for this path test
         )
         result = engine.prepare(_sine_chunk(1000.0, amplitude=0.02))
         self.assertFalse(result.gated)
@@ -89,6 +97,7 @@ class YamnetPreprocessorTests(unittest.TestCase):
             sample_rate=float(CAPTURE_SAMPLE_RATE),
             gate_sensitivity_db=0.0,
             gate_delta_db=0.0,
+            effective_slack_db=80.0,
         )
         impulse = np.zeros(CAPTURE_CHUNK_SAMPLES, dtype=np.float32)
         impulse[1000] = 0.5
@@ -97,20 +106,50 @@ class YamnetPreprocessorTests(unittest.TestCase):
         assert result.waveform_16k is not None
         self.assertLessEqual(float(np.max(np.abs(result.waveform_16k))), 0.9 + 1e-6)
 
-    def test_max_gain_db_caps_applied_gain(self) -> None:
+    def test_max_gain_from_quiet_floor(self) -> None:
+        engine = YamnetPreprocessor()
+        # target - floor - margin = -23 - (-77) - 18 = 36
+        self.assertAlmostEqual(engine._effective_max_gain_db(-77.0), 36.0, places=1)
+
+    def test_max_gain_from_loud_floor(self) -> None:
+        engine = YamnetPreprocessor()
+        # target - floor - margin = -23 - (-60) - 18 = 19
+        self.assertAlmostEqual(engine._effective_max_gain_db(-60.0), 19.0, places=1)
+
+    def test_max_gain_hits_min_clamp(self) -> None:
+        engine = YamnetPreprocessor()
+        # -23 - (-50) - 18 = 9 → clamp to 12
+        self.assertAlmostEqual(
+            engine._effective_max_gain_db(-50.0), DEFAULT_MAX_GAIN_MIN_DB, places=1
+        )
+
+    def test_max_gain_hits_ceiling(self) -> None:
+        engine = YamnetPreprocessor()
+        # -23 - (-90) - 18 = 49 → clamp to 40
+        self.assertAlmostEqual(
+            engine._effective_max_gain_db(-90.0), DEFAULT_MAX_GAIN_CEILING_DB, places=1
+        )
+
+    def test_dynamic_cap_limits_applied_gain(self) -> None:
         engine = YamnetPreprocessor(
             sample_rate=float(CAPTURE_SAMPLE_RATE),
             gate_sensitivity_db=-100.0,
             gate_delta_db=0.0,
-            max_gain_db=24.0,
+            effective_slack_db=80.0,
             gain_smooth_chunks=1,
+            ambient_gain_margin_db=18.0,
+            max_gain_ceiling_db=24.0,
+            max_gain_min_db=12.0,
         )
+        # Seed a quiet floor so max_gain wants to be high, then ceiling=24 binds.
+        for _ in range(5):
+            engine._ambient_rms_dbfs.append(-77.0)
         quiet = _sine_at_dbfs(1000.0, -70.0)
         result = engine.prepare(quiet)
         self.assertFalse(result.gated)
         max_linear = dbfs_to_linear(24.0)
         self.assertLessEqual(result.applied_gain, max_linear + 1e-6)
-        self.assertAlmostEqual(result.applied_gain, max_linear, places=3)
+        self.assertAlmostEqual(result.metadata["max_gain_db"], 24.0, places=1)
 
     def test_smoothing_uses_history(self) -> None:
         engine = YamnetPreprocessor(
@@ -118,7 +157,9 @@ class YamnetPreprocessorTests(unittest.TestCase):
             gain_smooth_chunks=5,
             gate_sensitivity_db=-100.0,
             gate_delta_db=0.0,
-            max_gain_db=80.0,
+            effective_slack_db=80.0,
+            max_gain_ceiling_db=80.0,
+            ambient_gain_margin_db=0.0,
         )
         loud = _sine_chunk(1000.0, amplitude=0.05)
         quiet = _sine_chunk(1000.0, amplitude=0.001)
@@ -163,47 +204,77 @@ class YamnetPreprocessorTests(unittest.TestCase):
         self.assertAlmostEqual(open_dbfs, floor + 5.0, places=1)
         self.assertEqual(result.metadata["gate_release_chunks"], 2)
 
-    def test_near_miss_floor_plus_six_opens(self) -> None:
-        """Levels at floor+6 open with sensitivity 5 (would miss at +8)."""
+    def test_near_miss_floor_plus_six_opens_when_warm(self) -> None:
+        """Levels at floor+6 open with sensitivity 5 when warmth passes."""
         engine = YamnetPreprocessor(
             ambient_window_chunks=20,
             gate_sensitivity_db=5.0,
             gate_delta_db=0.0,
             gate_subwindow_ms=0.0,
+            ambient_gain_margin_db=18.0,
+            effective_slack_db=12.0,
         )
         quiet = _sine_at_dbfs(1000.0, -80.0)
         for _ in range(10):
             engine.prepare(quiet)
 
-        mid = _sine_at_dbfs(1000.0, -74.0)  # ~floor+6
+        # Amplitude ~3 dB above RMS: aim for gate_level around -71 (warm with max~36).
+        mid = _sine_at_dbfs(1000.0, -68.0)
         result = engine.prepare(mid)
         self.assertFalse(result.gated)
         self.assertEqual(result.metadata["gate_open_reason"], GATE_REASON_L90)
-        floor = result.metadata["ambient_noise_floor_dbfs"]
         self.assertGreaterEqual(
-            result.metadata["gate_level_dbfs"],
-            floor + 5.0 - 0.5,
+            result.metadata["effective_level_dbfs"],
+            DEFAULT_TARGET_DBFS - DEFAULT_EFFECTIVE_SLACK_DB - 0.5,
         )
 
-    def test_delta_opens_above_min_floor(self) -> None:
+    def test_warmth_blocks_barely_open_cold_level(self) -> None:
+        engine = YamnetPreprocessor(
+            ambient_window_chunks=20,
+            gate_sensitivity_db=5.0,
+            gate_delta_db=0.0,
+            gate_subwindow_ms=0.0,
+            ambient_gain_margin_db=18.0,
+            effective_slack_db=12.0,
+        )
+        for _ in range(15):
+            engine._ambient_rms_dbfs.append(-77.0)
+
+        # Open threshold = -72; max_gain = 36; warmth needs >= -71.
+        # gate_level -72 fails warmth (-72+36=-36 < -35).
+        reason = engine._apply_gate(-72.0, -72.0, warm=False)
+        self.assertEqual(reason, GATE_REASON_CLOSED)
+        self.assertFalse(engine._gate_open)
+
+    def test_delta_opens_above_min_floor_when_warm(self) -> None:
         engine = YamnetPreprocessor(
             ambient_window_chunks=20,
             gate_sensitivity_db=30.0,
             gate_delta_db=4.0,
             gate_delta_min_dbfs=-55.0,
             gate_subwindow_ms=0.0,
+            effective_slack_db=80.0,  # warmth always passes
         )
-        # Amplitude targets: sine RMS is ~3 dB below peak amplitude.
-        quiet = _sine_at_dbfs(1000.0, -52.0)  # ~-55 dBFS RMS
+        quiet = _sine_at_dbfs(1000.0, -52.0)
         for _ in range(10):
             engine.prepare(quiet)
 
-        jump = _sine_at_dbfs(1000.0, -47.0)  # ~-50 dBFS RMS, Δ≈5
+        jump = _sine_at_dbfs(1000.0, -47.0)
         result = engine.prepare(jump)
         self.assertFalse(result.gated)
         self.assertEqual(result.metadata["gate_open_reason"], GATE_REASON_DELTA)
         self.assertGreaterEqual(result.metadata["delta_rms_dbfs"], 4.0)
         self.assertGreaterEqual(result.metadata["gate_level_dbfs"], -55.0)
+
+    def test_delta_blocked_when_cold(self) -> None:
+        engine = YamnetPreprocessor(
+            gate_sensitivity_db=30.0,
+            gate_delta_db=4.0,
+            gate_delta_min_dbfs=-80.0,
+        )
+        reason = engine._maybe_force_delta_open(-70.0, 5.0, warm=False)
+        self.assertIsNone(reason)
+        self.assertFalse(engine._gate_open)
 
     def test_delta_blocked_below_min_floor(self) -> None:
         engine = YamnetPreprocessor(
@@ -212,12 +283,13 @@ class YamnetPreprocessorTests(unittest.TestCase):
             gate_delta_db=4.0,
             gate_delta_min_dbfs=-55.0,
             gate_subwindow_ms=0.0,
+            effective_slack_db=80.0,
         )
         quiet = _sine_at_dbfs(1000.0, -72.0)
         for _ in range(10):
             engine.prepare(quiet)
 
-        jump = _sine_at_dbfs(1000.0, -67.0)  # +5 dB but still below -55
+        jump = _sine_at_dbfs(1000.0, -67.0)
         result = engine.prepare(jump)
         self.assertTrue(result.gated)
         self.assertEqual(result.metadata["gate_open_reason"], GATE_REASON_CLOSED)
@@ -229,15 +301,15 @@ class YamnetPreprocessorTests(unittest.TestCase):
             gate_sensitivity_db=5.0,
             gate_delta_db=0.0,
             gate_subwindow_ms=200.0,
+            effective_slack_db=80.0,
         )
         quiet = _sine_at_dbfs(1000.0, -80.0)
         for _ in range(10):
             engine.prepare(quiet)
 
-        # Mostly quiet; one 200 ms loud burst diluted in full-chunk RMS.
         chunk = _sine_at_dbfs(1000.0, -80.0)
         window = int(round(CAPTURE_SAMPLE_RATE * 0.2))
-        start = window  # second 200 ms slot
+        start = window
         burst = _sine_chunk(1000.0, amplitude=dbfs_to_linear(-70.0))[:window]
         chunk[start : start + window] = burst
 
@@ -252,7 +324,6 @@ class YamnetPreprocessorTests(unittest.TestCase):
         self.assertLess(full_rms, peak_sub)
 
         result = engine.prepare(chunk)
-        # Peak sub-window near -70 with floor ~-80 → about +10 dB → should open.
         self.assertFalse(result.gated)
         self.assertEqual(result.metadata["gate_subwindow_ms"], 200.0)
         self.assertGreater(
@@ -265,6 +336,7 @@ class YamnetPreprocessorTests(unittest.TestCase):
             gate_sensitivity_db=5.0,
             gate_delta_db=0.0,
             gate_subwindow_ms=0.0,
+            effective_slack_db=80.0,
         )
         quiet = _sine_at_dbfs(1000.0, -80.0)
         loud = _sine_at_dbfs(1000.0, -50.0)
@@ -313,39 +385,59 @@ class YamnetPreprocessorTests(unittest.TestCase):
         _, open_dbfs = engine._compute_thresholds(-80.0)
         self.assertAlmostEqual(open_dbfs, -75.0, places=1)
 
-        self.assertEqual(engine._apply_gate(-78.0, open_dbfs), GATE_REASON_CLOSED)
+        self.assertEqual(
+            engine._apply_gate(-78.0, open_dbfs, warm=True), GATE_REASON_CLOSED
+        )
 
         engine._gate_open = False
-        self.assertEqual(engine._apply_gate(open_dbfs, open_dbfs), GATE_REASON_L90)
+        self.assertEqual(
+            engine._apply_gate(open_dbfs, open_dbfs, warm=True), GATE_REASON_L90
+        )
 
-        # First chunk below open: still hold.
-        self.assertEqual(engine._apply_gate(open_dbfs - 1.0, open_dbfs), GATE_REASON_HOLD)
+        self.assertEqual(
+            engine._apply_gate(open_dbfs - 1.0, open_dbfs, warm=True), GATE_REASON_HOLD
+        )
         self.assertEqual(engine._below_open_streak, 1)
         self.assertTrue(engine._gate_open)
 
-        # Second consecutive below open: close.
         self.assertEqual(
-            engine._apply_gate(open_dbfs - 1.0, open_dbfs), GATE_REASON_CLOSED
+            engine._apply_gate(open_dbfs - 1.0, open_dbfs, warm=True), GATE_REASON_CLOSED
         )
         self.assertFalse(engine._gate_open)
         self.assertEqual(engine._below_open_streak, 0)
 
-    def test_release_resets_streak_when_above_open(self) -> None:
+    def test_cold_hold_releases_like_below_open(self) -> None:
         engine = YamnetPreprocessor(gate_release_chunks=2)
         open_dbfs = -70.0
         engine._gate_open = True
-        self.assertEqual(engine._apply_gate(-71.0, open_dbfs), GATE_REASON_HOLD)
+        # Still above open level but cold → counts toward release.
+        self.assertEqual(
+            engine._apply_gate(-69.0, open_dbfs, warm=False), GATE_REASON_HOLD
+        )
         self.assertEqual(engine._below_open_streak, 1)
-        self.assertEqual(engine._apply_gate(-69.0, open_dbfs), GATE_REASON_HOLD)
+        self.assertEqual(
+            engine._apply_gate(-69.0, open_dbfs, warm=False), GATE_REASON_CLOSED
+        )
+        self.assertFalse(engine._gate_open)
+
+    def test_release_resets_streak_when_above_open_and_warm(self) -> None:
+        engine = YamnetPreprocessor(gate_release_chunks=2)
+        open_dbfs = -70.0
+        engine._gate_open = True
+        self.assertEqual(engine._apply_gate(-71.0, open_dbfs, warm=True), GATE_REASON_HOLD)
+        self.assertEqual(engine._below_open_streak, 1)
+        self.assertEqual(engine._apply_gate(-69.0, open_dbfs, warm=True), GATE_REASON_HOLD)
         self.assertEqual(engine._below_open_streak, 0)
 
     def test_invalid_gate_release_chunks(self) -> None:
         with self.assertRaises(ValueError):
             YamnetPreprocessor(gate_release_chunks=0)
 
-    def test_invalid_max_gain_db(self) -> None:
+    def test_invalid_max_gain_bounds(self) -> None:
         with self.assertRaises(ValueError):
-            YamnetPreprocessor(max_gain_db=-1.0)
+            YamnetPreprocessor(max_gain_min_db=-1.0)
+        with self.assertRaises(ValueError):
+            YamnetPreprocessor(max_gain_min_db=30.0, max_gain_ceiling_db=20.0)
 
     def test_invalid_ambient_window(self) -> None:
         with self.assertRaises(ValueError):
@@ -365,14 +457,12 @@ class YamnetPreprocessorTests(unittest.TestCase):
             hpf_hz=175.0,
             hpf_order=4,
         )
-        # Bootstrap with mid-band quiet floor.
         quiet = _sine_at_dbfs(1000.0, -80.0)
         for _ in range(3):
             engine.prepare(quiet)
 
         rumble = _sine_at_dbfs(40.0, -40.0)
         result = engine.prepare(rumble)
-        # Post-HPF level should be far below the raw -40 dBFS tone.
         self.assertLess(result.metadata["raw_rms_dbfs"], -50.0)
 
 

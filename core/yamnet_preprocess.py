@@ -19,7 +19,12 @@ DEFAULT_HPF_ORDER = 4
 DEFAULT_TARGET_DBFS = -23.0
 DEFAULT_PEAK_CEILING = 0.9
 DEFAULT_GAIN_SMOOTH_CHUNKS = 5
-DEFAULT_MAX_GAIN_DB = 24.0
+
+# L90-tied dynamic AGC cap: max_gain = clamp(target - floor - margin, min, ceiling).
+DEFAULT_AMBIENT_GAIN_MARGIN_DB = 18.0
+DEFAULT_EFFECTIVE_SLACK_DB = 12.0
+DEFAULT_MAX_GAIN_MIN_DB = 12.0
+DEFAULT_MAX_GAIN_CEILING_DB = 40.0
 
 # L90 dynamic gate defaults (~5 min window @ 0.975 s/chunk).
 DEFAULT_AMBIENT_WINDOW_CHUNKS = 300
@@ -97,6 +102,11 @@ def peak_subwindow_rms_dbfs(
     return linear_to_dbfs(peak_rms)
 
 
+def clamp(value: float, low: float, high: float) -> float:
+    """Clamp ``value`` into ``[low, high]``."""
+    return max(low, min(high, value))
+
+
 @dataclass
 class YamnetPrepResult:
     """Output of one Branch B preprocessing pass."""
@@ -119,7 +129,10 @@ class YamnetPreprocessor:
     target_dbfs: float = DEFAULT_TARGET_DBFS
     peak_ceiling: float = DEFAULT_PEAK_CEILING
     gain_smooth_chunks: int = DEFAULT_GAIN_SMOOTH_CHUNKS
-    max_gain_db: float = DEFAULT_MAX_GAIN_DB
+    ambient_gain_margin_db: float = DEFAULT_AMBIENT_GAIN_MARGIN_DB
+    effective_slack_db: float = DEFAULT_EFFECTIVE_SLACK_DB
+    max_gain_min_db: float = DEFAULT_MAX_GAIN_MIN_DB
+    max_gain_ceiling_db: float = DEFAULT_MAX_GAIN_CEILING_DB
     ambient_window_chunks: int = DEFAULT_AMBIENT_WINDOW_CHUNKS
     gate_sensitivity_db: float = DEFAULT_GATE_SENSITIVITY_DB
     ambient_percentile: float = DEFAULT_AMBIENT_PERCENTILE
@@ -139,6 +152,9 @@ class YamnetPreprocessor:
     _last_gate_level_dbfs: float = field(init=False, default=0.0)
     _last_delta_rms_dbfs: float | None = field(init=False, default=None)
     _last_gate_open_reason: str = field(init=False, default=GATE_REASON_CLOSED)
+    _last_max_gain_db: float = field(init=False, default=DEFAULT_MAX_GAIN_MIN_DB)
+    _last_effective_level_dbfs: float = field(init=False, default=0.0)
+    _last_min_effective_dbfs: float = field(init=False, default=0.0)
 
     def __post_init__(self) -> None:
         if self.ambient_window_chunks < 1:
@@ -157,8 +173,23 @@ class YamnetPreprocessor:
             raise ValueError(
                 f"gate_release_chunks must be >= 1 (got {self.gate_release_chunks})"
             )
-        if self.max_gain_db < 0:
-            raise ValueError(f"max_gain_db must be >= 0 (got {self.max_gain_db})")
+        if self.ambient_gain_margin_db < 0:
+            raise ValueError(
+                f"ambient_gain_margin_db must be >= 0 (got {self.ambient_gain_margin_db})"
+            )
+        if self.effective_slack_db < 0:
+            raise ValueError(
+                f"effective_slack_db must be >= 0 (got {self.effective_slack_db})"
+            )
+        if self.max_gain_min_db < 0:
+            raise ValueError(
+                f"max_gain_min_db must be >= 0 (got {self.max_gain_min_db})"
+            )
+        if self.max_gain_ceiling_db < self.max_gain_min_db:
+            raise ValueError(
+                "max_gain_ceiling_db must be >= max_gain_min_db "
+                f"(got ceiling={self.max_gain_ceiling_db}, min={self.max_gain_min_db})"
+            )
         if self.hpf_order < 1:
             raise ValueError(f"hpf_order must be >= 1 (got {self.hpf_order})")
         nyquist = self.sample_rate / 2.0
@@ -168,6 +199,7 @@ class YamnetPreprocessor:
         )
         self._rms_history = deque(maxlen=max(1, self.gain_smooth_chunks))
         self._ambient_rms_dbfs = deque(maxlen=self.ambient_window_chunks)
+        self._last_min_effective_dbfs = self.target_dbfs - self.effective_slack_db
 
     def _highpass(self, samples: np.ndarray) -> np.ndarray:
         mono = np.asarray(samples, dtype=np.float64).reshape(-1)
@@ -191,20 +223,44 @@ class YamnetPreprocessor:
             )
         )
 
+    def _effective_max_gain_db(self, ambient_floor_dbfs: float) -> float:
+        """L90-tied AGC cap: enough to lift floor to target-margin, clamped."""
+        raw = self.target_dbfs - ambient_floor_dbfs - self.ambient_gain_margin_db
+        return clamp(raw, self.max_gain_min_db, self.max_gain_ceiling_db)
+
+    def _min_effective_dbfs(self) -> float:
+        """Lowest post-cap level accepted for YAMNet (target - slack)."""
+        return self.target_dbfs - self.effective_slack_db
+
+    def _is_warm(self, gate_level_dbfs: float, max_gain_db: float) -> bool:
+        """True if gate_level + max_gain can reach the min effective level."""
+        effective = gate_level_dbfs + max_gain_db
+        self._last_effective_level_dbfs = effective
+        return effective >= self._min_effective_dbfs()
+
     def _compute_thresholds(self, raw_rms_dbfs: float) -> tuple[float, float]:
         """Return (ambient_floor, open_dbfs) for the current chunk."""
         floor = self._ambient_noise_floor(raw_rms_dbfs)
         open_dbfs = floor + self.gate_sensitivity_db
         self._last_ambient_floor_dbfs = floor
         self._last_gate_open_dbfs = open_dbfs
+        self._last_max_gain_db = self._effective_max_gain_db(floor)
+        self._last_min_effective_dbfs = self._min_effective_dbfs()
         return floor, open_dbfs
 
-    def _apply_gate(self, gate_level_dbfs: float, open_dbfs: float) -> str:
-        """Open on L90 threshold; close after release_chunks below open."""
+    def _apply_gate(
+        self,
+        gate_level_dbfs: float,
+        open_dbfs: float,
+        *,
+        warm: bool,
+    ) -> str:
+        """Open on L90 + warmth; close after release_chunks below open or cold."""
         if self._gate_open:
-            if gate_level_dbfs >= open_dbfs:
+            if gate_level_dbfs >= open_dbfs and warm:
                 self._below_open_streak = 0
                 return GATE_REASON_HOLD
+            # Below open, or too cold even at max gain: count toward release.
             self._below_open_streak += 1
             if self._below_open_streak >= self.gate_release_chunks:
                 self._gate_open = False
@@ -212,16 +268,22 @@ class YamnetPreprocessor:
                 return GATE_REASON_CLOSED
             return GATE_REASON_HOLD
         self._below_open_streak = 0
-        if gate_level_dbfs >= open_dbfs:
+        if gate_level_dbfs >= open_dbfs and warm:
             self._gate_open = True
             return GATE_REASON_L90
         return GATE_REASON_CLOSED
 
     def _maybe_force_delta_open(
-        self, gate_level_dbfs: float, delta_rms_dbfs: float | None
+        self,
+        gate_level_dbfs: float,
+        delta_rms_dbfs: float | None,
+        *,
+        warm: bool,
     ) -> str | None:
         """Force gate open on ΔRMS jump above an absolute floor; return reason."""
         if self._gate_open:
+            return None
+        if not warm:
             return None
         if self.gate_delta_db <= 0 or delta_rms_dbfs is None:
             return None
@@ -239,7 +301,13 @@ class YamnetPreprocessor:
             "hpf_hz": self.hpf_hz,
             "hpf_order": self.hpf_order,
             "target_dbfs": self.target_dbfs,
-            "max_gain_db": self.max_gain_db,
+            "max_gain_db": round(self._last_max_gain_db, 1),
+            "ambient_gain_margin_db": self.ambient_gain_margin_db,
+            "effective_slack_db": self.effective_slack_db,
+            "max_gain_min_db": self.max_gain_min_db,
+            "max_gain_ceiling_db": self.max_gain_ceiling_db,
+            "min_effective_dbfs": round(self._last_min_effective_dbfs, 1),
+            "effective_level_dbfs": round(self._last_effective_level_dbfs, 1),
             "ambient_noise_floor_dbfs": round(self._last_ambient_floor_dbfs, 1),
             "ambient_sample_count": len(self._ambient_rms_dbfs),
             "ambient_window_chunks": self.ambient_window_chunks,
@@ -283,8 +351,13 @@ class YamnetPreprocessor:
         self._last_delta_rms_dbfs = delta_rms_dbfs
 
         _, open_dbfs = self._compute_thresholds(raw_rms_dbfs)
-        reason = self._apply_gate(gate_level_dbfs, open_dbfs)
-        delta_reason = self._maybe_force_delta_open(gate_level_dbfs, delta_rms_dbfs)
+        max_gain_db = self._last_max_gain_db
+        warm = self._is_warm(gate_level_dbfs, max_gain_db)
+
+        reason = self._apply_gate(gate_level_dbfs, open_dbfs, warm=warm)
+        delta_reason = self._maybe_force_delta_open(
+            gate_level_dbfs, delta_rms_dbfs, warm=warm
+        )
         if delta_reason is not None:
             reason = delta_reason
         self._last_gate_open_reason = reason
@@ -319,7 +392,7 @@ class YamnetPreprocessor:
             peak_limited_gain = self.peak_ceiling / peak
             gain = min(gain, peak_limited_gain)
 
-        max_gain_linear = dbfs_to_linear(self.max_gain_db)
+        max_gain_linear = dbfs_to_linear(max_gain_db)
         gain = min(gain, max_gain_linear)
 
         normalized = np.clip(filtered * np.float32(gain), -1.0, 1.0)

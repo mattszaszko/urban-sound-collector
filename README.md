@@ -27,9 +27,9 @@ This refactor targets a **modular, Pi-native edge pipeline**:
 | WAV/file testing path | Live capture only |
 
 Classifier input uses **dynamic preprocessing** (HPF → L90 adaptive silence gate →
-RMS normalize with peak limiting / gain cap / smoothing). The gate runs **after**
-the high-pass so it measures the same band YAMNet will classify. Loudness and
-spectrum stay ungained.
+RMS normalize with peak limiting / L90-tied gain cap / smoothing). The gate and the
+AGC boost ceiling both track the same ~5-minute L90 ambient floor so behavior
+adapts across quiet and loud sites. Loudness and spectrum stay ungained.
 
 ---
 
@@ -185,7 +185,13 @@ One JSON object per line (~1 Hz):
     "hpf_hz": 175,
     "hpf_order": 4,
     "target_dbfs": -23,
-    "max_gain_db": 24,
+    "max_gain_db": 36.0,
+    "ambient_gain_margin_db": 18,
+    "effective_slack_db": 12,
+    "max_gain_min_db": 12,
+    "max_gain_ceiling_db": 40,
+    "min_effective_dbfs": -35.0,
+    "effective_level_dbfs": -35.2,
     "ambient_noise_floor_dbfs": -78.2,
     "ambient_sample_count": 145,
     "ambient_window_chunks": 300,
@@ -214,12 +220,13 @@ One JSON object per line (~1 Hz):
 - **`yamnet_preprocess.gate_open`**: gate state — `false` when gated
 - **`ambient_noise_floor_dbfs`**: L90 background floor (10th percentile of last ~5 min)
 - **`silence_gate_open_dbfs`**: per-chunk open threshold (floor + sensitivity)
-- **`gate_release_chunks`**: close after this many consecutive chunks below open
+- **`gate_release_chunks`**: close after this many consecutive chunks below open (or too cold)
 - **`gate_level_dbfs`**: peak 200 ms sub-window RMS (post-HPF) used for open/ΔRMS
 - **`delta_rms_dbfs`**: change in `gate_level_dbfs` vs previous chunk (`null` on first chunk)
 - **`gate_open_reason`**: `closed` | `l90` | `delta` | `hold`
 - **`gate_delta_min_dbfs`**: absolute floor required for a ΔRMS force-open
-- **`max_gain_db`**: AGC boost ceiling (linear `applied_gain` ≤ 10^(max/20))
+- **`max_gain_db`**: effective AGC ceiling this chunk — `clamp(target − floor − margin, min, ceiling)`
+- **`effective_level_dbfs`**: `gate_level + max_gain`; must be ≥ `min_effective_dbfs` (`target − slack`) to open
 - **`gate_sensitivity_db` / `gate_delta_db`**: absolute and derivative tuning
 - **`spectrum.z`**: unweighted (physical) frequency content — use for hum/rumble
 - **`spectrum.a`**: A-weighted bands — aligns with human perception / `dBA_spl`
@@ -307,9 +314,12 @@ tail -n 20 logs/*.log
 | `--backend` | `auto` | `pyalsa`, `arecord`, or `auto` |
 | `--yamnet-hpf-hz` | `175` | Branch B high-pass cutoff (Hz; order 4) |
 | `--yamnet-target-dbfs` | `-23` | Branch B RMS normalization target |
-| `--yamnet-max-gain-db` | `24` | Max AGC boost (dB) |
+| `--yamnet-ambient-gain-margin-db` | `18` | L90-tied cap: `max_gain = target − floor − margin` |
+| `--yamnet-effective-slack-db` | `12` | Require `gate_level + max_gain ≥ target − slack` |
+| `--yamnet-max-gain-min-db` | `12` | Floor of dynamic AGC cap |
+| `--yamnet-max-gain-ceiling-db` | `40` | Hard ceiling of dynamic AGC cap |
 | `--yamnet-gate-sensitivity-db` | `5` | Open offset above L90 ambient floor (dB) |
-| `--yamnet-gate-release-chunks` | `2` | Close after N chunks below open |
+| `--yamnet-gate-release-chunks` | `2` | Close after N chunks below open (or too cold) |
 | `--yamnet-gate-ambient-chunks` | `300` | Rolling window for ambient floor (~5 min) |
 | `--yamnet-gate-percentile` | `10` | Ambient floor percentile (L90 = 10) |
 | `--yamnet-gate-delta-db` | `4` | Force open on ΔRMS jump (0 disables) |
@@ -346,9 +356,11 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
     `day` / `evening` / `night`); UTC start stamp is always appended
   - Device ID and ALSA device
   - **Gate sensitivity (dB above ambient)** — default `5`; L90 dynamic gate adapts
-    to urban background over a ~5-minute window (300 chunks); ΔRMS (with absolute
-    floor) and 200 ms peak sub-windows catch short impulses; gate closes after
-    2 chunks below open; AGC capped at +24 dB
+    to urban background over a ~5-minute window (300 chunks); AGC max boost also
+    tracks that floor (`target − floor − 18 dB`, clamped 12–40); YAMNet only runs
+    when `gate_level + max_gain` can reach within 12 dB of target; ΔRMS (with
+    absolute floor) and 200 ms peak sub-windows catch short impulses; gate closes
+    after 2 chunks below open or too cold
 - Stop a running run
 - Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
 - Live log tail via Server-Sent Events (no page refresh needed)
