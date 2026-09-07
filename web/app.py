@@ -40,9 +40,20 @@ RUNS_DIR = REPO_ROOT / "runs"
 LOGS_DIR = REPO_ROOT / "logs"
 MAIN_PY = REPO_ROOT / "main.py"
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
+VENV_PYTHON_WIN = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 # Fall back to system python if venv not present (useful for dev on PC)
-PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
+if VENV_PYTHON.exists():
+    PYTHON = str(VENV_PYTHON)
+elif VENV_PYTHON_WIN.exists():
+    PYTHON = str(VENV_PYTHON_WIN)
+else:
+    PYTHON = sys.executable
+
+CONFIG_DIR = REPO_ROOT / "config"
+CLAP_PROMPTS_PATH = CONFIG_DIR / "clap_prompts.json"
+CLAP_TRIGGERS_PATH = CONFIG_DIR / "clap_triggers.json"
+YAMNET_CATALOG_PATH = CONFIG_DIR / "yamnet_label_catalog.json"
 
 # ---------------------------------------------------------------------------
 # Config from .env
@@ -338,6 +349,7 @@ async def api_start(
     device_id: str = Form(DEFAULT_DEVICE_ID),
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
     gate_sensitivity_db: float = Form(DEFAULT_GATE_SENSITIVITY_DB),
+    enable_clap: str = Form(""),
 ):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
@@ -360,6 +372,8 @@ async def api_start(
         "-o", str(output),
         "--yamnet-gate-sensitivity-db", str(gate_sensitivity_db),
     ]
+    if enable_clap in {"1", "true", "on", "yes"}:
+        cmd.append("--enable-clap")
     full_cmd = ["timeout", duration] + cmd
 
     subprocess.Popen(
@@ -517,6 +531,166 @@ async def download_run(filename: str, request: Request):
         _stream(),
         media_type="application/x-ndjson",
         headers=headers,
+    )
+
+
+# ---------------------------------------------------------------------------
+# CLAP config APIs (prompts + triggers + catalog)
+# ---------------------------------------------------------------------------
+
+def _require_auth_json(request: Request) -> JSONResponse | None:
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    return None
+
+
+@app.get("/api/clap/prompts")
+async def api_clap_prompts_get(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.clap_prompts import embedding_sync_status, load_prompt_pairs
+
+    pairs = load_prompt_pairs(CLAP_PROMPTS_PATH) if CLAP_PROMPTS_PATH.exists() else []
+    sync = embedding_sync_status(pairs, prompts_path=CLAP_PROMPTS_PATH)
+    return JSONResponse(
+        {
+            "ok": True,
+            "prompts": [{"label": p.label, "prompt": p.prompt} for p in pairs],
+            "sync": sync,
+        }
+    )
+
+
+@app.put("/api/clap/prompts")
+async def api_clap_prompts_put(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.clap_prompts import ClapPromptPair, save_prompt_pairs
+
+    body = await request.json()
+    raw = body.get("prompts", [])
+    try:
+        pairs = [
+            ClapPromptPair(label=str(x["label"]).strip(), prompt=str(x["prompt"]).strip())
+            for x in raw
+        ]
+        save_prompt_pairs(pairs, CLAP_PROMPTS_PATH)
+    except (KeyError, TypeError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "count": len(pairs)})
+
+
+@app.post("/api/clap/embeddings/rebuild")
+async def api_clap_embeddings_rebuild(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.classifier_clap import rebuild_text_embeddings
+
+    try:
+        result = rebuild_text_embeddings(prompts_path=CLAP_PROMPTS_PATH)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse(result)
+
+
+@app.get("/api/clap/triggers")
+async def api_clap_triggers_get(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.clap_trigger import load_trigger_config
+
+    cfg = load_trigger_config(CLAP_TRIGGERS_PATH)
+    return JSONResponse(
+        {
+            "ok": True,
+            "cooldown_seconds": cfg.cooldown_seconds,
+            "carry_ttl_seconds": cfg.carry_ttl_seconds,
+            "dba_threshold": cfg.dba_threshold,
+            "trigger_labels": cfg.trigger_labels,
+            "ambiguous_labels": cfg.ambiguous_labels,
+        }
+    )
+
+
+@app.put("/api/clap/triggers")
+async def api_clap_triggers_put(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.clap_trigger import ClapTriggerConfig, save_trigger_config
+
+    body = await request.json()
+    try:
+        cfg = ClapTriggerConfig(
+            cooldown_seconds=float(body.get("cooldown_seconds", 5)),
+            carry_ttl_seconds=float(body.get("carry_ttl_seconds", 30)),
+            dba_threshold=float(body.get("dba_threshold", 55)),
+            trigger_labels=list(body.get("trigger_labels", [])),
+            ambiguous_labels=list(body.get("ambiguous_labels", [])),
+        )
+        save_trigger_config(cfg, CLAP_TRIGGERS_PATH)
+    except (TypeError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/clap/yamnet-catalog")
+async def api_yamnet_catalog(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    if not YAMNET_CATALOG_PATH.exists():
+        return JSONResponse(
+            {"ok": False, "error": "catalog missing; run sync script"},
+            status_code=404,
+        )
+    data = json.loads(YAMNET_CATALOG_PATH.read_text(encoding="utf-8"))
+    return JSONResponse({"ok": True, **data})
+
+
+@app.post("/api/clap/yamnet-catalog/sync")
+async def api_yamnet_catalog_sync(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    script = REPO_ROOT / "scripts" / "sync_yamnet_label_catalog.py"
+    # Prefer local CSV (always available); upstream optional via query.
+    use_upstream = _query_flag(request, "upstream", default=False)
+    cmd = [PYTHON, str(script)]
+    if use_upstream:
+        cmd.append("--from-upstream")
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+    if completed.returncode != 0:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": completed.stderr.strip() or completed.stdout.strip() or "sync failed",
+            },
+            status_code=500,
+        )
+    data = json.loads(YAMNET_CATALOG_PATH.read_text(encoding="utf-8"))
+    return JSONResponse(
+        {
+            "ok": True,
+            "label_count": len(data.get("labels", [])),
+            "themes": data.get("themes", []),
+            "synced_at": data.get("synced_at"),
+            "log": completed.stdout.strip(),
+        }
     )
 
 

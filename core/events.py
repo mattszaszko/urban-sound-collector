@@ -33,11 +33,12 @@ def build_noise_event(
     predictions: List[Dict[str, Any]],
     spectrum: Optional[Dict[str, Any]] = None,
     yamnet_preprocess: Optional[Dict[str, Any]] = None,
+    clap: Optional[Dict[str, Any]] = None,
     model_name: str = MODEL_NAME,
     model_version: str = MODEL_VERSION,
     created_at: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build one JSONL event (loudness + optional spectrum + YAMNet)."""
+    """Build one JSONL event (loudness + optional spectrum + YAMNet + CLAP)."""
     top_label = predictions[0]["label"] if predictions else "n/a"
     top_confidence = float(predictions[0]["confidence"]) if predictions else 0.0
 
@@ -59,4 +60,6 @@ def build_noise_event(
         event["spectrum"] = spectrum
     if yamnet_preprocess is not None:
         event["yamnet_preprocess"] = yamnet_preprocess
+    if clap is not None:
+        event.update(clap)
     return event

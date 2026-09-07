@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, TextIO
@@ -16,11 +17,22 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_SAMPLE_RATE
+from core.audio_ring_buffer import AudioRingBuffer
 from core.capture_alsa import AlsAudioCapture
+from core.classifier_clap import ClapClassifier
 from core.classifier_tflite import (
     DEFAULT_MODEL_PATH,
     MODEL_VERSION,
     YamnetTFLiteClassifier,
+)
+from core.clap_trigger import (
+    CLAP_STATUS_CARRIED,
+    CLAP_STATUS_GATED,
+    CLAP_STATUS_SKIPPED,
+    CLAP_STATUS_TRIGGERED,
+    ClapTriggerState,
+    evaluate_trigger,
+    load_trigger_config,
 )
 from core.events import build_noise_event, new_run_id
 from core.host_identity import default_device_id
@@ -240,6 +252,14 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Disable Branch C spectral analysis (1/3-octave Z + A summaries).",
     )
+    parser.add_argument(
+        "--enable-clap",
+        action="store_true",
+        help=(
+            "Enable event-driven CLAP zero-shot on a 10 s ungained ring buffer "
+            "(requires rebuilt prompt embeddings)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -334,12 +354,15 @@ def stream_live(
     output_path: Path,
     print_stdout: bool,
     enable_spectrum: bool = True,
+    enable_clap: bool = False,
+    clap_classifier: ClapClassifier | None = None,
 ) -> int:
     """Capture audio, run triple-branch analysis, emit JSONL events.
 
     Branch A: A-weighted loudness at 48 kHz (ungained).
     Branch B: YAMNet TFLite at 16 kHz (dynamic HPF + RMS normalize).
     Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
+    Optional CLAP: event-driven zero-shot on a 10 s ungained ring buffer.
 
     Returns:
         Number of events written.
@@ -347,6 +370,8 @@ def stream_live(
     chunk_index = 0
     events_written = 0
     gated_chunks = 0
+    clap_triggers = 0
+    clap_skips = 0
     capture: AlsAudioCapture | None = None
     writer: JsonlWriter | None = None
 
@@ -357,6 +382,23 @@ def stream_live(
     spectrum_engine: SpectrumEngine | None = None
     if enable_spectrum:
         spectrum_engine = SpectrumEngine(sample_rate=float(CAPTURE_SAMPLE_RATE))
+
+    clap_ring: AudioRingBuffer | None = None
+    clap_state = ClapTriggerState()
+    clap_config = None
+    if enable_clap:
+        if clap_classifier is None:
+            raise ValueError("enable_clap requires a ClapClassifier instance")
+        clap_ring = AudioRingBuffer(maxlen_samples=int(CAPTURE_SAMPLE_RATE * 10))
+        clap_config = load_trigger_config()
+        logger.info(
+            "CLAP enabled: cooldown=%ss dba_threshold=%s trigger_labels=%s "
+            "ambiguous_labels=%s",
+            clap_config.cooldown_seconds,
+            clap_config.dba_threshold,
+            len(clap_config.trigger_labels),
+            len(clap_config.ambiguous_labels),
+        )
 
     logger.info(
         "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
@@ -422,6 +464,9 @@ def stream_live(
                 spectrum_engine.analyse(pcm) if spectrum_engine is not None else None
             )
 
+            if clap_ring is not None:
+                clap_ring.append(pcm)
+
             # Branch B — YAMNet @ 16 kHz (HPF, dynamic normalize, silence gate).
             try:
                 prep = yamnet_preprocessor.prepare(pcm)
@@ -435,6 +480,87 @@ def stream_live(
                 chunk_index += 1
                 continue
 
+            clap_payload = None
+            if enable_clap and clap_classifier is not None and clap_config is not None:
+                top_label = predictions[0]["label"] if predictions else "n/a"
+                should_run, status, reason = evaluate_trigger(
+                    gated=bool(prep.gated),
+                    top_label=str(top_label),
+                    dba_spl=float(metrics["dBA_spl"]),
+                    buffer_ready=bool(clap_ring and clap_ring.full),
+                    config=clap_config,
+                    state=clap_state,
+                )
+                if should_run and clap_ring is not None:
+                    try:
+                        clap_result = clap_classifier.predict(clap_ring.snapshot())
+                        now = time.monotonic()
+                        clap_state.last_trigger_monotonic = now
+                        clap_state.last_result_monotonic = now
+                        clap_payload = {
+                            "clap_status": CLAP_STATUS_TRIGGERED,
+                            "clap_predictions": clap_result.predictions,
+                            "clap_top_label": clap_result.top_label,
+                            "clap_top_confidence": clap_result.top_confidence,
+                            "clap_model_name": clap_result.model_name,
+                            "clap_model_version": clap_result.model_version,
+                            "clap_meta": {
+                                "buffer_seconds": round(
+                                    clap_ring.seconds(float(CAPTURE_SAMPLE_RATE)), 2
+                                ),
+                                "trigger_reason": reason,
+                                "inference_ms": clap_result.inference_ms,
+                                "cooldown_seconds": clap_config.cooldown_seconds,
+                            },
+                        }
+                        clap_state.last_result = {
+                            k: clap_payload[k]
+                            for k in (
+                                "clap_predictions",
+                                "clap_top_label",
+                                "clap_top_confidence",
+                                "clap_model_name",
+                                "clap_model_version",
+                            )
+                        }
+                        clap_triggers += 1
+                        logger.info(
+                            "CLAP triggered reason=%s top=%s ms=%s",
+                            reason,
+                            clap_result.top_label,
+                            clap_result.inference_ms,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("CLAP inference failed: %s", exc)
+                        clap_payload = {
+                            "clap_status": CLAP_STATUS_SKIPPED,
+                            "clap_predictions": [],
+                            "clap_top_label": None,
+                            "clap_top_confidence": None,
+                            "clap_meta": {"trigger_reason": f"error:{exc}"},
+                        }
+                        clap_skips += 1
+                elif status == CLAP_STATUS_CARRIED and clap_state.last_result:
+                    clap_payload = {
+                        **clap_state.last_result,
+                        "clap_status": CLAP_STATUS_CARRIED,
+                        "clap_meta": {
+                            "trigger_reason": reason,
+                            "inference_ms": 0,
+                            "cooldown_seconds": clap_config.cooldown_seconds,
+                        },
+                    }
+                else:
+                    clap_payload = {
+                        "clap_status": status,
+                        "clap_predictions": [],
+                        "clap_top_label": None,
+                        "clap_top_confidence": None,
+                        "clap_meta": {"trigger_reason": reason},
+                    }
+                    if status in {CLAP_STATUS_SKIPPED, CLAP_STATUS_GATED}:
+                        clap_skips += 1
+
             result = build_noise_event(
                 device_id=device_id,
                 chunk_index=chunk_index,
@@ -445,6 +571,7 @@ def stream_live(
                 predictions=predictions,
                 spectrum=spectrum,
                 yamnet_preprocess=prep.metadata,
+                clap=clap_payload,
             )
             emit_event(
                 result,
@@ -458,12 +585,14 @@ def stream_live(
             if events_written % 60 == 0:
                 logger.info(
                     "Progress: %s event(s) written (chunk_index=%s, top=%s, "
-                    "gated=%s/%s, file=%s)",
+                    "gated=%s/%s, clap_triggers=%s, clap_skips=%s, file=%s)",
                     events_written,
                     chunk_index - 1,
                     result.get("top_label"),
                     gated_chunks,
                     events_written,
+                    clap_triggers,
+                    clap_skips,
                     writer.path.name,
                 )
 
@@ -525,6 +654,14 @@ def main(argv: List[str] | None = None) -> int:
             gate_subwindow_ms=args.yamnet_gate_subwindow_ms,
             gate_release_chunks=max(1, args.yamnet_gate_release_chunks),
         )
+        clap_classifier = None
+        if args.enable_clap:
+            try:
+                clap_classifier = ClapClassifier()
+            except (FileNotFoundError, RuntimeError, ValueError) as exc:
+                logger.error("CLAP unavailable: %s", exc)
+                return 1
+
         events_written = stream_live(
             classifier=classifier,
             device_id=args.device_id,
@@ -536,6 +673,8 @@ def main(argv: List[str] | None = None) -> int:
             output_path=output_path,
             print_stdout=print_stdout,
             enable_spectrum=not args.no_spectrum,
+            enable_clap=bool(args.enable_clap),
+            clap_classifier=clap_classifier,
         )
     except ValueError as exc:
         logger.error("%s", exc)

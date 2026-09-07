@@ -14,13 +14,34 @@
   body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
        min-height:100vh;padding:1rem}
   header{display:flex;align-items:center;justify-content:space-between;
-         margin-bottom:1.5rem}
+         margin-bottom:1rem}
   header h1{font-size:1.1rem;font-weight:700;color:var(--accent)}
   .device-meta{font-size:.72rem;color:var(--muted);margin-top:.25rem;line-height:1.4}
   .device-meta a{color:var(--accent);text-decoration:none}
   .device-meta a:hover{text-decoration:underline}
   header a{color:var(--muted);font-size:.85rem;text-decoration:none}
   header a:hover{color:var(--text)}
+  .header-actions{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
+  .btn-shutdown-sm{width:auto;margin:0;padding:.35rem .65rem;border-radius:6px;
+                   font-size:.75rem;font-weight:600;background:#450a0a;color:#fecaca;
+                   border:1px solid #b91c1c;cursor:pointer;white-space:nowrap;
+                   display:inline-flex;align-items:center;gap:.3rem}
+  .btn-shutdown-sm:hover{background:#7f1d1d}
+  .btn-shutdown-sm:disabled,.btn-shutdown-sm.btn-disabled{
+    background:var(--border);color:var(--muted);border-color:var(--border);
+    cursor:not-allowed;opacity:.7}
+
+  /* Tabs */
+  .tab-bar{display:flex;gap:.35rem;margin-bottom:1.25rem;border-bottom:1px solid var(--border);
+           padding-bottom:.35rem}
+  .tab-btn{background:transparent;border:1px solid transparent;color:var(--muted);
+           padding:.5rem .9rem;border-radius:8px 8px 0 0;font-size:.85rem;font-weight:600;
+           cursor:pointer}
+  .tab-btn:hover{color:var(--text);background:rgba(30,41,59,.6)}
+  .tab-btn.active{color:var(--text);border-color:var(--border);border-bottom-color:var(--surface);
+                  background:var(--surface)}
+  .tab-panel{display:none}
+  .tab-panel.active{display:block}
 
   .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
         padding:1.25rem;margin-bottom:1rem}
@@ -33,6 +54,8 @@
          border-radius:999px;font-size:.8rem;font-weight:600}
   .badge.running{background:#14532d;color:var(--green)}
   .badge.idle{background:#1e293b;border:1px solid var(--border);color:var(--muted)}
+  .badge.ok{background:#14532d;color:var(--green)}
+  .badge.warn{background:#713f12;color:var(--yellow)}
   .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
   .running .dot{animation:pulse 1.4s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -44,9 +67,10 @@
 
   /* Forms */
   label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:.25rem;margin-top:.75rem}
-  input,select{width:100%;padding:.6rem .75rem;border:1px solid var(--border);
+  input,select,textarea{width:100%;padding:.6rem .75rem;border:1px solid var(--border);
                border-radius:8px;background:var(--bg);color:var(--text);font-size:.95rem}
-  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  textarea{min-height:2.6rem;resize:vertical;font-family:inherit;line-height:1.4}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;
        padding:.65rem 1.25rem;border:none;border-radius:8px;font-size:.95rem;
        font-weight:600;cursor:pointer;width:100%;margin-top:.75rem}
@@ -54,10 +78,19 @@
   .btn-start:hover{background:#38bdf8}
   .btn-stop{background:#7f1d1d;color:#fca5a5;border:1px solid var(--red)}
   .btn-stop:hover{background:#991b1b}
-  .btn-shutdown{background:#450a0a;color:#fecaca;border:1px solid #b91c1c}
-  .btn-shutdown:hover{background:#7f1d1d}
+  .btn-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+  .btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-danger-sm{background:transparent;color:#fca5a5;border:1px solid #7f1d1d;
+                 padding:.35rem .6rem;border-radius:6px;font-size:.75rem;font-weight:600;
+                 cursor:pointer;width:auto;margin:0}
+  .btn-danger-sm:hover{background:#7f1d1d}
+  .btn-row{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.75rem}
+  .btn-row .btn{width:auto;flex:1 1 auto;margin-top:0;min-width:8rem}
   .btn-disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
-  .power-note{font-size:.75rem;color:var(--muted);margin-top:.5rem;line-height:1.45}
+  .inline-status{font-size:.8rem;color:var(--muted);margin-top:.75rem;line-height:1.4;
+                 min-height:1.2em}
+  .inline-status.ok{color:var(--green)}
+  .inline-status.err{color:#fca5a5}
 
   /* Shutdown overlay */
   #shutdown-overlay{display:none;position:fixed;inset:0;z-index:1000;
@@ -101,13 +134,53 @@
   .check-row input{width:auto;margin-top:.15rem;accent-color:var(--accent)}
   .check-row span{color:var(--muted);font-size:.72rem;display:block;margin-top:.1rem}
 
+  /* Prompts table */
+  .prompt-table{width:100%;border-collapse:collapse}
+  .prompt-table th{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;
+                   color:var(--muted);text-align:left;padding:.4rem .35rem;font-weight:600}
+  .prompt-table td{padding:.35rem;vertical-align:top}
+  .prompt-table input,.prompt-table textarea{margin:0;font-size:.85rem;padding:.45rem .55rem}
+  .prompt-table .col-label{width:28%}
+  .prompt-table .col-actions{width:4.5rem;text-align:right}
+
+  /* Triggers */
+  .trigger-settings{display:grid;grid-template-columns:1fr;gap:.5rem;margin-bottom:.75rem}
+  .theme-block{border:1px solid var(--border);border-radius:8px;margin-bottom:.6rem;
+               background:var(--bg);overflow:hidden}
+  .theme-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+              gap:.5rem;padding:.65rem .75rem;cursor:pointer;user-select:none}
+  .theme-head:hover{background:rgba(51,65,85,.35)}
+  .theme-title{font-size:.85rem;font-weight:600}
+  .theme-count{font-size:.72rem;color:var(--muted);font-weight:400;margin-left:.35rem}
+  .theme-actions{display:flex;flex-wrap:wrap;gap:.35rem}
+  .theme-actions button{width:auto;margin:0;padding:.3rem .55rem;font-size:.7rem;
+                        border-radius:6px;border:1px solid var(--border);background:var(--surface);
+                        color:var(--muted);cursor:pointer;font-weight:600}
+  .theme-actions button:hover{color:var(--accent);border-color:var(--accent)}
+  .theme-body{display:none;border-top:1px solid var(--border);padding:.35rem .5rem .5rem}
+  .theme-block.open .theme-body{display:block}
+  .theme-block.open .theme-chevron{transform:rotate(90deg)}
+  .theme-chevron{display:inline-block;transition:transform .15s;color:var(--muted);
+                 margin-right:.35rem;font-size:.7rem}
+  .label-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+             gap:.4rem;padding:.4rem .25rem;border-bottom:1px solid rgba(51,65,85,.5);
+             font-size:.8rem}
+  .label-row:last-child{border-bottom:none}
+  .label-row.hidden{display:none}
+  .label-name{color:var(--text);word-break:break-word;flex:1 1 10rem}
+  .radio-group{display:flex;gap:.55rem;flex-wrap:wrap}
+  .radio-group label{display:inline-flex;align-items:center;gap:.25rem;margin:0;
+                     font-size:.72rem;color:var(--muted);cursor:pointer}
+  .radio-group input{width:auto;margin:0;accent-color:var(--accent)}
+
   .empty{color:var(--muted);font-size:.85rem;text-align:center;padding:1rem 0}
   .error-banner{background:#7f1d1d;color:#fca5a5;border-radius:8px;
                 padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem}
   .field-note{font-size:.7rem;color:var(--muted);margin-top:.35rem;line-height:1.45}
   @media(min-width:640px){
-    body{max-width:640px;margin:0 auto;padding:1.5rem}
+    body{max-width:900px;margin:0 auto;padding:1.5rem}
     .stat-grid{grid-template-columns:repeat(4,1fr)}
+    .trigger-settings{grid-template-columns:repeat(3,1fr)}
   }
 </style>
 </head>
@@ -124,12 +197,27 @@
       {% if public_url %} · <a href="{{ public_url }}" target="_blank" rel="noopener">{{ public_url }}</a>{% endif %}
     </div>
   </div>
-  <a href="/logout">Sign out</a>
+  <div class="header-actions">
+    <button class="btn-shutdown-sm" type="button" id="shutdown-btn" title="Safely shut down this Pi">
+      ⏻ Shut down
+    </button>
+    <a href="/logout">Sign out</a>
+  </div>
 </header>
+
+<nav class="tab-bar" role="tablist">
+  <button type="button" class="tab-btn active" data-tab="run" role="tab" aria-selected="true">Run</button>
+  <button type="button" class="tab-btn" data-tab="data" role="tab" aria-selected="false">Data</button>
+  <button type="button" class="tab-btn" data-tab="prompts" role="tab" aria-selected="false">Prompts</button>
+  <button type="button" class="tab-btn" data-tab="triggers" role="tab" aria-selected="false">Triggers</button>
+</nav>
 
 {% if error == 'already_running' %}
 <div class="error-banner">A run is already active. Stop it before starting a new one.</div>
 {% endif %}
+
+<!-- ── RUN TAB ── -->
+<div class="tab-panel active" id="panel-run" role="tabpanel">
 
 <!-- ── STATUS ── -->
 <div class="card" id="status-card">
@@ -204,9 +292,18 @@
            value="{{ default_gate_sensitivity_db }}">
     <div class="field-note">
       L90 dynamic gate: open = ambient floor (10th percentile over ~5 min) + this
-      offset (default 5 dB). Close is 3 dB below open. Peak 200&nbsp;ms sub-windows
-      and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
+      offset (default 5 dB). Gate closes after 2 consecutive chunks below open
+      or when the signal is too cold. AGC tracks the L90 floor. Peak 200&nbsp;ms
+      sub-windows and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
     </div>
+
+    <label class="check-row" style="margin-top:1rem">
+      <input type="checkbox" name="enable_clap" value="on">
+      <div>
+        Enable CLAP
+        <span>Runs CLAP on trigger labels. Requires rebuilt embeddings (Prompts tab).</span>
+      </div>
+    </label>
 
     <button class="btn btn-start" type="submit">▶ Start run</button>
   </form>
@@ -217,25 +314,29 @@
   {% endif %}
 </div>
 
-<!-- ── POWER ── -->
-<div class="card">
-  <h2>Power</h2>
-  <p class="power-note">
-    Safely shut down this Raspberry Pi before unplugging power.
-    Any active recording is stopped first.
-  </p>
-  <button class="btn btn-shutdown" type="button" id="shutdown-btn">
-    ⏻ Shut down Pi
-  </button>
-</div>
-
 <!-- ── LIVE LOG ── -->
 <div class="card">
   <h2>Live log <span style="color:var(--muted);font-weight:400;font-size:.7rem">(auto-updates)</span></h2>
   <div id="log-box"><p id="log-placeholder" style="color:var(--muted)">Connecting…</p></div>
 </div>
 
-<!-- ── PAST RUNS ── -->
+<div id="shutdown-overlay" aria-live="polite" aria-busy="true">
+  <div class="shutdown-panel">
+    <h3 id="shutdown-title">Shutting down…</h3>
+    <p id="shutdown-message">Stopping services and preparing to power off.</p>
+    <div class="shutdown-countdown" id="shutdown-countdown">—</div>
+    <p id="shutdown-safe" class="shutdown-safe" hidden>
+      Safe to unplug power now.<br>
+      Wait until the Pi’s activity LED is off, then disconnect USB power.
+    </p>
+    <p class="shutdown-host" id="shutdown-host"></p>
+  </div>
+</div>
+
+</div><!-- /panel-run -->
+
+<!-- ── DATA TAB ── -->
+<div class="tab-panel" id="panel-data" role="tabpanel">
 <div class="card">
   <h2>Past runs</h2>
   {% if runs %}
@@ -270,21 +371,123 @@
   <div class="empty">No runs yet.</div>
   {% endif %}
 </div>
+</div><!-- /panel-data -->
 
-<div id="shutdown-overlay" aria-live="polite" aria-busy="true">
-  <div class="shutdown-panel">
-    <h3 id="shutdown-title">Shutting down…</h3>
-    <p id="shutdown-message">Stopping services and preparing to power off.</p>
-    <div class="shutdown-countdown" id="shutdown-countdown">—</div>
-    <p id="shutdown-safe" class="shutdown-safe" hidden>
-      Safe to unplug power now.<br>
-      Wait until the Pi’s activity LED is off, then disconnect USB power.
-    </p>
-    <p class="shutdown-host" id="shutdown-host"></p>
+<!-- ── PROMPTS TAB ── -->
+<div class="tab-panel" id="panel-prompts" role="tabpanel">
+  <div class="card">
+    <h2>CLAP prompts</h2>
+    <div class="status-row" id="prompts-sync-row">
+      <span class="badge idle" id="prompts-sync-badge"><span class="dot"></span>Loading…</span>
+      <span style="color:var(--muted);font-size:.75rem" id="prompts-sync-detail"></span>
+    </div>
+    <div class="field-note" style="margin-bottom:.75rem">
+      Each row is a label + text prompt used for CLAP embeddings. Save prompts, then rebuild embeddings before enabling CLAP on a run.
+    </div>
+    <table class="prompt-table">
+      <thead>
+        <tr>
+          <th class="col-label">Label</th>
+          <th>Prompt</th>
+          <th class="col-actions"></th>
+        </tr>
+      </thead>
+      <tbody id="prompts-tbody"></tbody>
+    </table>
+    <div class="btn-row">
+      <button type="button" class="btn btn-secondary" id="prompts-add-btn">+ Add row</button>
+      <button type="button" class="btn btn-start" id="prompts-save-btn">Save prompts</button>
+      <button type="button" class="btn btn-secondary" id="prompts-rebuild-btn">Rebuild embeddings</button>
+    </div>
+    <div class="inline-status" id="prompts-status"></div>
+  </div>
+</div>
+
+<!-- ── TRIGGERS TAB ── -->
+<div class="tab-panel" id="panel-triggers" role="tabpanel">
+  <div class="card">
+    <h2>CLAP triggers</h2>
+    <div class="field-note" style="margin-bottom:.75rem">
+      Map YAMNet labels to CLAP trigger modes. Off = ignore, Trigger = run CLAP, Ambiguous = soft match (carried with TTL).
+    </div>
+    <div class="trigger-settings">
+      <div>
+        <label for="trig-cooldown">Cooldown (seconds)</label>
+        <input type="number" id="trig-cooldown" min="0" step="0.5" value="5">
+      </div>
+      <div>
+        <label for="trig-carry-ttl">Carry TTL (seconds)</label>
+        <input type="number" id="trig-carry-ttl" min="0" step="0.5" value="30">
+      </div>
+      <div>
+        <label for="trig-dba">dBA threshold</label>
+        <input type="number" id="trig-dba" min="0" step="0.5" value="55">
+      </div>
+    </div>
+    <label for="trig-search">Filter labels</label>
+    <input type="search" id="trig-search" placeholder="Search display names…">
+    <div class="btn-row" style="margin-top:.75rem">
+      <button type="button" class="btn btn-start" id="triggers-save-btn">Save triggers</button>
+      <button type="button" class="btn btn-secondary" id="catalog-refresh-btn">Refresh catalog</button>
+    </div>
+    <div class="inline-status" id="triggers-status"></div>
+  </div>
+  <div id="themes-container">
+    <div class="empty" id="themes-placeholder">Loading catalog…</div>
   </div>
 </div>
 
 <script>
+// ── Tabs ──────────────────────────────────────────────────────────
+const tabBtns = document.querySelectorAll('.tab-btn');
+const tabPanels = {
+  run: document.getElementById('panel-run'),
+  data: document.getElementById('panel-data'),
+  prompts: document.getElementById('panel-prompts'),
+  triggers: document.getElementById('panel-triggers'),
+};
+let promptsLoaded = false;
+let triggersLoaded = false;
+
+function switchTab(name) {
+  tabBtns.forEach((btn) => {
+    const on = btn.dataset.tab === name;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  Object.entries(tabPanels).forEach(([key, panel]) => {
+    panel.classList.toggle('active', key === name);
+  });
+  if (name === 'prompts') loadPrompts();
+  if (name === 'triggers') loadTriggersPanel();
+}
+
+tabBtns.forEach((btn) => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+async function apiFetch(url, options = {}) {
+  const opts = {
+    credentials: 'same-origin',
+    ...options,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
+  };
+  const r = await fetch(url, opts);
+  let data = null;
+  try { data = await r.json(); } catch { /* non-JSON */ }
+  return { ok: r.ok, status: r.status, data };
+}
+
+function setInlineStatus(el, msg, kind) {
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.remove('ok', 'err');
+  if (kind) el.classList.add(kind);
+}
+
 // ── Live log via SSE ──────────────────────────────────────────────
 const box = document.getElementById('log-box');
 const placeholder = document.getElementById('log-placeholder');
@@ -315,7 +518,7 @@ function fmtElapsed(s) {
 
 async function pollStatus() {
   try {
-    const r = await fetch('/api/status');
+    const r = await fetch('/api/status', { credentials: 'same-origin' });
     if (!r.ok) return;
     const d = await r.json();
     document.getElementById('stat-chunks').textContent = d.chunk_count || '—';
@@ -414,7 +617,10 @@ shutdownBtn.addEventListener('click', async () => {
   shutdownBtn.textContent = 'Shutting down…';
 
   try {
-    const r = await fetch('/api/shutdown', { method: 'POST' });
+    const r = await fetch('/api/shutdown', {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
     const data = await r.json();
     if (!r.ok || !data.ok) {
       throw new Error(data.error || 'Shutdown failed');
@@ -422,13 +628,350 @@ shutdownBtn.addEventListener('click', async () => {
     showShutdownOverlay(data);
   } catch (err) {
     shutdownBtn.disabled = false;
-    shutdownBtn.textContent = '⏻ Shut down Pi';
+    shutdownBtn.textContent = '⏻ Shut down';
     alert(
       'Could not start shutdown. On the Pi, run once:\n\n' +
       'sudo bash web/setup-shutdown-sudoers.sh'
     );
   }
 });
+
+// ── Prompts tab ───────────────────────────────────────────────────
+const promptsTbody = document.getElementById('prompts-tbody');
+const promptsStatus = document.getElementById('prompts-status');
+const promptsSyncBadge = document.getElementById('prompts-sync-badge');
+const promptsSyncDetail = document.getElementById('prompts-sync-detail');
+
+function renderSync(sync) {
+  if (!sync) {
+    promptsSyncBadge.className = 'badge idle';
+    promptsSyncBadge.innerHTML = '<span class="dot"></span>Unknown';
+    promptsSyncDetail.textContent = '';
+    return;
+  }
+  const inSync = !!sync.in_sync;
+  promptsSyncBadge.className = 'badge ' + (inSync ? 'ok' : 'warn');
+  promptsSyncBadge.innerHTML =
+    '<span class="dot"></span>' + (inSync ? 'Embeddings in sync' : 'Embeddings out of sync');
+  promptsSyncDetail.textContent =
+    `${sync.prompt_count || 0} prompts · ${sync.embedding_count || 0} embeddings` +
+    (sync.prompts_hash ? ` · hash ${sync.prompts_hash}` : '');
+}
+
+function addPromptRow(label = '', prompt = '') {
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td class="col-label"><input type="text" class="prompt-label" placeholder="label"></td>' +
+    '<td><textarea class="prompt-text" rows="2" placeholder="text prompt"></textarea></td>' +
+    '<td class="col-actions"><button type="button" class="btn-danger-sm prompt-del">Delete</button></td>';
+  tr.querySelector('.prompt-label').value = label;
+  tr.querySelector('.prompt-text').value = prompt;
+  tr.querySelector('.prompt-del').addEventListener('click', () => tr.remove());
+  promptsTbody.appendChild(tr);
+}
+
+function collectPrompts() {
+  const rows = [];
+  promptsTbody.querySelectorAll('tr').forEach((tr) => {
+    const label = tr.querySelector('.prompt-label').value.trim();
+    const prompt = tr.querySelector('.prompt-text').value.trim();
+    if (label || prompt) rows.push({ label, prompt });
+  });
+  return rows;
+}
+
+async function loadPrompts() {
+  setInlineStatus(promptsStatus, 'Loading…');
+  const { ok, data } = await apiFetch('/api/clap/prompts');
+  if (!ok || !data || !data.ok) {
+    setInlineStatus(promptsStatus, (data && data.error) || 'Failed to load prompts', 'err');
+    return;
+  }
+  promptsTbody.innerHTML = '';
+  (data.prompts || []).forEach((p) => addPromptRow(p.label, p.prompt));
+  if (!promptsTbody.children.length) addPromptRow();
+  renderSync(data.sync);
+  setInlineStatus(promptsStatus, '');
+  promptsLoaded = true;
+}
+
+document.getElementById('prompts-add-btn').addEventListener('click', () => addPromptRow());
+
+document.getElementById('prompts-save-btn').addEventListener('click', async () => {
+  const prompts = collectPrompts();
+  setInlineStatus(promptsStatus, 'Saving…');
+  const { ok, data } = await apiFetch('/api/clap/prompts', {
+    method: 'PUT',
+    body: JSON.stringify({ prompts }),
+  });
+  if (!ok || !data || !data.ok) {
+    const msg = (data && data.error) || 'Save failed';
+    setInlineStatus(promptsStatus, msg, 'err');
+    alert(msg);
+    return;
+  }
+  setInlineStatus(promptsStatus, `Saved ${data.count} prompt(s). Rebuild embeddings if needed.`, 'ok');
+  await loadPrompts();
+});
+
+document.getElementById('prompts-rebuild-btn').addEventListener('click', async () => {
+  setInlineStatus(promptsStatus, 'Rebuilding embeddings…');
+  const { ok, data } = await apiFetch('/api/clap/embeddings/rebuild', { method: 'POST' });
+  if (!ok || !data || data.ok === false) {
+    const msg = (data && data.error) || 'Rebuild failed';
+    setInlineStatus(promptsStatus, msg, 'err');
+    alert(msg);
+    return;
+  }
+  setInlineStatus(promptsStatus, 'Embeddings rebuilt successfully.', 'ok');
+  await loadPrompts();
+});
+
+// ── Triggers tab ──────────────────────────────────────────────────
+const themesContainer = document.getElementById('themes-container');
+const triggersStatus = document.getElementById('triggers-status');
+const trigSearch = document.getElementById('trig-search');
+let catalogLabels = [];
+let triggerSet = new Set();
+let ambiguousSet = new Set();
+
+function radioNameFor(label) {
+  return 'trig-mode-' + encodeURIComponent(label).replace(/%/g, '_');
+}
+
+function currentMode(label) {
+  if (triggerSet.has(label)) return 'trigger';
+  if (ambiguousSet.has(label)) return 'ambiguous';
+  return 'off';
+}
+
+function setMode(label, mode, rowEl) {
+  triggerSet.delete(label);
+  ambiguousSet.delete(label);
+  if (mode === 'trigger') triggerSet.add(label);
+  else if (mode === 'ambiguous') ambiguousSet.add(label);
+  const row = rowEl || themesContainer.querySelector(`.label-row[data-label="${CSS.escape(label)}"]`);
+  if (!row) return;
+  const input = row.querySelector(`input[type="radio"][value="${mode}"]`);
+  if (input) input.checked = true;
+}
+
+function applyModeToTheme(theme, mode) {
+  themesContainer.querySelectorAll('.label-row').forEach((row) => {
+    if (row.dataset.theme !== theme) return;
+    setMode(row.dataset.label, mode, row);
+  });
+}
+
+function filterLabels() {
+  const q = (trigSearch.value || '').trim().toLowerCase();
+  themesContainer.querySelectorAll('.label-row').forEach((row) => {
+    const name = (row.dataset.label || '').toLowerCase();
+    row.classList.toggle('hidden', q !== '' && !name.includes(q));
+  });
+  themesContainer.querySelectorAll('.theme-block').forEach((block) => {
+    const visible = block.querySelectorAll('.label-row:not(.hidden)').length;
+    block.style.display = visible ? '' : 'none';
+    if (q && visible) block.classList.add('open');
+  });
+}
+
+function renderCatalog(themes, labels) {
+  catalogLabels = labels || [];
+  themesContainer.innerHTML = '';
+  if (!themes || !themes.length) {
+    themesContainer.innerHTML = '<div class="empty">No catalog themes. Click Refresh catalog.</div>';
+    return;
+  }
+  const byTheme = {};
+  catalogLabels.forEach((item) => {
+    const t = item.theme || 'Other';
+    if (!byTheme[t]) byTheme[t] = [];
+    byTheme[t].push(item);
+  });
+  themes.forEach((theme) => {
+    const items = byTheme[theme] || [];
+    if (!items.length) return;
+    const block = document.createElement('div');
+    block.className = 'theme-block';
+    block.dataset.theme = theme;
+
+    const head = document.createElement('div');
+    head.className = 'theme-head';
+    const titleWrap = document.createElement('div');
+    const chevron = document.createElement('span');
+    chevron.className = 'theme-chevron';
+    chevron.textContent = '▶';
+    const title = document.createElement('span');
+    title.className = 'theme-title';
+    title.textContent = theme;
+    const count = document.createElement('span');
+    count.className = 'theme-count';
+    count.textContent = `(${items.length})`;
+    titleWrap.appendChild(chevron);
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(count);
+
+    const actions = document.createElement('div');
+    actions.className = 'theme-actions';
+    [['trigger', 'All trigger'], ['ambiguous', 'All ambiguous'], ['off', 'Clear']].forEach(([action, text]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = text;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        applyModeToTheme(theme, action);
+      });
+      actions.appendChild(b);
+    });
+    head.appendChild(titleWrap);
+    head.appendChild(actions);
+    head.addEventListener('click', (e) => {
+      if (e.target.closest('.theme-actions')) return;
+      block.classList.toggle('open');
+    });
+    block.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'theme-body';
+    items.forEach((item) => {
+      const label = item.display_name;
+      const row = document.createElement('div');
+      row.className = 'label-row';
+      row.dataset.label = label;
+      row.dataset.theme = theme;
+      const nameEl = document.createElement('div');
+      nameEl.className = 'label-name';
+      nameEl.textContent = label;
+      const radios = document.createElement('div');
+      radios.className = 'radio-group';
+      const rname = radioNameFor(label);
+      const mode = currentMode(label);
+      [['off', 'Off'], ['trigger', 'Trigger'], ['ambiguous', 'Ambiguous']].forEach(([val, text]) => {
+        const lab = document.createElement('label');
+        const inp = document.createElement('input');
+        inp.type = 'radio';
+        inp.name = rname;
+        inp.value = val;
+        inp.checked = mode === val;
+        inp.addEventListener('change', () => {
+          if (inp.checked) setMode(label, val, row);
+        });
+        lab.appendChild(inp);
+        lab.appendChild(document.createTextNode(' ' + text));
+        radios.appendChild(lab);
+      });
+      row.appendChild(nameEl);
+      row.appendChild(radios);
+      body.appendChild(row);
+    });
+    block.appendChild(body);
+    themesContainer.appendChild(block);
+  });
+  filterLabels();
+}
+
+async function loadCatalogAndApply() {
+  const cat = await apiFetch('/api/clap/yamnet-catalog');
+  if (!cat.ok || !cat.data || !cat.data.ok) {
+    themesContainer.innerHTML =
+      `<div class="empty">${(cat.data && cat.data.error) || 'Catalog missing. Click Refresh catalog.'}</div>`;
+    return false;
+  }
+  renderCatalog(cat.data.themes, cat.data.labels);
+  return true;
+}
+
+async function loadTriggerConfig() {
+  const { ok, data } = await apiFetch('/api/clap/triggers');
+  if (!ok || !data || !data.ok) {
+    setInlineStatus(triggersStatus, (data && data.error) || 'Failed to load triggers', 'err');
+    return false;
+  }
+  document.getElementById('trig-cooldown').value = data.cooldown_seconds ?? 5;
+  document.getElementById('trig-carry-ttl').value = data.carry_ttl_seconds ?? 30;
+  document.getElementById('trig-dba').value = data.dba_threshold ?? 55;
+  triggerSet = new Set(data.trigger_labels || []);
+  ambiguousSet = new Set(data.ambiguous_labels || []);
+  // Re-apply radios if catalog already rendered
+  themesContainer.querySelectorAll('.label-row').forEach((row) => {
+    const label = row.dataset.label;
+    const mode = currentMode(label);
+    const name = radioNameFor(label);
+    const inp = row.querySelector(`input[name="${name}"][value="${mode}"]`);
+    if (inp) inp.checked = true;
+  });
+  return true;
+}
+
+async function loadTriggersPanel() {
+  setInlineStatus(triggersStatus, 'Loading…');
+  await loadTriggerConfig();
+  await loadCatalogAndApply();
+  setInlineStatus(triggersStatus, '');
+  triggersLoaded = true;
+}
+
+trigSearch.addEventListener('input', filterLabels);
+
+document.getElementById('triggers-save-btn').addEventListener('click', async () => {
+  // Collect from radios for accuracy
+  const triggers = [];
+  const ambiguous = [];
+  themesContainer.querySelectorAll('.label-row').forEach((row) => {
+    const label = row.dataset.label;
+    const checked = row.querySelector('input[type="radio"]:checked');
+    const mode = checked ? checked.value : 'off';
+    if (mode === 'trigger') triggers.push(label);
+    else if (mode === 'ambiguous') ambiguous.push(label);
+  });
+  const body = {
+    cooldown_seconds: parseFloat(document.getElementById('trig-cooldown').value) || 0,
+    carry_ttl_seconds: parseFloat(document.getElementById('trig-carry-ttl').value) || 0,
+    dba_threshold: parseFloat(document.getElementById('trig-dba').value) || 0,
+    trigger_labels: triggers,
+    ambiguous_labels: ambiguous,
+  };
+  setInlineStatus(triggersStatus, 'Saving…');
+  const { ok, data } = await apiFetch('/api/clap/triggers', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  if (!ok || !data || !data.ok) {
+    const msg = (data && data.error) || 'Save failed';
+    setInlineStatus(triggersStatus, msg, 'err');
+    alert(msg);
+    return;
+  }
+  triggerSet = new Set(triggers);
+  ambiguousSet = new Set(ambiguous);
+  setInlineStatus(
+    triggersStatus,
+    `Saved (${triggers.length} trigger, ${ambiguous.length} ambiguous).`,
+    'ok'
+  );
+});
+
+document.getElementById('catalog-refresh-btn').addEventListener('click', async () => {
+  setInlineStatus(triggersStatus, 'Syncing catalog…');
+  const { ok, data } = await apiFetch('/api/clap/yamnet-catalog/sync', { method: 'POST' });
+  if (!ok || !data || !data.ok) {
+    const msg = (data && data.error) || 'Catalog sync failed';
+    setInlineStatus(triggersStatus, msg, 'err');
+    alert(msg);
+    return;
+  }
+  setInlineStatus(
+    triggersStatus,
+    `Catalog refreshed (${data.label_count || 0} labels).`,
+    'ok'
+  );
+  await loadCatalogAndApply();
+});
+
+// Prefetch prompts + triggers data on page load (silent)
+loadPrompts().catch(() => {});
+loadTriggersPanel().catch(() => {});
 </script>
 </body>
 </html>
