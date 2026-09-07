@@ -507,7 +507,7 @@ es.onerror = () => {
   if (!seenFirst) placeholder.textContent = 'Not connected.';
 };
 
-// ── Status polling (every 10 s) ───────────────────────────────────
+// ── Status polling (every 1 s) ────────────────────────────────────
 function fmtElapsed(s) {
   if (!s) return '—';
   const h = Math.floor(s / 3600);
@@ -516,7 +516,10 @@ function fmtElapsed(s) {
   return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 
+let statusPollInFlight = false;
 async function pollStatus() {
+  if (statusPollInFlight) return;
+  statusPollInFlight = true;
   try {
     const r = await fetch('/api/status', { credentials: 'same-origin' });
     if (!r.ok) return;
@@ -526,9 +529,12 @@ async function pollStatus() {
     document.getElementById('stat-label').textContent = d.last_label || '—';
     document.getElementById('stat-dba').textContent = d.last_dba || '—';
   } catch {}
+  finally {
+    statusPollInFlight = false;
+  }
 }
 
-setInterval(pollStatus, 10000);
+setInterval(pollStatus, 1000);
 
 // ── Download field options ────────────────────────────────────────
 const spectrumToggle = document.getElementById('dl-include-spectrum');
