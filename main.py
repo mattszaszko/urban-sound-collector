@@ -31,8 +31,10 @@ from core.yamnet_preprocess import (
     DEFAULT_AMBIENT_PERCENTILE,
     DEFAULT_AMBIENT_WINDOW_CHUNKS,
     DEFAULT_GAIN_SMOOTH_CHUNKS,
+    DEFAULT_GATE_DELTA_DB,
     DEFAULT_GATE_HYSTERESIS_DB,
     DEFAULT_GATE_SENSITIVITY_DB,
+    DEFAULT_GATE_SUBWINDOW_MS,
     DEFAULT_HPF_HZ,
     DEFAULT_TARGET_DBFS,
     YamnetPreprocessor,
@@ -133,6 +135,24 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help=(
             "Percentile for ambient noise floor (L90 = 10th percentile; "
             f"default: {DEFAULT_AMBIENT_PERCENTILE})."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gate-delta-db",
+        type=float,
+        default=DEFAULT_GATE_DELTA_DB,
+        help=(
+            "Force gate open when peak sub-window RMS jumps by this many dB "
+            f"vs previous chunk (default: {DEFAULT_GATE_DELTA_DB}; 0 disables)."
+        ),
+    )
+    parser.add_argument(
+        "--yamnet-gate-subwindow-ms",
+        type=float,
+        default=DEFAULT_GATE_SUBWINDOW_MS,
+        help=(
+            "Sub-window length in ms for peak RMS gate level "
+            f"(default: {DEFAULT_GATE_SUBWINDOW_MS}; 0 = full-chunk RMS)."
         ),
     )
     parser.add_argument(
@@ -294,6 +314,7 @@ def stream_live(
         "yamnet_hpf_hz=%s, yamnet_target_dbfs=%s, yamnet_gate_mode=dynamic_l90, "
         "yamnet_gate_sensitivity_db=%s, yamnet_gate_hysteresis_db=%s, "
         "yamnet_gate_ambient_chunks=%s, yamnet_gate_percentile=%s, "
+        "yamnet_gate_delta_db=%s, yamnet_gate_subwindow_ms=%s, "
         "yamnet_gain_smooth_chunks=%s, model=%s, spectrum=%s",
         device_id,
         run_id,
@@ -308,6 +329,8 @@ def stream_live(
         yamnet_preprocessor.gate_hysteresis_db,
         yamnet_preprocessor.ambient_window_chunks,
         yamnet_preprocessor.ambient_percentile,
+        yamnet_preprocessor.gate_delta_db,
+        yamnet_preprocessor.gate_subwindow_ms,
         yamnet_preprocessor.gain_smooth_chunks,
         MODEL_VERSION,
         enable_spectrum,
@@ -434,6 +457,8 @@ def main(argv: List[str] | None = None) -> int:
             gate_sensitivity_db=args.yamnet_gate_sensitivity_db,
             gate_hysteresis_db=args.yamnet_gate_hysteresis_db,
             ambient_percentile=args.yamnet_gate_percentile,
+            gate_delta_db=args.yamnet_gate_delta_db,
+            gate_subwindow_ms=args.yamnet_gate_subwindow_ms,
         )
         events_written = stream_live(
             classifier=classifier,

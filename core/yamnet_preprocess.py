@@ -21,11 +21,18 @@ DEFAULT_GAIN_SMOOTH_CHUNKS = 5
 
 # L90 dynamic gate defaults (~5 min window @ 0.975 s/chunk).
 DEFAULT_AMBIENT_WINDOW_CHUNKS = 300
-DEFAULT_GATE_SENSITIVITY_DB = 8.0
+DEFAULT_GATE_SENSITIVITY_DB = 5.0
 DEFAULT_GATE_HYSTERESIS_DB = 3.0
 DEFAULT_AMBIENT_PERCENTILE = 10.0  # L90: level exceeded 90% of the time
+DEFAULT_GATE_DELTA_DB = 4.0
+DEFAULT_GATE_SUBWINDOW_MS = 200.0
 
 GATE_MODE_DYNAMIC_L90 = "dynamic_l90"
+
+GATE_REASON_CLOSED = "closed"
+GATE_REASON_L90 = "l90"
+GATE_REASON_DELTA = "delta"
+GATE_REASON_HOLD = "hold"
 
 _RMS_EPSILON = 1e-12
 
@@ -41,11 +48,50 @@ def dbfs_to_linear(dbfs: float) -> float:
 
 
 def silence_predictions(top_k: int = 3) -> list[dict[str, Any]]:
-    """Synthetic YAMNet-style predictions when the silence gate fires."""
-    predictions = [{"label": "Silence", "confidence": 1.0}]
+    """Synthetic predictions when the silence gate skips YAMNet."""
+    predictions = [{"label": "gated", "confidence": 1.0}]
     while len(predictions) < top_k:
-        predictions.append({"label": "Silence", "confidence": 0.0})
+        predictions.append({"label": "gated", "confidence": 0.0})
     return predictions
+
+
+def peak_subwindow_rms_dbfs(
+    samples: np.ndarray,
+    *,
+    sample_rate: float,
+    subwindow_ms: float,
+) -> float:
+    """Return max RMS (dBFS) over non-overlapping sub-windows.
+
+    Trailing remainder shorter than half a window is dropped. If
+    ``subwindow_ms <= 0`` or the buffer is shorter than one window, falls
+    back to full-buffer RMS.
+    """
+    mono = np.asarray(samples, dtype=np.float64).reshape(-1)
+    if mono.size == 0:
+        return linear_to_dbfs(0.0)
+
+    if subwindow_ms <= 0:
+        return linear_to_dbfs(float(np.sqrt(np.mean(np.square(mono)))))
+
+    window_samples = max(1, int(round(sample_rate * (subwindow_ms / 1000.0))))
+    if mono.size < window_samples:
+        return linear_to_dbfs(float(np.sqrt(np.mean(np.square(mono)))))
+
+    min_tail = max(1, window_samples // 2)
+    peak_rms = 0.0
+    offset = 0
+    while offset + window_samples <= mono.size:
+        segment = mono[offset : offset + window_samples]
+        peak_rms = max(peak_rms, float(np.sqrt(np.mean(np.square(segment)))))
+        offset += window_samples
+
+    remainder = mono.size - offset
+    if remainder >= min_tail:
+        segment = mono[offset:]
+        peak_rms = max(peak_rms, float(np.sqrt(np.mean(np.square(segment)))))
+
+    return linear_to_dbfs(peak_rms)
 
 
 @dataclass
@@ -73,14 +119,20 @@ class YamnetPreprocessor:
     gate_sensitivity_db: float = DEFAULT_GATE_SENSITIVITY_DB
     gate_hysteresis_db: float = DEFAULT_GATE_HYSTERESIS_DB
     ambient_percentile: float = DEFAULT_AMBIENT_PERCENTILE
+    gate_delta_db: float = DEFAULT_GATE_DELTA_DB
+    gate_subwindow_ms: float = DEFAULT_GATE_SUBWINDOW_MS
     hpf_sos: np.ndarray = field(init=False)
     _hpf_zi: np.ndarray | None = field(init=False, default=None)
     _rms_history: Deque[float] = field(init=False)
     _ambient_rms_dbfs: Deque[float] = field(init=False)
     _gate_open: bool = field(init=False, default=False)
+    _prev_gate_level_dbfs: float | None = field(init=False, default=None)
     _last_ambient_floor_dbfs: float = field(init=False, default=0.0)
     _last_gate_open_dbfs: float = field(init=False, default=0.0)
     _last_gate_close_dbfs: float = field(init=False, default=0.0)
+    _last_gate_level_dbfs: float = field(init=False, default=0.0)
+    _last_delta_rms_dbfs: float | None = field(init=False, default=None)
+    _last_gate_open_reason: str = field(init=False, default=GATE_REASON_CLOSED)
 
     def __post_init__(self) -> None:
         if self.gate_hysteresis_db <= 0:
@@ -90,6 +142,14 @@ class YamnetPreprocessor:
         if self.ambient_window_chunks < 1:
             raise ValueError(
                 f"ambient_window_chunks must be >= 1 (got {self.ambient_window_chunks})"
+            )
+        if self.gate_delta_db < 0:
+            raise ValueError(
+                f"gate_delta_db must be >= 0 (got {self.gate_delta_db})"
+            )
+        if self.gate_subwindow_ms < 0:
+            raise ValueError(
+                f"gate_subwindow_ms must be >= 0 (got {self.gate_subwindow_ms})"
             )
         nyquist = self.sample_rate / 2.0
         cutoff = min(max(self.hpf_hz, 1.0), nyquist * 0.99)
@@ -113,7 +173,10 @@ class YamnetPreprocessor:
         if not self._ambient_rms_dbfs:
             return raw_rms_dbfs
         return float(
-            np.percentile(np.asarray(self._ambient_rms_dbfs, dtype=np.float64), self.ambient_percentile)
+            np.percentile(
+                np.asarray(self._ambient_rms_dbfs, dtype=np.float64),
+                self.ambient_percentile,
+            )
         )
 
     def _compute_thresholds(
@@ -128,17 +191,35 @@ class YamnetPreprocessor:
         self._last_gate_close_dbfs = close_dbfs
         return floor, open_dbfs, close_dbfs
 
-    def _apply_gate(self, raw_rms_dbfs: float, open_dbfs: float, close_dbfs: float) -> bool:
-        """Update hysteresis gate; return True when chunk is gated (silence)."""
+    def _apply_absolute_gate(
+        self, gate_level_dbfs: float, open_dbfs: float, close_dbfs: float
+    ) -> str:
+        """Apply L90 hysteresis using gate_level; return provisional open reason."""
         if self._gate_open:
-            if raw_rms_dbfs < close_dbfs:
+            if gate_level_dbfs < close_dbfs:
                 self._gate_open = False
-        elif raw_rms_dbfs >= open_dbfs:
+                return GATE_REASON_CLOSED
+            return GATE_REASON_HOLD
+        if gate_level_dbfs >= open_dbfs:
             self._gate_open = True
-        return not self._gate_open
+            return GATE_REASON_L90
+        return GATE_REASON_CLOSED
+
+    def _maybe_force_delta_open(
+        self, gate_level_dbfs: float, delta_rms_dbfs: float | None
+    ) -> str | None:
+        """Force gate open on ΔRMS jump; return reason if applied."""
+        if self._gate_open:
+            return None
+        if self.gate_delta_db <= 0 or delta_rms_dbfs is None:
+            return None
+        if delta_rms_dbfs >= self.gate_delta_db:
+            self._gate_open = True
+            return GATE_REASON_DELTA
+        return None
 
     def _metadata(self, *, gate_open: bool, gated: bool) -> dict[str, Any]:
-        return {
+        meta: dict[str, Any] = {
             "gate_mode": GATE_MODE_DYNAMIC_L90,
             "hpf_hz": self.hpf_hz,
             "target_dbfs": self.target_dbfs,
@@ -148,12 +229,21 @@ class YamnetPreprocessor:
             "ambient_percentile": self.ambient_percentile,
             "gate_sensitivity_db": self.gate_sensitivity_db,
             "gate_hysteresis_db": self.gate_hysteresis_db,
+            "gate_delta_db": self.gate_delta_db,
+            "gate_subwindow_ms": self.gate_subwindow_ms,
             "silence_gate_open_dbfs": round(self._last_gate_open_dbfs, 1),
             "silence_gate_close_dbfs": round(self._last_gate_close_dbfs, 1),
+            "gate_level_dbfs": round(self._last_gate_level_dbfs, 1),
+            "gate_open_reason": self._last_gate_open_reason,
             "gate_open": gate_open,
             "gated": gated,
             "gain_smooth_chunks": self.gain_smooth_chunks,
         }
+        if self._last_delta_rms_dbfs is None:
+            meta["delta_rms_dbfs"] = None
+        else:
+            meta["delta_rms_dbfs"] = round(self._last_delta_rms_dbfs, 1)
+        return meta
 
     def prepare(self, pcm_48k: np.ndarray) -> YamnetPrepResult:
         """Prepare one capture chunk for YAMNet inference."""
@@ -162,11 +252,29 @@ class YamnetPreprocessor:
         raw_rms = stats["rms"]
         peak = stats["peak"]
         raw_rms_dbfs = linear_to_dbfs(raw_rms)
+        gate_level_dbfs = peak_subwindow_rms_dbfs(
+            filtered,
+            sample_rate=self.sample_rate,
+            subwindow_ms=self.gate_subwindow_ms,
+        )
+        self._last_gate_level_dbfs = gate_level_dbfs
+
+        delta_rms_dbfs: float | None = None
+        if self._prev_gate_level_dbfs is not None:
+            delta_rms_dbfs = gate_level_dbfs - self._prev_gate_level_dbfs
+        self._last_delta_rms_dbfs = delta_rms_dbfs
 
         _, open_dbfs, close_dbfs = self._compute_thresholds(raw_rms_dbfs)
-        gated = self._apply_gate(raw_rms_dbfs, open_dbfs, close_dbfs)
-        self._ambient_rms_dbfs.append(raw_rms_dbfs)
+        reason = self._apply_absolute_gate(gate_level_dbfs, open_dbfs, close_dbfs)
+        delta_reason = self._maybe_force_delta_open(gate_level_dbfs, delta_rms_dbfs)
+        if delta_reason is not None:
+            reason = delta_reason
+        self._last_gate_open_reason = reason
 
+        self._ambient_rms_dbfs.append(raw_rms_dbfs)
+        self._prev_gate_level_dbfs = gate_level_dbfs
+
+        gated = not self._gate_open
         if gated:
             return YamnetPrepResult(
                 waveform_16k=None,

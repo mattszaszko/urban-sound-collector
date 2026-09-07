@@ -203,9 +203,9 @@
     <input type="number" name="gate_sensitivity_db" step="0.5" min="1" max="30"
            value="{{ default_gate_sensitivity_db }}">
     <div class="field-note">
-      L90 dynamic gate: open threshold = 10th-percentile ambient floor over the last
-      ~5 min (300 chunks) + this offset. Close is 3 dB below open. Peaks (e.g. passing
-      vehicles) do not raise the floor.
+      L90 dynamic gate: open = ambient floor (10th percentile over ~5 min) + this
+      offset (default 5 dB). Close is 3 dB below open. Peak 200&nbsp;ms sub-windows
+      and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
     </div>
 
     <button class="btn btn-start" type="submit">▶ Start run</button>

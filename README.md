@@ -186,10 +186,15 @@ One JSON object per line (~1 Hz):
     "ambient_sample_count": 145,
     "ambient_window_chunks": 300,
     "ambient_percentile": 10,
-    "gate_sensitivity_db": 8,
+    "gate_sensitivity_db": 5,
     "gate_hysteresis_db": 3,
-    "silence_gate_open_dbfs": -70.2,
-    "silence_gate_close_dbfs": -73.2,
+    "gate_delta_db": 4,
+    "gate_subwindow_ms": 200,
+    "silence_gate_open_dbfs": -73.2,
+    "silence_gate_close_dbfs": -76.2,
+    "gate_level_dbfs": -71.2,
+    "delta_rms_dbfs": 5.1,
+    "gate_open_reason": "delta",
     "gate_open": true,
     "gain_smooth_chunks": 5
   }
@@ -200,11 +205,14 @@ One JSON object per line (~1 Hz):
 - **`chunk_index`**: per-run counter (resets on restart)
 - **`dBA_spl`**: relative SPL (not absolute; no calibrated mic yet)
 - **`yamnet_preprocess`**: Branch B diagnostics (dynamic gain, L90 silence gate)
-- **`yamnet_preprocess.gated`**: `true` when YAMNet was skipped (labeled Silence)
+- **`yamnet_preprocess.gated`**: `true` when YAMNet was skipped (`top_label` = `gated`)
 - **`yamnet_preprocess.gate_open`**: hysteresis state — `false` when gated
 - **`ambient_noise_floor_dbfs`**: L90 background floor (10th percentile of last ~5 min)
-- **`silence_gate_open_dbfs` / `silence_gate_close_dbfs`**: per-chunk dynamic thresholds (open = floor + 8 dB, close = open − 3 dB)
-- **`gate_sensitivity_db` / `gate_hysteresis_db`**: tuning parameters for the dynamic gate
+- **`silence_gate_open_dbfs` / `silence_gate_close_dbfs`**: per-chunk dynamic thresholds (open = floor + 5 dB, close = open − 3 dB)
+- **`gate_level_dbfs`**: peak 200 ms sub-window RMS used for open/close and ΔRMS
+- **`delta_rms_dbfs`**: change in `gate_level_dbfs` vs previous chunk (`null` on first chunk)
+- **`gate_open_reason`**: `closed` | `l90` | `delta` | `hold`
+- **`gate_sensitivity_db` / `gate_hysteresis_db` / `gate_delta_db`**: absolute and derivative tuning
 - **`spectrum.z`**: unweighted (physical) frequency content — use for hum/rumble
 - **`spectrum.a`**: A-weighted bands — aligns with human perception / `dBA_spl`
 - **`spectrum.*.levels_db`**: relative band levels (not absolute per-band SPL)
@@ -291,10 +299,12 @@ tail -n 20 logs/*.log
 | `--backend` | `auto` | `pyalsa`, `arecord`, or `auto` |
 | `--yamnet-hpf-hz` | `175` | Branch B high-pass cutoff (Hz) |
 | `--yamnet-target-dbfs` | `-23` | Branch B RMS normalization target |
-| `--yamnet-gate-sensitivity-db` | `8` | Open offset above L90 ambient floor (dB) |
+| `--yamnet-gate-sensitivity-db` | `5` | Open offset above L90 ambient floor (dB) |
 | `--yamnet-gate-hysteresis-db` | `3` | Close offset below open threshold (dB) |
 | `--yamnet-gate-ambient-chunks` | `300` | Rolling window for ambient floor (~5 min) |
 | `--yamnet-gate-percentile` | `10` | Ambient floor percentile (L90 = 10) |
+| `--yamnet-gate-delta-db` | `4` | Force open on ΔRMS jump (0 disables) |
+| `--yamnet-gate-subwindow-ms` | `200` | Peak RMS sub-window for gate level (0 = full chunk) |
 | `--yamnet-gain-smooth-chunks` | `5` | Gain smoothing window (chunks) |
 | `--calib-offset` | `120.0` | Relative dBA offset |
 | `--quiet` | off | Suppress JSON on stdout |
@@ -325,8 +335,9 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
   - **Output file name** prefix (prefilled from time of day: `morning` /
     `day` / `evening` / `night`); UTC start stamp is always appended
   - Device ID and ALSA device
-  - **Gate sensitivity (dB above ambient)** — default `8`; L90 dynamic gate adapts
-    to urban background over a ~5-minute window (300 chunks)
+  - **Gate sensitivity (dB above ambient)** — default `5`; L90 dynamic gate adapts
+    to urban background over a ~5-minute window (300 chunks); ΔRMS and 200 ms
+    peak sub-windows catch short impulses
 - Stop a running run
 - Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
 - Live log tail via Server-Sent Events (no page refresh needed)
