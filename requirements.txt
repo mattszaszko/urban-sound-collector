@@ -7,6 +7,10 @@ pyalsaaudio>=0.10.0
 #   pip install ai-edge-litert
 # If both fail, use a Python 3.11 venv: python3.11 -m venv .venv
 
+# CLAP (Xenova clap-htsat-unfused ONNX)
+onnxruntime>=1.16.0
+tokenizers>=0.15.0
+
 # Web UI
 fastapi>=0.111.0
 uvicorn>=0.29.0

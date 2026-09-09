@@ -1,8 +1,7 @@
-"""CLAP zero-shot classifier (placeholder embeds until ONNX models are installed)."""
+"""CLAP zero-shot classifier using Xenova clap-htsat-unfused ONNX."""
 
 from __future__ import annotations
 
-import hashlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,20 +9,35 @@ from typing import Any
 
 import numpy as np
 
+from core.clap_onnx import (
+    CLAP_MODEL_NAME,
+    AudioEncoder,
+    ClapModelsMissingError,
+    TextEncoder,
+    model_version_fingerprint,
+    onnx_ready_status,
+)
 from core.clap_prompts import (
     DEFAULT_EMBEDDINGS_PATH,
     DEFAULT_PROMPTS_PATH,
-    ClapPromptPair,
+    EXPECTED_EMBED_DIM,
+    EXPECTED_MODEL_NAME,
     embedding_sync_status,
+    embeddings_compatible,
     load_embeddings,
     load_prompt_pairs,
     prompts_hash,
     save_embeddings,
 )
 
-CLAP_MODEL_NAME = "clap-placeholder"
-CLAP_MODEL_VERSION = "dev-hash-v1"
-EMBED_DIM = 64
+# Re-export for callers / tests
+__all__ = [
+    "CLAP_MODEL_NAME",
+    "ClapClassifier",
+    "ClapModelsMissingError",
+    "ClapPredictResult",
+    "rebuild_text_embeddings",
+]
 
 
 @dataclass
@@ -33,47 +47,62 @@ class ClapPredictResult:
     top_confidence: float
     inference_ms: float
     model_name: str = CLAP_MODEL_NAME
-    model_version: str = CLAP_MODEL_VERSION
-
-
-def _hash_embed(text: str, dim: int = EMBED_DIM) -> np.ndarray:
-    """Deterministic unit vector from text (dev stand-in for CLAP text tower)."""
-    digest = hashlib.sha256(text.encode("utf-8")).digest()
-    raw = np.frombuffer(digest * ((dim // len(digest)) + 1), dtype=np.uint8)[:dim]
-    vec = raw.astype(np.float32) - 127.5
-    norm = float(np.linalg.norm(vec)) + 1e-9
-    return vec / norm
+    model_version: str = ""
 
 
 def rebuild_text_embeddings(
     *,
     prompts_path: Path = DEFAULT_PROMPTS_PATH,
     embeddings_path: Path = DEFAULT_EMBEDDINGS_PATH,
+    text_encoder: TextEncoder | None = None,
+    clap_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Rebuild cached text embeddings for current prompt pairs."""
+    """Rebuild cached text embeddings via the CLAP text ONNX tower."""
     pairs = load_prompt_pairs(prompts_path)
     if not pairs:
         raise ValueError("No CLAP prompts to embed")
-    labels = [p.label for p in pairs]
-    matrix = np.stack([_hash_embed(p.prompt) for p in pairs], axis=0)
-    file_hash = prompts_hash(pairs)
-    save_embeddings(
-        labels=labels,
-        embeddings=matrix,
-        file_hash=file_hash,
-        path=embeddings_path,
-    )
-    return {
-        "ok": True,
-        "count": len(labels),
-        "prompts_hash": file_hash,
-        "embeddings_path": str(embeddings_path),
-        "backend": CLAP_MODEL_NAME,
-    }
+
+    owns_encoder = text_encoder is None
+    encoder = text_encoder
+    try:
+        if encoder is None:
+            kwargs = {}
+            if clap_dir is not None:
+                kwargs["clap_dir"] = clap_dir
+            encoder = TextEncoder(**kwargs)
+        matrix = encoder.embed([p.prompt for p in pairs])
+        if matrix.shape[1] != EXPECTED_EMBED_DIM:
+            raise RuntimeError(
+                f"Text embeds have dim {matrix.shape[1]}, expected {EXPECTED_EMBED_DIM}"
+            )
+        labels = [p.label for p in pairs]
+        file_hash = prompts_hash(pairs)
+        version = getattr(encoder, "model_version", "") or model_version_fingerprint()
+        save_embeddings(
+            labels=labels,
+            embeddings=matrix,
+            file_hash=file_hash,
+            model_name=EXPECTED_MODEL_NAME,
+            embed_dim=EXPECTED_EMBED_DIM,
+            path=embeddings_path,
+        )
+        return {
+            "ok": True,
+            "count": len(labels),
+            "prompts_hash": file_hash,
+            "embeddings_path": str(embeddings_path),
+            "backend": CLAP_MODEL_NAME,
+            "model_name": EXPECTED_MODEL_NAME,
+            "model_version": version,
+            "embed_dim": EXPECTED_EMBED_DIM,
+        }
+    finally:
+        if owns_encoder and encoder is not None:
+            encoder.close()
 
 
 class ClapClassifier:
-    """Rank audio against cached prompt embeddings."""
+    """Rank audio against cached prompt embeddings using the audio ONNX tower."""
 
     def __init__(
         self,
@@ -81,6 +110,8 @@ class ClapClassifier:
         prompts_path: Path = DEFAULT_PROMPTS_PATH,
         embeddings_path: Path = DEFAULT_EMBEDDINGS_PATH,
         top_k: int = 3,
+        audio_encoder: AudioEncoder | None = None,
+        clap_dir: Path | None = None,
     ) -> None:
         self.prompts_path = prompts_path
         self.embeddings_path = embeddings_path
@@ -88,6 +119,15 @@ class ClapClassifier:
         self._labels: list[str] = []
         self._embeddings: np.ndarray | None = None
         self._hash: str | None = None
+        self._model_version = ""
+        if audio_encoder is not None:
+            self._audio = audio_encoder
+        else:
+            kwargs = {}
+            if clap_dir is not None:
+                kwargs["clap_dir"] = clap_dir
+            self._audio = AudioEncoder(**kwargs)
+        self._model_version = getattr(self._audio, "model_version", "") or ""
         self.reload()
 
     def reload(self) -> None:
@@ -99,43 +139,40 @@ class ClapClassifier:
                 f"CLAP embeddings missing at {self.embeddings_path}. "
                 "Rebuild from the Prompts tab or scripts/rebuild_clap_embeddings.py"
             )
-        labels, embeddings, file_hash = loaded
-        if file_hash != expected:
+        ok, err = embeddings_compatible(loaded)
+        if not ok:
+            raise RuntimeError(err or "CLAP embeddings incompatible; rebuild required")
+        if loaded.prompts_hash != expected:
             raise RuntimeError(
                 "CLAP embeddings are out of sync with clap_prompts.json; rebuild them"
             )
-        self._labels = labels
-        self._embeddings = embeddings
-        self._hash = file_hash
+        self._labels = loaded.labels
+        self._embeddings = loaded.embeddings
+        self._hash = loaded.prompts_hash
 
     @property
     def ready(self) -> bool:
         return self._embeddings is not None and bool(self._labels)
 
     def sync_status(self) -> dict[str, Any]:
-        return embedding_sync_status(
+        status = embedding_sync_status(
             prompts_path=self.prompts_path,
             embeddings_path=self.embeddings_path,
         )
+        status["onnx"] = onnx_ready_status()
+        return status
 
     def predict(self, pcm_48k: np.ndarray) -> ClapPredictResult:
         if self._embeddings is None or not self._labels:
             raise RuntimeError("CLAP classifier has no embeddings loaded")
         started = time.perf_counter()
-        mono = np.asarray(pcm_48k, dtype=np.float32).reshape(-1)
-        # Placeholder audio tower: hash of coarse RMS + spectral centroid proxy.
-        rms = float(np.sqrt(np.mean(np.square(mono)))) if mono.size else 0.0
-        # Cheap shape fingerprint so different buffers don't always tie.
-        step = max(1, mono.size // 32)
-        fingerprint = mono[::step][:32]
-        key = f"rms={rms:.6f}|fp={fingerprint.tobytes().hex()}"
-        audio_vec = _hash_embed(key)
+        audio_vec = self._audio.embed(pcm_48k)
         sims = self._embeddings @ audio_vec
         order = np.argsort(-sims)[: self.top_k]
         predictions = [
             {
                 "label": self._labels[int(i)],
-                "confidence": float(max(0.0, min(1.0, (sims[int(i)] + 1.0) / 2.0))),
+                "confidence": float(max(0.0, min(1.0, (float(sims[int(i)]) + 1.0) / 2.0))),
             }
             for i in order
         ]
@@ -145,4 +182,6 @@ class ClapClassifier:
             top_label=predictions[0]["label"],
             top_confidence=float(predictions[0]["confidence"]),
             inference_ms=round(elapsed_ms, 1),
+            model_name=CLAP_MODEL_NAME,
+            model_version=self._model_version,
         )

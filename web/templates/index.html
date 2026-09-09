@@ -379,10 +379,13 @@
     <h2>CLAP prompts</h2>
     <div class="status-row" id="prompts-sync-row">
       <span class="badge idle" id="prompts-sync-badge"><span class="dot"></span>Loading…</span>
+      <span class="badge idle" id="prompts-onnx-badge"><span class="dot"></span>ONNX…</span>
       <span style="color:var(--muted);font-size:.75rem" id="prompts-sync-detail"></span>
     </div>
     <div class="field-note" style="margin-bottom:.75rem">
-      Each row is a label + text prompt used for CLAP embeddings. Save prompts, then rebuild embeddings before enabling CLAP on a run.
+      Each row is a label + text prompt used for CLAP embeddings. Install ONNX models
+      (<code>python scripts/download_clap_models.py</code>), save prompts, then rebuild
+      embeddings before enabling CLAP on a run.
     </div>
     <table class="prompt-table">
       <thead>
@@ -646,22 +649,41 @@ shutdownBtn.addEventListener('click', async () => {
 const promptsTbody = document.getElementById('prompts-tbody');
 const promptsStatus = document.getElementById('prompts-status');
 const promptsSyncBadge = document.getElementById('prompts-sync-badge');
+const promptsOnnxBadge = document.getElementById('prompts-onnx-badge');
 const promptsSyncDetail = document.getElementById('prompts-sync-detail');
 
-function renderSync(sync) {
+function renderSync(sync, onnx) {
   if (!sync) {
     promptsSyncBadge.className = 'badge idle';
     promptsSyncBadge.innerHTML = '<span class="dot"></span>Unknown';
     promptsSyncDetail.textContent = '';
-    return;
+  } else {
+    const inSync = !!sync.in_sync;
+    promptsSyncBadge.className = 'badge ' + (inSync ? 'ok' : 'warn');
+    promptsSyncBadge.innerHTML =
+      '<span class="dot"></span>' + (inSync ? 'Embeddings in sync' : 'Embeddings out of sync');
+    let detail =
+      `${sync.prompt_count || 0} prompts · ${sync.embedding_count || 0} embeddings` +
+      (sync.prompts_hash ? ` · hash ${sync.prompts_hash}` : '');
+    if (sync.compat_error) detail += ` · ${sync.compat_error}`;
+    promptsSyncDetail.textContent = detail;
   }
-  const inSync = !!sync.in_sync;
-  promptsSyncBadge.className = 'badge ' + (inSync ? 'ok' : 'warn');
-  promptsSyncBadge.innerHTML =
-    '<span class="dot"></span>' + (inSync ? 'Embeddings in sync' : 'Embeddings out of sync');
-  promptsSyncDetail.textContent =
-    `${sync.prompt_count || 0} prompts · ${sync.embedding_count || 0} embeddings` +
-    (sync.prompts_hash ? ` · hash ${sync.prompts_hash}` : '');
+  if (promptsOnnxBadge) {
+    if (!onnx) {
+      promptsOnnxBadge.className = 'badge idle';
+      promptsOnnxBadge.innerHTML = '<span class="dot"></span>ONNX unknown';
+    } else if (onnx.ready) {
+      promptsOnnxBadge.className = 'badge ok';
+      promptsOnnxBadge.innerHTML = '<span class="dot"></span>ONNX ready';
+      promptsOnnxBadge.title = onnx.model_version
+        ? `${onnx.model_name} · ${onnx.model_version}`
+        : (onnx.model_name || 'ONNX');
+    } else {
+      promptsOnnxBadge.className = 'badge warn';
+      promptsOnnxBadge.innerHTML = '<span class="dot"></span>ONNX missing';
+      promptsOnnxBadge.title = onnx.hint || (onnx.missing || []).join(', ');
+    }
+  }
 }
 
 function addPromptRow(label = '', prompt = '') {
@@ -696,7 +718,7 @@ async function loadPrompts() {
   promptsTbody.innerHTML = '';
   (data.prompts || []).forEach((p) => addPromptRow(p.label, p.prompt));
   if (!promptsTbody.children.length) addPromptRow();
-  renderSync(data.sync);
+  renderSync(data.sync, data.onnx);
   setInlineStatus(promptsStatus, '');
   promptsLoaded = true;
 }

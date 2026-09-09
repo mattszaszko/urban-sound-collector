@@ -17,7 +17,13 @@ secrets/
 *.json
 !requirements.txt
 !config/*.json
+!models/clap/preprocessor_config.json
 .env
+
+# Large CLAP ONNX weights + tokenizer (download via scripts/download_clap_models.py)
+models/clap/*.onnx
+models/clap/tokenizer.json
+
 
 # OS / editor
 .DS_Store

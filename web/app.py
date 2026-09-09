@@ -550,6 +550,7 @@ async def api_clap_prompts_get(request: Request):
     if denied:
         return denied
     from core.clap_prompts import embedding_sync_status, load_prompt_pairs
+    from core.clap_onnx import onnx_ready_status
 
     pairs = load_prompt_pairs(CLAP_PROMPTS_PATH) if CLAP_PROMPTS_PATH.exists() else []
     sync = embedding_sync_status(pairs, prompts_path=CLAP_PROMPTS_PATH)
@@ -558,6 +559,7 @@ async def api_clap_prompts_get(request: Request):
             "ok": True,
             "prompts": [{"label": p.label, "prompt": p.prompt} for p in pairs],
             "sync": sync,
+            "onnx": onnx_ready_status(),
         }
     )
 

@@ -330,9 +330,29 @@ tail -n 20 logs/*.log
 | `--quiet` | off | Suppress JSON on stdout |
 | `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
 | `--no-spectrum` | off | Disable Branch C spectral analysis |
+| `--enable-clap` | off | Event-driven CLAP zero-shot (requires ONNX + rebuilt embeddings) |
 | `--log-dir` | `logs` | Per-run log directory |
 
 Stop with **Ctrl+C**, or let `timeout` end the run.
+
+### CLAP (optional, event-driven)
+
+YAMNet still runs every open chunk. With **`--enable-clap`**, a 10 s ungained
+ring buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
+YAMNet trigger fires (see web **Triggers** tab). JSONL gains `clap_*` fields;
+`clap_model_name` should be `clap-htsat-unfused-onnx`.
+
+One-time on each Pi (after `pip install -r requirements.txt`):
+
+```bash
+python scripts/download_clap_models.py   # ~160 MB under models/clap/
+python scripts/rebuild_clap_embeddings.py
+```
+
+Or use the web UI: **Prompts** → confirm **ONNX ready** → **Rebuild embeddings**,
+then **Run** with Enable CLAP. Text ONNX loads only during rebuild (then freed);
+audio ONNX stays resident while CLAP is enabled. Default cooldown is 5 s between
+inferences.
 
 ### Tests
 
