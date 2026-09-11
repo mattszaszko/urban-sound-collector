@@ -14,7 +14,7 @@ from core.audio_constants import CAPTURE_SAMPLE_RATE
 from core.pcm import chunk_stats
 from core.resampler import to_yamnet_waveform
 
-DEFAULT_HPF_HZ = 175.0
+DEFAULT_HPF_HZ = 80.0
 DEFAULT_HPF_ORDER = 4
 DEFAULT_TARGET_DBFS = -23.0
 DEFAULT_PEAK_CEILING = 0.9

@@ -12,6 +12,7 @@ from core.yamnet_preprocess import (
     DEFAULT_AMBIENT_GAIN_MARGIN_DB,
     DEFAULT_EFFECTIVE_SLACK_DB,
     DEFAULT_GATE_SENSITIVITY_DB,
+    DEFAULT_HPF_HZ,
     DEFAULT_HPF_ORDER,
     DEFAULT_MAX_GAIN_CEILING_DB,
     DEFAULT_MAX_GAIN_MIN_DB,
@@ -53,6 +54,7 @@ class YamnetPreprocessorTests(unittest.TestCase):
         self.assertEqual(DEFAULT_GATE_SENSITIVITY_DB, 5.0)
 
     def test_default_dynamic_gain_constants(self) -> None:
+        self.assertEqual(DEFAULT_HPF_HZ, 80.0)
         self.assertEqual(DEFAULT_HPF_ORDER, 4)
         self.assertEqual(DEFAULT_AMBIENT_GAIN_MARGIN_DB, 18.0)
         self.assertEqual(DEFAULT_EFFECTIVE_SLACK_DB, 12.0)
@@ -454,7 +456,7 @@ class YamnetPreprocessorTests(unittest.TestCase):
             gate_sensitivity_db=0.0,
             gate_delta_db=0.0,
             gate_subwindow_ms=0.0,
-            hpf_hz=175.0,
+            hpf_hz=80.0,
             hpf_order=4,
         )
         quiet = _sine_at_dbfs(1000.0, -80.0)

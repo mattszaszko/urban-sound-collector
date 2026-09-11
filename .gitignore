@@ -11,6 +11,7 @@ runs/
 logs/
 *.jsonl
 *.log
+*.wav
 
 # Secrets / credentials
 secrets/

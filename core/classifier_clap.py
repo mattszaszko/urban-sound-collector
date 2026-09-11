@@ -166,7 +166,12 @@ class ClapClassifier:
         if self._embeddings is None or not self._labels:
             raise RuntimeError("CLAP classifier has no embeddings loaded")
         started = time.perf_counter()
-        audio_vec = self._audio.embed(pcm_48k)
+        mono = np.asarray(pcm_48k, dtype=np.float32).reshape(-1)
+        # Peak-normalize the hybrid window (no Branch B AGC/HPF).
+        peak = float(np.max(np.abs(mono))) if mono.size else 0.0
+        if peak > 1e-8:
+            mono = mono / peak
+        audio_vec = self._audio.embed(mono)
         sims = self._embeddings @ audio_vec
         order = np.argsort(-sims)[: self.top_k]
         predictions = [

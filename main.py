@@ -41,6 +41,7 @@ from core.host_identity import default_device_id
 from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
 from core.pcm import int32_frames_to_float32
 from core.spectrum import SpectrumEngine
+from core.wav_writer import WavWriter
 from core.yamnet_preprocess import (
     DEFAULT_AMBIENT_GAIN_MARGIN_DB,
     DEFAULT_AMBIENT_PERCENTILE,
@@ -262,6 +263,20 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
             "(requires rebuilt prompt embeddings)."
         ),
     )
+    parser.add_argument(
+        "--record-wav",
+        action="store_true",
+        help=(
+            "Write ungained mono 16-bit PCM WAV @ capture rate alongside the "
+            "JSONL (default path: same stem as -o with .wav)."
+        ),
+    )
+    parser.add_argument(
+        "--wav-path",
+        type=Path,
+        default=None,
+        help="Explicit WAV output path (implies --record-wav).",
+    )
     return parser.parse_args(argv)
 
 
@@ -358,6 +373,7 @@ def stream_live(
     enable_spectrum: bool = True,
     enable_clap: bool = False,
     clap_classifier: ClapClassifier | None = None,
+    wav_path: Path | None = None,
 ) -> int:
     """Capture audio, run triple-branch analysis, emit JSONL events.
 
@@ -365,6 +381,7 @@ def stream_live(
     Branch B: YAMNet TFLite at 16 kHz (dynamic HPF + RMS normalize).
     Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
     Optional CLAP: hybrid 2 s pre-roll + 8 s post-roll after YAMNet wake.
+    Optional WAV: ungained mono 16-bit PCM @ capture rate.
 
     Returns:
         Number of events written.
@@ -376,6 +393,7 @@ def stream_live(
     clap_skips = 0
     capture: AlsAudioCapture | None = None
     writer: JsonlWriter | None = None
+    wav_writer: WavWriter | None = None
 
     loudness = LoudnessEngine(
         sample_rate=float(CAPTURE_SAMPLE_RATE),
@@ -452,6 +470,8 @@ def stream_live(
         enable_spectrum,
     )
     logger.info("Recording JSONL to: %s", output_path.resolve())
+    if wav_path is not None:
+        logger.info("Recording WAV to: %s", wav_path.resolve())
     if print_stdout:
         logger.info("Streaming JSON to stdout. Press Ctrl+C to stop.")
     else:
@@ -459,6 +479,8 @@ def stream_live(
 
     try:
         writer = JsonlWriter(output_path)
+        if wav_path is not None:
+            wav_writer = WavWriter(wav_path, sample_rate=int(CAPTURE_SAMPLE_RATE))
         capture = AlsAudioCapture(
             alsa_device,
             CAPTURE_CHUNK_SAMPLES,
@@ -469,6 +491,8 @@ def stream_live(
             if events_written == 0:
                 logger.info("First audio chunk received; pipeline is live.")
             pcm = int32_frames_to_float32(raw_chunk)
+            if wav_writer is not None:
+                wav_writer.write_float32(pcm)
 
             # Branch A — human loudness @ capture rate (no classifier gain).
             metrics = loudness.analyse(pcm)
@@ -645,6 +669,7 @@ def stream_live(
                 rms_unweighted=metrics["rms_unweighted"],
                 rms_a_weighted=metrics["rms_a_weighted"],
                 dba_spl=metrics["dBA_spl"],
+                laf_max_db=metrics.get("LAFmax_dB"),
                 predictions=predictions,
                 spectrum=spectrum,
                 yamnet_preprocess=prep.metadata,
@@ -680,6 +705,10 @@ def stream_live(
         if capture is not None:
             capture.close()
             logger.info("Audio stream closed.")
+        if wav_writer is not None:
+            wav_final = wav_writer.path
+            wav_writer.close()
+            logger.info("Closed WAV recording: %s", wav_final.resolve())
         if writer is not None:
             final_path = writer.path
             writer.close()
@@ -740,6 +769,12 @@ def main(argv: List[str] | None = None) -> int:
                 logger.error("CLAP unavailable: %s", exc)
                 return 1
 
+        wav_path: Path | None = None
+        if args.wav_path is not None:
+            wav_path = args.wav_path
+        elif args.record_wav:
+            wav_path = Path(output_path).with_suffix(".wav")
+
         events_written = stream_live(
             classifier=classifier,
             device_id=args.device_id,
@@ -753,6 +788,7 @@ def main(argv: List[str] | None = None) -> int:
             enable_spectrum=not args.no_spectrum,
             enable_clap=bool(args.enable_clap),
             clap_classifier=clap_classifier,
+            wav_path=wav_path,
         )
     except ValueError as exc:
         logger.error("%s", exc)

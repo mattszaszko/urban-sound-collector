@@ -44,15 +44,15 @@ INMP441 (I2S) → ALSA S32_LE @ 48 kHz
   int32 → PCM align → float32 [-1, 1]
         │
         ├─ Branch A (48 kHz) ──────────────────────────────┐
-        │   A-weighting IIR (stateful)                     │
-        │   rms_unweighted, rms_a_weighted, dBA_spl        │
+        │   A-weighting IIR (pre-warped, stateful)         │
+        │   rms_*, dBA_spl (LAeq,1s), LAFmax_dB            │
         │                                                  │
         ├─ Branch C (48 kHz) ──────────────────────────────┤
-        │   Welch PSD → Z + A 1/3-octave summaries         │
+        │   Welch PSD (nperseg=16384) → Z + A 1/3-oct      │
         │   (ungained; peaks, centroid, rolloff, L/M/H)    │
         │                                                  │
         └─ Branch B (16 kHz) ──────────────────────────────┤
-            HPF ~175 Hz (order 4) → L90 silence gate → RMS normalize │
+            HPF ~80 Hz (order 4) → L90 silence gate → RMS normalize │
             (smoothed gain, peak limiter) → resample     │
             YAMNet TFLite → top-3 predictions            │
                                                            ▼
@@ -98,6 +98,7 @@ urban-sound-collector/
 │   ├── host_identity.py        # Hostname / DEVICE_ID defaults (multi-Pi)
 │   ├── loudness.py             # A-weighting + relative dBA SPL
 │   ├── spectrum.py             # Z + A 1/3-octave spectral summaries
+│   ├── wav_writer.py           # Optional ungained mono WAV recorder
 │   ├── yamnet_preprocess.py    # HPF, dynamic normalize, silence gate
 │   ├── resampler.py            # 48 kHz → 16 kHz for YAMNet
 │   ├── classifier_tflite.py    # Bundled YAMNet TFLite inference
@@ -127,8 +128,8 @@ urban-sound-collector/
 | `main.py` | Argument parsing, orchestrates capture → analysis → JSONL |
 | `capture_alsa.py` | Opens ALSA device, yields fixed-size int32 chunks |
 | `pcm.py` | INMP441 24-bit alignment into unit-scale float samples |
-| `loudness.py` | IEC 61672-style A-weighting, RMS, relative `dBA_spl` |
-| `spectrum.py` | Welch PSD, 1/3-octave Z + A bands, peaks, centroid, rolloff |
+| `loudness.py` | Pre-warped A-weighting; `dBA_spl` ≈ LAeq,1s; `LAFmax_dB` (Fast) |
+| `spectrum.py` | Welch PSD (`nperseg` 16384), 1/3-octave Z + A bands, peaks, centroid, rolloff |
 | `yamnet_preprocess.py` | Branch B HPF, RMS normalize, gain smooth, silence gate |
 | `resampler.py` | Polyphase resample 48 kHz → 16 kHz |
 | `classifier_tflite.py` | Loads TFLite model, returns top-3 AudioSet labels |
@@ -149,6 +150,7 @@ One JSON object per line (~1 Hz):
   "rms_unweighted": 0.00851457,
   "rms_a_weighted": 0.0045808,
   "dBA_spl": 73.2,
+  "LAFmax_dB": 75.1,
   "top_label": "Vehicle",
   "top_confidence": 0.26171875,
   "predictions": [
@@ -182,7 +184,7 @@ One JSON object per line (~1 Hz):
     "applied_gain": 4.2,
     "raw_rms_dbfs": -42.1,
     "smoothed_rms_dbfs": -41.8,
-    "hpf_hz": 175,
+    "hpf_hz": 80,
     "hpf_order": 4,
     "target_dbfs": -23,
     "max_gain_db": 36.0,
@@ -214,7 +216,8 @@ One JSON object per line (~1 Hz):
 
 - **`created_at`**: UTC timestamp for time-series use
 - **`chunk_index`**: per-run counter (resets on restart)
-- **`dBA_spl`**: relative SPL (not absolute; no calibrated mic yet)
+- **`dBA_spl`**: relative LAeq,1s-style level over the ~0.975 s chunk (A-weighted RMS + calib; not absolute SPL)
+- **`LAFmax_dB`**: Fast (τ=125 ms) maximum A-weighted level in the chunk (same calib offset)
 - **`yamnet_preprocess`**: Branch B diagnostics (dynamic gain, L90 silence gate)
 - **`yamnet_preprocess.gated`**: `true` when YAMNet was skipped (`top_label` = `gated`)
 - **`yamnet_preprocess.gate_open`**: gate state — `false` when gated
@@ -230,7 +233,7 @@ One JSON object per line (~1 Hz):
 - **`gate_sensitivity_db` / `gate_delta_db`**: absolute and derivative tuning
 - **`spectrum.z`**: unweighted (physical) frequency content — use for hum/rumble
 - **`spectrum.a`**: A-weighted bands — aligns with human perception / `dBA_spl`
-- **`spectrum.*.levels_db`**: relative band levels (not absolute per-band SPL)
+- **`spectrum.*.levels_db`**: relative band levels (not absolute per-band SPL); Welch `nperseg` defaults to 16384 (Δf ≈ 2.93 Hz @ 48 kHz) so the lowest 1/3-octave (31.5 Hz) is resolved
 - **`spectrum.*.energy_pct`**: low 31.5–500 Hz, mid 500–2000 Hz, high 2–16 kHz
 
 Disable spectrum with **`--no-spectrum`** (Branch A + B only).
@@ -312,7 +315,7 @@ tail -n 20 logs/*.log
 |---|---|---|
 | `--alsa-device` | `plughw:3,0` | ALSA capture device |
 | `--backend` | `auto` | `pyalsa`, `arecord`, or `auto` |
-| `--yamnet-hpf-hz` | `175` | Branch B high-pass cutoff (Hz; order 4) |
+| `--yamnet-hpf-hz` | `80` | Branch B high-pass cutoff (Hz; order 4) |
 | `--yamnet-target-dbfs` | `-23` | Branch B RMS normalization target |
 | `--yamnet-ambient-gain-margin-db` | `18` | L90-tied cap: `max_gain = target − floor − margin` |
 | `--yamnet-effective-slack-db` | `12` | Require `gate_level + max_gain ≥ target − slack` |
@@ -331,6 +334,8 @@ tail -n 20 logs/*.log
 | `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
 | `--no-spectrum` | off | Disable Branch C spectral analysis |
 | `--enable-clap` | off | Event-driven CLAP zero-shot (requires ONNX + rebuilt embeddings) |
+| `--record-wav` | off | Write ungained mono 16-bit WAV @ 48 kHz (sibling of `-o` by default) |
+| `--wav-path` | (from `-o`) | Explicit WAV path (implies recording) |
 | `--log-dir` | `logs` | Per-run log directory |
 
 Stop with **Ctrl+C**, or let `timeout` end the run.
@@ -340,9 +345,10 @@ Stop with **Ctrl+C**, or let `timeout` end the run.
 YAMNet still runs every open chunk. With **`--enable-clap`**, a 10 s ungained
 ring buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
 YAMNet trigger fires (see web **Triggers** tab). CLAP uses a **hybrid window**:
-2 s before the wake + 8 s after, then writes predictions on the later chunk with
-link meta (`trigger_chunk_index`, etc.). Statuses: `scheduled` → `pending` →
-`triggered` (no carry). `clap_model_name` should be `clap-htsat-unfused-onnx`.
+2 s before the wake + 8 s after, **peak-normalized** before audio ONNX (no Branch B
+AGC/HPF), then writes predictions on the later chunk with link meta
+(`trigger_chunk_index`, etc.). Statuses: `scheduled` → `pending` → `triggered`
+(no carry). `clap_model_name` should be `clap-htsat-unfused-onnx`.
 
 One-time on each Pi (after `pip install -r requirements.txt`):
 
@@ -383,11 +389,14 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
     when `gate_level + max_gain` can reach within 12 dB of target; ΔRMS (with
     absolute floor) and 200 ms peak sub-windows catch short impulses; gate closes
     after 2 chunks below open or too cold
+  - Optional **Record audio** — ungained mic WAV next to the JSONL (~330 MB/hour)
 - Stop a running run
-- Live status: chunk count, elapsed time, last label, dBA (polls every 10 s)
+- Live status: chunk count, elapsed time, last label, dBA, last CLAP (polls every 1 s)
+- Live **5‑minute loudness chart** (dBA + Gate L90 relative, YAMNet label-change markers, CLAP triggers)
 - Live log tail via Server-Sent Events (no page refresh needed)
-- Download past JSONL files directly in the browser, with optional
-  **download granularity** (omit `spectrum` and/or `yamnet_preprocess` to shrink files)
+- **Data** tab: download past JSONL (optional omit `spectrum` /
+  `yamnet_preprocess`), download sibling WAV when recorded, delete a run
+  (JSONL + WAV; blocked while that run is active)
 - Password-protected login (session cookie, 7-day expiry)
 - Optional **systemd** unit so the web UI auto-starts on Pi reboot
 - Named Cloudflare Tunnel for a stable public URL (e.g. `https://noise.mattszaszko.com`)

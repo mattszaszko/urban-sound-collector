@@ -64,6 +64,24 @@
   .stat{background:var(--bg);border-radius:8px;padding:.75rem}
   .stat-label{font-size:.7rem;color:var(--muted);margin-bottom:.2rem}
   .stat-value{font-size:1.1rem;font-weight:700;color:var(--text)}
+  .live-chart-wrap{margin-top:.25rem}
+  .live-chart-meta{display:flex;flex-wrap:wrap;gap:.5rem .85rem;align-items:center;
+                   justify-content:space-between;margin-bottom:.5rem}
+  .live-chart-note{font-size:.7rem;color:var(--muted);line-height:1.35}
+  .live-chart-legend{display:flex;flex-wrap:wrap;gap:.55rem;font-size:.68rem;color:var(--muted)}
+  .live-chart-legend span{display:inline-flex;align-items:center;gap:.3rem}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block}
+  .swatch.line{height:3px;width:14px;border-radius:1px}
+  .swatch.dot{border-radius:50%}
+  .live-chart-canvas-box{position:relative;height:220px;background:var(--bg);
+                         border:1px solid var(--border);border-radius:8px;padding:.35rem}
+  .live-chart-empty{position:absolute;inset:0;display:flex;align-items:center;
+                    justify-content:center;color:var(--muted);font-size:.8rem;
+                    pointer-events:none;z-index:1}
+  .live-chart-empty[hidden]{display:none}
+  @media(min-width:640px){
+    .live-chart-canvas-box{height:260px}
+  }
 
   /* Forms */
   label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:.25rem;margin-top:.75rem}
@@ -114,16 +132,20 @@
   #log-box p{margin:0;line-height:1.6;white-space:pre-wrap;word-break:break-all}
 
   /* Runs table */
-  .run-row{display:grid;grid-template-columns:1fr auto auto;gap:.5rem;
-           align-items:center;padding:.6rem 0;border-bottom:1px solid var(--border);
+  .run-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+           justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);
            font-size:.8rem}
   .run-row:last-child{border-bottom:none}
+  .run-info{min-width:0;flex:1 1 12rem}
   .run-name{color:var(--text);word-break:break-all}
-  .run-meta{color:var(--muted);text-align:right;white-space:nowrap}
-  .dl-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
+  .run-meta{color:var(--muted);white-space:normal}
+  .run-actions{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
+  .dl-btn,.del-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
           border-radius:6px;color:var(--accent);text-decoration:none;
-          font-size:.75rem;white-space:nowrap}
+          font-size:.75rem;white-space:nowrap;cursor:pointer;font-family:inherit}
   .dl-btn:hover{border-color:var(--accent)}
+  .del-btn{color:var(--red);border-color:var(--border)}
+  .del-btn:hover{border-color:var(--red)}
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
                   padding:.85rem;background:var(--bg);border:1px solid var(--border);
                   border-radius:8px}
@@ -179,7 +201,7 @@
   .field-note{font-size:.7rem;color:var(--muted);margin-top:.35rem;line-height:1.45}
   @media(min-width:640px){
     body{max-width:900px;margin:0 auto;padding:1.5rem}
-    .stat-grid{grid-template-columns:repeat(4,1fr)}
+    .stat-grid{grid-template-columns:repeat(5,1fr)}
     .trigger-settings{grid-template-columns:repeat(3,1fr)}
   }
 </style>
@@ -214,6 +236,12 @@
 
 {% if error == 'already_running' %}
 <div class="error-banner">A run is already active. Stop it before starting a new one.</div>
+{% elif error == 'run_in_use' %}
+<div class="error-banner">That run is still active. Stop it before deleting.</div>
+{% elif error == 'not_found' %}
+<div class="error-banner">Run file not found.</div>
+{% elif error == 'bad_request' %}
+<div class="error-banner">Could not delete that file.</div>
 {% endif %}
 
 <!-- ── RUN TAB ── -->
@@ -260,6 +288,28 @@
       <div class="stat-label">dBA SPL</div>
       <div class="stat-value" id="stat-dba">{{ status.last_dba or '—' }}</div>
     </div>
+    <div class="stat">
+      <div class="stat-label">Last CLAP</div>
+      <div class="stat-value" id="stat-clap" style="font-size:.85rem">—</div>
+    </div>
+  </div>
+
+  <div class="live-chart-wrap">
+    <div class="live-chart-meta">
+      <div class="live-chart-note">
+        Rolling 5&nbsp;min · Gate L90 is post-HPF unweighted dBFS + 120 (relative)
+      </div>
+      <div class="live-chart-legend">
+        <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
+        <span><i class="swatch line" style="background:#94a3b8"></i>Gate L90</span>
+        <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
+        <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
+      </div>
+    </div>
+    <div class="live-chart-canvas-box">
+      <div class="live-chart-empty" id="live-chart-empty">Start a run to see live loudness</div>
+      <canvas id="live-loudness-chart" aria-label="Live loudness chart"></canvas>
+    </div>
   </div>
 </div>
 
@@ -302,6 +352,14 @@
       <div>
         Enable CLAP
         <span>Runs CLAP on trigger labels. Requires rebuilt embeddings (Prompts tab).</span>
+      </div>
+    </label>
+
+    <label class="check-row" style="margin-top:.75rem">
+      <input type="checkbox" name="record_audio" value="on">
+      <div>
+        Record audio
+        <span>Saves ungained mic WAV next to the JSONL (~330&nbsp;MB/hour @ 48&nbsp;kHz mono 16-bit). Download from the Data tab.</span>
       </div>
     </label>
 
@@ -359,12 +417,25 @@
   </div>
     {% for run in runs %}
     <div class="run-row">
-      <div>
+      <div class="run-info">
         <div class="run-name">{{ run.name }}</div>
-        <div class="run-meta">{{ run.mtime }} · {{ run.lines }} events · {{ run.size_kb }} KB</div>
+        <div class="run-meta">
+          {{ run.mtime }} · {{ run.lines }} events · {{ run.size_kb }} KB
+          {% if run.has_wav %} · audio {{ run.wav_size_kb }} KB{% endif %}
+        </div>
       </div>
-      <a class="dl-btn" href="/runs/{{ run.name }}"
-         data-filename="{{ run.name }}" download>↓ Download</a>
+      <div class="run-actions">
+        <a class="dl-btn" href="/runs/{{ run.name }}"
+           data-filename="{{ run.name }}" download>↓ JSONL</a>
+        {% if run.has_wav %}
+        <a class="dl-btn" href="/runs/{{ run.wav_name }}" download>↓ Audio</a>
+        {% endif %}
+        <form method="post" action="/api/runs/delete" style="display:inline;margin:0"
+              onsubmit="return confirm('Delete {{ run.name }}{% if run.has_wav %} and its WAV{% endif %}? This cannot be undone.');">
+          <input type="hidden" name="filename" value="{{ run.name }}">
+          <button class="del-btn" type="submit">Delete</button>
+        </form>
+      </div>
     </div>
     {% endfor %}
   {% else %}
@@ -438,6 +509,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 <script>
 // ── Tabs ──────────────────────────────────────────────────────────
 const tabBtns = document.querySelectorAll('.tab-btn');
@@ -466,6 +538,12 @@ function switchTab(name) {
 tabBtns.forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
+
+(function initTabFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get('tab');
+  if (tab && tabPanels[tab]) switchTab(tab);
+})();
 
 async function apiFetch(url, options = {}) {
   const opts = {
@@ -508,7 +586,7 @@ es.onerror = () => {
   if (!seenFirst) placeholder.textContent = 'Not connected.';
 };
 
-// ── Status polling (every 1 s) ────────────────────────────────────
+// ── Status polling + live loudness chart (every 1 s) ──────────────
 function fmtElapsed(s) {
   if (!s) return '—';
   const h = Math.floor(s / 3600);
@@ -517,25 +595,270 @@ function fmtElapsed(s) {
   return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 
+function truncateLabel(s, max) {
+  const t = String(s || '');
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+function yamnetChangeMarkers(points) {
+  const out = [];
+  let prev = null;
+  for (const p of points) {
+    const label = p.yamnet;
+    if (p.gated || !label || label === 'gated' || p.dba == null) {
+      if (label === 'gated' || p.gated) prev = 'gated';
+      continue;
+    }
+    if (label !== prev) {
+      out.push({ x: Date.parse(p.t), y: p.dba, label });
+      prev = label;
+    }
+  }
+  return out;
+}
+
+function clapMarkers(points) {
+  const out = [];
+  for (const p of points) {
+    if (p.clap_status !== 'triggered' || !p.clap || p.dba == null) continue;
+    out.push({ x: Date.parse(p.t), y: p.dba, label: p.clap });
+  }
+  return out;
+}
+
+const labelMarkerPlugin = {
+  id: 'labelMarkers',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    chart.data.datasets.forEach((ds, di) => {
+      if (!ds.showPointLabels) return;
+      const meta = chart.getDatasetMeta(di);
+      meta.data.forEach((el, i) => {
+        const pt = ds.data[i];
+        if (!pt || !pt.label) return;
+        const { x, y } = el.getProps(['x', 'y'], true);
+        ctx.save();
+        ctx.font = '600 10px system-ui,sans-serif';
+        ctx.fillStyle = ds.pointLabelColor || '#e2e8f0';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(truncateLabel(pt.label, 18), x, y - 8);
+        ctx.restore();
+      });
+    });
+  },
+};
+
+let loudnessChart = null;
+
+function ensureLoudnessChart() {
+  if (loudnessChart) return loudnessChart;
+  if (typeof Chart === 'undefined') return null;
+  const canvas = document.getElementById('live-loudness-chart');
+  if (!canvas) return null;
+  Chart.register(labelMarkerPlugin);
+  loudnessChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label: 'dBA',
+          data: [],
+          borderColor: '#0ea5e9',
+          backgroundColor: 'rgba(14,165,233,.12)',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+          spanGaps: true,
+        },
+        {
+          label: 'Gate L90 (rel.)',
+          data: [],
+          borderColor: '#94a3b8',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          tension: 0.1,
+          spanGaps: true,
+        },
+        {
+          label: 'YAMNet',
+          type: 'scatter',
+          data: [],
+          showLine: false,
+          pointRadius: 4,
+          pointHoverRadius: 5,
+          backgroundColor: '#22c55e',
+          borderColor: '#14532d',
+          borderWidth: 1,
+          showPointLabels: true,
+          pointLabelColor: '#86efac',
+        },
+        {
+          label: 'CLAP',
+          type: 'scatter',
+          data: [],
+          showLine: false,
+          pointRadius: 5,
+          pointHoverRadius: 6,
+          backgroundColor: '#f59e0b',
+          borderColor: '#78350f',
+          borderWidth: 1,
+          showPointLabels: true,
+          pointLabelColor: '#fcd34d',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              if (!items.length) return '';
+              const x = items[0].parsed.x;
+              return Number.isFinite(x) ? new Date(x).toISOString().slice(11, 19) + 'Z' : '';
+            },
+            label(ctx) {
+              const raw = ctx.raw || {};
+              const y = ctx.parsed.y;
+              const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
+              return raw.label ? `${base} · ${raw.label}` : base;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          ticks: {
+            color: '#94a3b8',
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 6,
+            callback(v) {
+              const d = new Date(v);
+              if (Number.isNaN(d.getTime())) return '';
+              return d.toISOString().slice(11, 16);
+            },
+          },
+          grid: { color: 'rgba(51,65,85,.7)' },
+        },
+        y: {
+          title: { display: true, text: 'dB (rel.)', color: '#94a3b8', font: { size: 10 } },
+          ticks: { color: '#94a3b8' },
+          grid: { color: 'rgba(51,65,85,.7)' },
+        },
+      },
+    },
+  });
+  return loudnessChart;
+}
+
+function clearLoudnessChart() {
+  const empty = document.getElementById('live-chart-empty');
+  if (empty) empty.hidden = false;
+  const chart = ensureLoudnessChart();
+  if (!chart) return;
+  chart.data.datasets.forEach((ds) => { ds.data = []; });
+  chart.update('none');
+  const clapEl = document.getElementById('stat-clap');
+  if (clapEl) clapEl.textContent = '—';
+}
+
+function updateLoudnessChart(payload) {
+  const empty = document.getElementById('live-chart-empty');
+  const points = (payload && payload.points) || [];
+  if (!payload || !payload.running || !points.length) {
+    clearLoudnessChart();
+    return;
+  }
+  if (empty) empty.hidden = true;
+  const chart = ensureLoudnessChart();
+  if (!chart) return;
+
+  const windowMs = (payload.window_s || 300) * 1000;
+  const lastT = Date.parse(points[points.length - 1].t);
+  const end = Number.isFinite(lastT) ? lastT : Date.now();
+  const start = end - windowMs;
+
+  const dba = [];
+  const l90 = [];
+  for (const p of points) {
+    const x = Date.parse(p.t);
+    if (!Number.isFinite(x)) continue;
+    if (p.dba != null) dba.push({ x, y: p.dba });
+    if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
+  }
+  const yam = yamnetChangeMarkers(points);
+  const clap = clapMarkers(points);
+
+  chart.data.datasets[0].data = dba;
+  chart.data.datasets[1].data = l90;
+  chart.data.datasets[2].data = yam;
+  chart.data.datasets[3].data = clap;
+  chart.options.scales.x.min = start;
+  chart.options.scales.x.max = end;
+
+  const ys = []
+    .concat(dba.map((p) => p.y), l90.map((p) => p.y), yam.map((p) => p.y), clap.map((p) => p.y))
+    .filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (ys.length) {
+    const lo = Math.min(...ys);
+    const hi = Math.max(...ys);
+    const pad = Math.max(2, (hi - lo) * 0.12);
+    chart.options.scales.y.min = Math.floor(lo - pad);
+    chart.options.scales.y.max = Math.ceil(hi + pad);
+  }
+  chart.update('none');
+
+  const clapEl = document.getElementById('stat-clap');
+  if (clapEl) {
+    let lastClap = '—';
+    for (let i = points.length - 1; i >= 0; i -= 1) {
+      if (points[i].clap_status === 'triggered' && points[i].clap) {
+        lastClap = points[i].clap;
+        break;
+      }
+    }
+    clapEl.textContent = lastClap;
+  }
+}
+
 let statusPollInFlight = false;
 async function pollStatus() {
   if (statusPollInFlight) return;
   statusPollInFlight = true;
   try {
-    const r = await fetch('/api/status', { credentials: 'same-origin' });
-    if (!r.ok) return;
-    const d = await r.json();
-    document.getElementById('stat-chunks').textContent = d.chunk_count || '—';
-    document.getElementById('stat-elapsed').textContent = fmtElapsed(d.elapsed_s);
-    document.getElementById('stat-label').textContent = d.last_label || '—';
-    document.getElementById('stat-dba').textContent = d.last_dba || '—';
+    const [statusRes, seriesRes] = await Promise.all([
+      fetch('/api/status', { credentials: 'same-origin' }),
+      fetch('/api/status/series?window_s=300', { credentials: 'same-origin' }),
+    ]);
+    if (statusRes.ok) {
+      const d = await statusRes.json();
+      document.getElementById('stat-chunks').textContent = d.chunk_count || '—';
+      document.getElementById('stat-elapsed').textContent = fmtElapsed(d.elapsed_s);
+      document.getElementById('stat-label').textContent = d.last_label || '—';
+      document.getElementById('stat-dba').textContent = d.last_dba || '—';
+      if (!d.running) clearLoudnessChart();
+    }
+    if (seriesRes.ok) {
+      const series = await seriesRes.json();
+      updateLoudnessChart(series);
+    }
   } catch {}
   finally {
     statusPollInFlight = false;
   }
 }
 
+ensureLoudnessChart();
 setInterval(pollStatus, 1000);
+pollStatus();
 
 // ── Download field options ────────────────────────────────────────
 const spectrumToggle = document.getElementById('dl-include-spectrum');

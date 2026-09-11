@@ -34,11 +34,16 @@ def build_noise_event(
     spectrum: Optional[Dict[str, Any]] = None,
     yamnet_preprocess: Optional[Dict[str, Any]] = None,
     clap: Optional[Dict[str, Any]] = None,
+    laf_max_db: Optional[float] = None,
     model_name: str = MODEL_NAME,
     model_version: str = MODEL_VERSION,
     created_at: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build one JSONL event (loudness + optional spectrum + YAMNet + CLAP)."""
+    """Build one JSONL event (loudness + optional spectrum + YAMNet + CLAP).
+
+    ``dBA_spl`` is the LAeq,1s-style A-weighted equivalent level for the chunk.
+    ``LAFmax_dB`` is Fast (125 ms) maximum A-weighted level when provided.
+    """
     top_label = predictions[0]["label"] if predictions else "n/a"
     top_confidence = float(predictions[0]["confidence"]) if predictions else 0.0
 
@@ -56,6 +61,8 @@ def build_noise_event(
         "model_name": model_name,
         "model_version": model_version,
     }
+    if laf_max_db is not None:
+        event["LAFmax_dB"] = round(float(laf_max_db), 1)
     if spectrum is not None:
         event["spectrum"] = spectrum
     if yamnet_preprocess is not None:

@@ -57,7 +57,7 @@ LOW_BAND = (31.5, 500.0)
 MID_BAND = (500.0, 2000.0)
 HIGH_BAND = (2000.0, 16_000.0)
 
-WELCH_NPERSEG = 8192
+WELCH_NPERSEG = 16384  # Δf ≈ 2.93 Hz @ 48 kHz — resolves 31.5 Hz 1/3-octave (~7.5 Hz wide)
 _POWER_EPSILON = 1e-20
 _HALF_THIRD_OCTAVE = 2.0 ** (1.0 / 12.0) - 2.0 ** (-1.0 / 12.0)
 _THIRD_OCTAVE_EDGE = 2.0 ** (1.0 / 6.0)

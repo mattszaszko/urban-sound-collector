@@ -312,6 +312,44 @@ class ClapClassifierMockTests(unittest.TestCase):
             self.assertEqual(pred.model_name, CLAP_MODEL_NAME)
             self.assertEqual(len(pred.predictions), 2)
 
+    def test_peak_normalize_is_scale_invariant_with_fake_encoder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prompts = Path(tmp) / "prompts.json"
+            embeds = Path(tmp) / "embeds.npz"
+            save_prompt_pairs(
+                [ClapPromptPair(label="a", prompt="Alpha"), ClapPromptPair(label="b", prompt="Beta")],
+                prompts,
+            )
+            rebuild_text_embeddings(
+                prompts_path=prompts,
+                embeddings_path=embeds,
+                text_encoder=_FakeTextEncoder(),
+            )
+
+            class _CaptureAudio:
+                model_version = "t"
+                last: np.ndarray | None = None
+
+                def embed(self, pcm_48k: np.ndarray) -> np.ndarray:
+                    self.last = np.asarray(pcm_48k, dtype=np.float32).copy()
+                    out = np.zeros(EMBED_DIM, dtype=np.float32)
+                    out[0] = 1.0
+                    return out
+
+            audio = _CaptureAudio()
+            clf = ClapClassifier(
+                prompts_path=prompts,
+                embeddings_path=embeds,
+                audio_encoder=audio,  # type: ignore[arg-type]
+            )
+            wave = np.random.randn(4800).astype(np.float32) * 0.01
+            clf.predict(wave)
+            assert audio.last is not None
+            self.assertAlmostEqual(float(np.max(np.abs(audio.last))), 1.0, places=5)
+            clf.predict(wave * 10.0)
+            assert audio.last is not None
+            self.assertAlmostEqual(float(np.max(np.abs(audio.last))), 1.0, places=5)
+
     def test_missing_models_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             empty = Path(tmp) / "clap"

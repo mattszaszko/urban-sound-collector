@@ -28,6 +28,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from core.export_filter import export_filename, iter_filtered_jsonl
 from core.host_identity import default_device_id, hostname
+from core.loudness import DEFAULT_CALIB_OFFSET
 from core.yamnet_preprocess import DEFAULT_GATE_SENSITIVITY_DB
 
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -154,6 +155,147 @@ def _read_jsonl_event(path: Path, *, last: bool) -> dict | None:
         return None
 
 
+def _tail_jsonl_events(path: Path, max_lines: int = 320) -> list[dict]:
+    """Return up to ``max_lines`` trailing JSONL events (oldest → newest)."""
+    if max_lines <= 0 or not path.exists():
+        return []
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return []
+    if size == 0:
+        return []
+
+    # Grow from the end until we have enough complete lines (spectrum rows are large).
+    chunk = min(size, 256 * 1024)
+    data = b""
+    start = 0
+    lines: list[bytes] = []
+    try:
+        with path.open("rb") as f:
+            while True:
+                start = max(0, size - chunk)
+                f.seek(start)
+                data = f.read(size - start)
+                lines = [ln for ln in data.splitlines() if ln.strip()]
+                if start == 0 or len(lines) >= max_lines + 1:
+                    break
+                chunk = min(size, chunk * 2)
+    except OSError:
+        return []
+
+    if start > 0 and lines:
+        # First line may be a partial record after seek.
+        lines = lines[1:]
+    lines = lines[-max_lines:]
+
+    events: list[dict] = []
+    for ln in lines:
+        try:
+            events.append(json.loads(ln))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def _parse_event_time(created_at: object) -> datetime | None:
+    if not isinstance(created_at, str) or not created_at:
+        return None
+    raw = created_at.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _slim_series_point(event: dict, *, calib_offset: float) -> dict | None:
+    """Project a JSONL event into a chart-friendly point."""
+    created = event.get("created_at")
+    if not isinstance(created, str):
+        return None
+    dba = event.get("dBA_spl")
+    try:
+        dba_f = float(dba) if dba is not None else None
+    except (TypeError, ValueError):
+        dba_f = None
+
+    prep = event.get("yamnet_preprocess")
+    l90_rel = None
+    gated = False
+    if isinstance(prep, dict):
+        floor = prep.get("ambient_noise_floor_dbfs")
+        try:
+            if floor is not None:
+                l90_rel = round(float(floor) + float(calib_offset), 1)
+        except (TypeError, ValueError):
+            l90_rel = None
+        gated = bool(prep.get("gated"))
+
+    yamnet = event.get("top_label")
+    if not isinstance(yamnet, str):
+        yamnet = None
+    if yamnet == "gated":
+        gated = True
+
+    clap_status = event.get("clap_status")
+    if not isinstance(clap_status, str):
+        clap_status = None
+    clap_label = event.get("clap_top_label")
+    if not isinstance(clap_label, str):
+        clap_label = None
+
+    return {
+        "t": created,
+        "dba": dba_f,
+        "l90_rel": l90_rel,
+        "yamnet": yamnet,
+        "gated": gated,
+        "clap_status": clap_status,
+        "clap": clap_label,
+    }
+
+
+def _status_series(*, window_s: int = 300) -> dict:
+    """Build a slim rolling series for the live loudness chart."""
+    window_s = max(60, min(900, int(window_s)))
+    calib = float(DEFAULT_CALIB_OFFSET)
+    path = _active_output_path()
+    if path is None:
+        return {
+            "ok": True,
+            "running": False,
+            "window_s": window_s,
+            "calib_offset": calib,
+            "points": [],
+        }
+
+    # ~0.975 s/chunk → slightly over-fetch lines for the window.
+    max_lines = max(80, int(window_s / 0.9) + 20)
+    events = _tail_jsonl_events(path, max_lines=max_lines)
+    now = datetime.now(timezone.utc)
+    cutoff = now.timestamp() - window_s
+    points: list[dict] = []
+    for event in events:
+        dt = _parse_event_time(event.get("created_at"))
+        if dt is None or dt.timestamp() < cutoff:
+            continue
+        slim = _slim_series_point(event, calib_offset=calib)
+        if slim is not None:
+            points.append(slim)
+    return {
+        "ok": True,
+        "running": True,
+        "window_s": window_s,
+        "calib_offset": calib,
+        "points": points,
+    }
+
+
 def _stop_collector() -> bool:
     """Stop a running collector process. Returns True if one was stopped."""
     proc = _find_collector_process()
@@ -265,17 +407,48 @@ def _list_runs() -> list[dict]:
         if size > 0:
             with p.open("rb") as f:
                 lines = sum(1 for _ in f)
-        runs.append(
-            {
-                "name": p.name,
-                "size_kb": round(size / 1024, 1),
-                "lines": lines,
-                "mtime": datetime.fromtimestamp(
-                    p.stat().st_mtime, tz=timezone.utc
-                ).strftime("%Y-%m-%d %H:%M UTC"),
-            }
-        )
+        wav_path = p.with_suffix(".wav")
+        has_wav = wav_path.is_file()
+        entry: dict = {
+            "name": p.name,
+            "size_kb": round(size / 1024, 1),
+            "lines": lines,
+            "mtime": datetime.fromtimestamp(
+                p.stat().st_mtime, tz=timezone.utc
+            ).strftime("%Y-%m-%d %H:%M UTC"),
+            "has_wav": has_wav,
+            "wav_name": wav_path.name if has_wav else None,
+            "wav_size_kb": (
+                round(wav_path.stat().st_size / 1024, 1) if has_wav else None
+            ),
+        }
+        runs.append(entry)
     return runs
+
+
+def _active_output_path() -> Path | None:
+    """Return the collector ``-o`` path if a run is active."""
+    proc = _find_collector_process()
+    if proc is None:
+        return None
+    try:
+        cmd = proc.cmdline()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return None
+    for i, part in enumerate(cmd):
+        if part in ("-o", "--output") and i + 1 < len(cmd):
+            return Path(cmd[i + 1]).resolve()
+    return None
+
+
+def _safe_runs_path(filename: str) -> Path | None:
+    """Resolve a basename under RUNS_DIR, or None if unsafe/missing parent guard."""
+    if not filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
+        return None
+    path = (RUNS_DIR / filename).resolve()
+    if not str(path).startswith(str(RUNS_DIR.resolve())):
+        return None
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +523,7 @@ async def api_start(
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
     gate_sensitivity_db: float = Form(DEFAULT_GATE_SENSITIVITY_DB),
     enable_clap: str = Form(""),
+    record_audio: str = Form(""),
 ):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
@@ -374,6 +548,8 @@ async def api_start(
     ]
     if enable_clap in {"1", "true", "on", "yes"}:
         cmd.append("--enable-clap")
+    if record_audio in {"1", "true", "on", "yes"}:
+        cmd.append("--record-wav")
     full_cmd = ["timeout", duration] + cmd
 
     subprocess.Popen(
@@ -421,6 +597,18 @@ async def api_status(request: Request):
     if not is_authenticated(request):
         return HTMLResponse("", status_code=401)
     return JSONResponse(_get_status())
+
+
+@app.get("/api/status/series")
+async def api_status_series(request: Request):
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    raw = request.query_params.get("window_s", "300")
+    try:
+        window_s = int(raw)
+    except (TypeError, ValueError):
+        window_s = 300
+    return JSONResponse(_status_series(window_s=window_s))
 
 
 # ---------------------------------------------------------------------------
@@ -492,12 +680,18 @@ def _query_flag(request: Request, name: str, *, default: bool = True) -> bool:
 async def download_run(filename: str, request: Request):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    # Prevent path traversal
-    path = (RUNS_DIR / filename).resolve()
-    if not str(path).startswith(str(RUNS_DIR.resolve())):
+    path = _safe_runs_path(filename)
+    if path is None or not path.exists() or not path.is_file():
         return HTMLResponse("Not found", status_code=404)
-    if not path.exists():
-        return HTMLResponse("Not found", status_code=404)
+
+    # Audio (or any non-JSONL) — serve as attachment without filtering.
+    if path.suffix.lower() != ".jsonl":
+        media = "audio/wav" if path.suffix.lower() == ".wav" else "application/octet-stream"
+        return FileResponse(
+            path,
+            filename=path.name,
+            media_type=media,
+        )
 
     include_spectrum = _query_flag(request, "spectrum", default=True)
     include_yamnet_preprocess = _query_flag(
@@ -532,6 +726,38 @@ async def download_run(filename: str, request: Request):
         media_type="application/x-ndjson",
         headers=headers,
     )
+
+
+@app.post("/api/runs/delete")
+async def api_runs_delete(
+    request: Request,
+    filename: str = Form(...),
+):
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+
+    if not filename.lower().endswith(".jsonl"):
+        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+
+    path = _safe_runs_path(filename)
+    if path is None:
+        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+    if not path.exists() or not path.is_file():
+        return RedirectResponse("/?tab=data&error=not_found", status_code=303)
+
+    active = _active_output_path()
+    if active is not None and path.resolve() == active:
+        return RedirectResponse("/?tab=data&error=run_in_use", status_code=303)
+
+    wav_path = path.with_suffix(".wav")
+    try:
+        path.unlink()
+        if wav_path.is_file():
+            wav_path.unlink()
+    except OSError:
+        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+
+    return RedirectResponse("/?tab=data", status_code=303)
 
 
 # ---------------------------------------------------------------------------
