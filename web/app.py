@@ -610,8 +610,9 @@ async def api_clap_triggers_get(request: Request):
         {
             "ok": True,
             "cooldown_seconds": cfg.cooldown_seconds,
-            "carry_ttl_seconds": cfg.carry_ttl_seconds,
             "dba_threshold": cfg.dba_threshold,
+            "pre_roll_seconds": cfg.pre_roll_seconds,
+            "post_roll_seconds": cfg.post_roll_seconds,
             "trigger_labels": cfg.trigger_labels,
             "ambiguous_labels": cfg.ambiguous_labels,
         }
@@ -629,8 +630,9 @@ async def api_clap_triggers_put(request: Request):
     try:
         cfg = ClapTriggerConfig(
             cooldown_seconds=float(body.get("cooldown_seconds", 5)),
-            carry_ttl_seconds=float(body.get("carry_ttl_seconds", 30)),
             dba_threshold=float(body.get("dba_threshold", 55)),
+            pre_roll_seconds=float(body.get("pre_roll_seconds", 2)),
+            post_roll_seconds=float(body.get("post_roll_seconds", 8)),
             trigger_labels=list(body.get("trigger_labels", [])),
             ambiguous_labels=list(body.get("ambiguous_labels", [])),
         )

@@ -1,7 +1,8 @@
 {
   "cooldown_seconds": 5.0,
-  "carry_ttl_seconds": 30.0,
   "dba_threshold": 55.0,
+  "pre_roll_seconds": 2.0,
+  "post_roll_seconds": 8.0,
   "trigger_labels": [
     "Vehicle",
     "Car",

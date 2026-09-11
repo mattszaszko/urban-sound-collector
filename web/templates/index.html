@@ -411,16 +411,14 @@
   <div class="card">
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
-      Map YAMNet labels to CLAP trigger modes. Off = ignore, Trigger = run CLAP, Ambiguous = soft match (carried with TTL).
+      Map YAMNet labels to CLAP trigger modes. Off = ignore, Trigger = arm hybrid
+      CLAP (2&nbsp;s before + 8&nbsp;s after wake), Ambiguous = arm only when also loud
+      (dBA threshold). No label carry — only <code>triggered</code> rows have CLAP labels.
     </div>
     <div class="trigger-settings">
       <div>
         <label for="trig-cooldown">Cooldown (seconds)</label>
         <input type="number" id="trig-cooldown" min="0" step="0.5" value="5">
-      </div>
-      <div>
-        <label for="trig-carry-ttl">Carry TTL (seconds)</label>
-        <input type="number" id="trig-carry-ttl" min="0" step="0.5" value="30">
       </div>
       <div>
         <label for="trig-dba">dBA threshold</label>
@@ -917,7 +915,6 @@ async function loadTriggerConfig() {
     return false;
   }
   document.getElementById('trig-cooldown').value = data.cooldown_seconds ?? 5;
-  document.getElementById('trig-carry-ttl').value = data.carry_ttl_seconds ?? 30;
   document.getElementById('trig-dba').value = data.dba_threshold ?? 55;
   triggerSet = new Set(data.trigger_labels || []);
   ambiguousSet = new Set(data.ambiguous_labels || []);
@@ -955,7 +952,6 @@ document.getElementById('triggers-save-btn').addEventListener('click', async () 
   });
   const body = {
     cooldown_seconds: parseFloat(document.getElementById('trig-cooldown').value) || 0,
-    carry_ttl_seconds: parseFloat(document.getElementById('trig-carry-ttl').value) || 0,
     dba_threshold: parseFloat(document.getElementById('trig-dba').value) || 0,
     trigger_labels: triggers,
     ambiguous_labels: ambiguous,

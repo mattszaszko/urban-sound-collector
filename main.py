@@ -25,16 +25,18 @@ from core.classifier_tflite import (
     MODEL_VERSION,
     YamnetTFLiteClassifier,
 )
+from core.clap_capture import HybridClapCapture
 from core.clap_trigger import (
-    CLAP_STATUS_CARRIED,
     CLAP_STATUS_GATED,
+    CLAP_STATUS_PENDING,
+    CLAP_STATUS_SCHEDULED,
     CLAP_STATUS_SKIPPED,
     CLAP_STATUS_TRIGGERED,
     ClapTriggerState,
-    evaluate_trigger,
+    evaluate_arm,
     load_trigger_config,
 )
-from core.events import build_noise_event, new_run_id
+from core.events import build_noise_event, new_run_id, utc_now_iso
 from core.host_identity import default_device_id
 from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
 from core.pcm import int32_frames_to_float32
@@ -362,7 +364,7 @@ def stream_live(
     Branch A: A-weighted loudness at 48 kHz (ungained).
     Branch B: YAMNet TFLite at 16 kHz (dynamic HPF + RMS normalize).
     Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
-    Optional CLAP: event-driven zero-shot on a 10 s ungained ring buffer.
+    Optional CLAP: hybrid 2 s pre-roll + 8 s post-roll after YAMNet wake.
 
     Returns:
         Number of events written.
@@ -386,14 +388,26 @@ def stream_live(
     clap_ring: AudioRingBuffer | None = None
     clap_state = ClapTriggerState()
     clap_config = None
+    clap_job: HybridClapCapture | None = None
     if enable_clap:
         if clap_classifier is None:
             raise ValueError("enable_clap requires a ClapClassifier instance")
-        clap_ring = AudioRingBuffer(maxlen_samples=int(CAPTURE_SAMPLE_RATE * 10))
         clap_config = load_trigger_config()
+        # Keep enough history for pre-roll (and a little slack).
+        ring_secs = max(10.0, float(clap_config.pre_roll_seconds) + 1.0)
+        clap_ring = AudioRingBuffer(
+            maxlen_samples=int(CAPTURE_SAMPLE_RATE * ring_secs)
+        )
+        clap_job = HybridClapCapture(
+            sample_rate=int(CAPTURE_SAMPLE_RATE),
+            pre_roll_seconds=float(clap_config.pre_roll_seconds),
+            post_roll_seconds=float(clap_config.post_roll_seconds),
+        )
         logger.info(
-            "CLAP enabled: cooldown=%ss dba_threshold=%s trigger_labels=%s "
-            "ambiguous_labels=%s",
+            "CLAP enabled: hybrid window pre=%ss post=%ss cooldown=%ss "
+            "dba_threshold=%s trigger_labels=%s ambiguous_labels=%s",
+            clap_config.pre_roll_seconds,
+            clap_config.post_roll_seconds,
             clap_config.cooldown_seconds,
             clap_config.dba_threshold,
             len(clap_config.trigger_labels),
@@ -481,85 +495,148 @@ def stream_live(
                 continue
 
             clap_payload = None
-            if enable_clap and clap_classifier is not None and clap_config is not None:
+            event_created_at = utc_now_iso()
+            if (
+                enable_clap
+                and clap_classifier is not None
+                and clap_config is not None
+                and clap_ring is not None
+                and clap_job is not None
+            ):
                 top_label = predictions[0]["label"] if predictions else "n/a"
-                should_run, status, reason = evaluate_trigger(
-                    gated=bool(prep.gated),
-                    top_label=str(top_label),
-                    dba_spl=float(metrics["dBA_spl"]),
-                    buffer_ready=bool(clap_ring and clap_ring.full),
-                    config=clap_config,
-                    state=clap_state,
-                )
-                if should_run and clap_ring is not None:
-                    try:
-                        clap_result = clap_classifier.predict(clap_ring.snapshot())
-                        now = time.monotonic()
-                        clap_state.last_trigger_monotonic = now
-                        clap_state.last_result_monotonic = now
-                        clap_payload = {
-                            "clap_status": CLAP_STATUS_TRIGGERED,
-                            "clap_predictions": clap_result.predictions,
-                            "clap_top_label": clap_result.top_label,
-                            "clap_top_confidence": clap_result.top_confidence,
-                            "clap_model_name": clap_result.model_name,
-                            "clap_model_version": clap_result.model_version,
-                            "clap_meta": {
-                                "buffer_seconds": round(
-                                    clap_ring.seconds(float(CAPTURE_SAMPLE_RATE)), 2
-                                ),
-                                "trigger_reason": reason,
-                                "inference_ms": clap_result.inference_ms,
-                                "cooldown_seconds": clap_config.cooldown_seconds,
-                            },
-                        }
-                        clap_state.last_result = {
-                            k: clap_payload[k]
-                            for k in (
-                                "clap_predictions",
-                                "clap_top_label",
-                                "clap_top_confidence",
-                                "clap_model_name",
-                                "clap_model_version",
+                dba_spl = float(metrics["dBA_spl"])
+                created_at = event_created_at
+
+                # Active hybrid capture: keep filling post-roll, then infer.
+                if clap_job.active:
+                    clap_job.append_post(pcm)
+                    if clap_job.ready:
+                        try:
+                            clap_result = clap_classifier.predict(clap_job.waveform())
+                            link = dict(clap_job.meta)
+                            clap_payload = {
+                                "clap_status": CLAP_STATUS_TRIGGERED,
+                                "clap_predictions": clap_result.predictions,
+                                "clap_top_label": clap_result.top_label,
+                                "clap_top_confidence": clap_result.top_confidence,
+                                "clap_model_name": clap_result.model_name,
+                                "clap_model_version": clap_result.model_version,
+                                "clap_meta": {
+                                    **link,
+                                    "window": (
+                                        f"hybrid_{clap_job.pre_roll_seconds:g}_"
+                                        f"{clap_job.post_roll_seconds:g}"
+                                    ),
+                                    "window_seconds": round(
+                                        clap_job.target_samples
+                                        / float(CAPTURE_SAMPLE_RATE),
+                                        2,
+                                    ),
+                                    "pre_roll_seconds": clap_job.pre_roll_seconds,
+                                    "post_roll_seconds": clap_job.post_roll_seconds,
+                                    "inference_ms": clap_result.inference_ms,
+                                    "cooldown_seconds": clap_config.cooldown_seconds,
+                                },
+                            }
+                            clap_triggers += 1
+                            logger.info(
+                                "CLAP triggered reason=%s top=%s ms=%s "
+                                "trigger_chunk=%s",
+                                link.get("trigger_reason"),
+                                clap_result.top_label,
+                                clap_result.inference_ms,
+                                link.get("trigger_chunk_index"),
                             )
-                        }
-                        clap_triggers += 1
-                        logger.info(
-                            "CLAP triggered reason=%s top=%s ms=%s",
-                            reason,
-                            clap_result.top_label,
-                            clap_result.inference_ms,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("CLAP inference failed: %s", exc)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("CLAP inference failed: %s", exc)
+                            clap_payload = {
+                                "clap_status": CLAP_STATUS_SKIPPED,
+                                "clap_predictions": [],
+                                "clap_top_label": None,
+                                "clap_top_confidence": None,
+                                "clap_meta": {
+                                    **dict(clap_job.meta),
+                                    "trigger_reason": f"error:{exc}",
+                                },
+                            }
+                            clap_skips += 1
+                        clap_job.clear()
+                    else:
                         clap_payload = {
-                            "clap_status": CLAP_STATUS_SKIPPED,
+                            "clap_status": CLAP_STATUS_PENDING,
                             "clap_predictions": [],
                             "clap_top_label": None,
                             "clap_top_confidence": None,
-                            "clap_meta": {"trigger_reason": f"error:{exc}"},
+                            "clap_meta": {
+                                **dict(clap_job.meta),
+                                "window": (
+                                    f"hybrid_{clap_job.pre_roll_seconds:g}_"
+                                    f"{clap_job.post_roll_seconds:g}"
+                                ),
+                                "pre_roll_seconds": clap_job.pre_roll_seconds,
+                                "post_roll_seconds": clap_job.post_roll_seconds,
+                                "captured_seconds": round(
+                                    clap_job.captured_samples
+                                    / float(CAPTURE_SAMPLE_RATE),
+                                    2,
+                                ),
+                            },
                         }
-                        clap_skips += 1
-                elif status == CLAP_STATUS_CARRIED and clap_state.last_result:
-                    clap_payload = {
-                        **clap_state.last_result,
-                        "clap_status": CLAP_STATUS_CARRIED,
-                        "clap_meta": {
-                            "trigger_reason": reason,
-                            "inference_ms": 0,
-                            "cooldown_seconds": clap_config.cooldown_seconds,
-                        },
-                    }
                 else:
-                    clap_payload = {
-                        "clap_status": status,
-                        "clap_predictions": [],
-                        "clap_top_label": None,
-                        "clap_top_confidence": None,
-                        "clap_meta": {"trigger_reason": reason},
-                    }
-                    if status in {CLAP_STATUS_SKIPPED, CLAP_STATUS_GATED}:
-                        clap_skips += 1
+                    preroll_ready = len(clap_ring) >= clap_job.pre_samples
+                    should_arm, status, reason = evaluate_arm(
+                        gated=bool(prep.gated),
+                        top_label=str(top_label),
+                        dba_spl=dba_spl,
+                        preroll_ready=preroll_ready,
+                        capture_active=False,
+                        config=clap_config,
+                        state=clap_state,
+                    )
+                    if should_arm:
+                        clap_job.start(
+                            clap_ring.last_n(clap_job.pre_samples),
+                            {
+                                "trigger_chunk_index": chunk_index,
+                                "trigger_created_at": created_at,
+                                "trigger_reason": reason,
+                                "trigger_yamnet_label": str(top_label),
+                                "trigger_dBA_spl": dba_spl,
+                            },
+                        )
+                        clap_state.last_arm_monotonic = time.monotonic()
+                        clap_payload = {
+                            "clap_status": CLAP_STATUS_SCHEDULED,
+                            "clap_predictions": [],
+                            "clap_top_label": None,
+                            "clap_top_confidence": None,
+                            "clap_meta": {
+                                **dict(clap_job.meta),
+                                "window": (
+                                    f"hybrid_{clap_job.pre_roll_seconds:g}_"
+                                    f"{clap_job.post_roll_seconds:g}"
+                                ),
+                                "pre_roll_seconds": clap_job.pre_roll_seconds,
+                                "post_roll_seconds": clap_job.post_roll_seconds,
+                            },
+                        }
+                        logger.info(
+                            "CLAP scheduled reason=%s chunk=%s "
+                            "(waiting %.1fs post-roll)",
+                            reason,
+                            chunk_index,
+                            clap_job.post_roll_seconds,
+                        )
+                    else:
+                        clap_payload = {
+                            "clap_status": status,
+                            "clap_predictions": [],
+                            "clap_top_label": None,
+                            "clap_top_confidence": None,
+                            "clap_meta": {"trigger_reason": reason},
+                        }
+                        if status in {CLAP_STATUS_SKIPPED, CLAP_STATUS_GATED}:
+                            clap_skips += 1
 
             result = build_noise_event(
                 device_id=device_id,
@@ -572,6 +649,7 @@ def stream_live(
                 spectrum=spectrum,
                 yamnet_preprocess=prep.metadata,
                 clap=clap_payload,
+                created_at=event_created_at,
             )
             emit_event(
                 result,

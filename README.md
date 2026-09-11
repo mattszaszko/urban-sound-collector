@@ -339,8 +339,10 @@ Stop with **Ctrl+C**, or let `timeout` end the run.
 
 YAMNet still runs every open chunk. With **`--enable-clap`**, a 10 s ungained
 ring buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
-YAMNet trigger fires (see web **Triggers** tab). JSONL gains `clap_*` fields;
-`clap_model_name` should be `clap-htsat-unfused-onnx`.
+YAMNet trigger fires (see web **Triggers** tab). CLAP uses a **hybrid window**:
+2 s before the wake + 8 s after, then writes predictions on the later chunk with
+link meta (`trigger_chunk_index`, etc.). Statuses: `scheduled` → `pending` →
+`triggered` (no carry). `clap_model_name` should be `clap-htsat-unfused-onnx`.
 
 One-time on each Pi (after `pip install -r requirements.txt`):
 
@@ -352,7 +354,7 @@ python scripts/rebuild_clap_embeddings.py
 Or use the web UI: **Prompts** → confirm **ONNX ready** → **Rebuild embeddings**,
 then **Run** with Enable CLAP. Text ONNX loads only during rebuild (then freed);
 audio ONNX stays resident while CLAP is enabled. Default cooldown is 5 s between
-inferences.
+**arms** (new hybrid captures).
 
 ### Tests
 

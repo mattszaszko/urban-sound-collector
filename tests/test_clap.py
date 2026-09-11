@@ -1,4 +1,4 @@
-"""Tests for CLAP ring buffer, triggers, preprocess, and ONNX classifier wiring."""
+"""Tests for CLAP ring buffer, hybrid capture, triggers, and ONNX wiring."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from core.audio_ring_buffer import AudioRingBuffer
+from core.clap_capture import HybridClapCapture
 from core.clap_onnx import (
     CLAP_MODEL_NAME,
     EMBED_DIM,
@@ -17,24 +18,23 @@ from core.clap_onnx import (
 )
 from core.clap_preprocess import extract_clap_features, pad_or_truncate
 from core.clap_prompts import (
-    ClapPromptPair,
     EXPECTED_EMBED_DIM,
     EXPECTED_MODEL_NAME,
+    ClapPromptPair,
     embedding_sync_status,
     load_embeddings,
     load_prompt_pairs,
     prompts_hash,
-    save_embeddings,
     save_prompt_pairs,
 )
 from core.clap_trigger import (
-    CLAP_STATUS_CARRIED,
     CLAP_STATUS_GATED,
+    CLAP_STATUS_PENDING,
+    CLAP_STATUS_SCHEDULED,
     CLAP_STATUS_SKIPPED,
-    CLAP_STATUS_TRIGGERED,
     ClapTriggerConfig,
     ClapTriggerState,
-    evaluate_trigger,
+    evaluate_arm,
 )
 from core.classifier_clap import ClapClassifier, rebuild_text_embeddings
 
@@ -50,12 +50,39 @@ class AudioRingBufferTests(unittest.TestCase):
         self.assertEqual(snap.size, 8)
         np.testing.assert_array_equal(snap, np.arange(2, 10, dtype=np.float32))
 
+    def test_last_n(self) -> None:
+        ring = AudioRingBuffer(maxlen_samples=10)
+        ring.append(np.arange(10, dtype=np.float32))
+        np.testing.assert_array_equal(ring.last_n(3), np.array([7, 8, 9], dtype=np.float32))
+
+
+class HybridClapCaptureTests(unittest.TestCase):
+    def test_pre_then_post_until_ready(self) -> None:
+        sr = 100
+        job = HybridClapCapture(
+            sample_rate=sr, pre_roll_seconds=2.0, post_roll_seconds=8.0
+        )
+        pre = np.ones(200, dtype=np.float32)
+        job.start(pre, {"trigger_chunk_index": 5, "trigger_reason": "label:Vehicle"})
+        self.assertTrue(job.active)
+        self.assertFalse(job.ready)
+        # 8 s post @ 100 Hz = 800 samples
+        for _ in range(7):
+            job.append_post(np.full(100, 2.0, dtype=np.float32))
+            self.assertFalse(job.ready)
+        job.append_post(np.full(100, 2.0, dtype=np.float32))
+        self.assertTrue(job.ready)
+        wave = job.waveform()
+        self.assertEqual(wave.size, 1000)
+        np.testing.assert_array_equal(wave[:200], 1.0)
+        np.testing.assert_array_equal(wave[200:], 2.0)
+        self.assertEqual(job.meta["trigger_chunk_index"], 5)
+
 
 class ClapTriggerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.cfg = ClapTriggerConfig(
             cooldown_seconds=5.0,
-            carry_ttl_seconds=30.0,
             dba_threshold=55.0,
             trigger_labels=["Vehicle", "Siren"],
             ambiguous_labels=["Noise"],
@@ -63,81 +90,108 @@ class ClapTriggerTests(unittest.TestCase):
         self.state = ClapTriggerState()
 
     def test_gated(self) -> None:
-        run, status, reason = evaluate_trigger(
+        arm, status, reason = evaluate_arm(
             gated=True,
             top_label="Vehicle",
             dba_spl=70.0,
-            buffer_ready=True,
+            preroll_ready=True,
+            capture_active=False,
             config=self.cfg,
             state=self.state,
             now_monotonic=100.0,
         )
-        self.assertFalse(run)
+        self.assertFalse(arm)
         self.assertEqual(status, CLAP_STATUS_GATED)
         self.assertEqual(reason, "gated")
 
-    def test_direct_trigger(self) -> None:
-        run, status, reason = evaluate_trigger(
+    def test_direct_arm(self) -> None:
+        arm, status, reason = evaluate_arm(
             gated=False,
             top_label="Vehicle",
             dba_spl=40.0,
-            buffer_ready=True,
+            preroll_ready=True,
+            capture_active=False,
             config=self.cfg,
             state=self.state,
             now_monotonic=100.0,
         )
-        self.assertTrue(run)
-        self.assertEqual(status, CLAP_STATUS_TRIGGERED)
+        self.assertTrue(arm)
+        self.assertEqual(status, CLAP_STATUS_SCHEDULED)
         self.assertIn("Vehicle", reason)
 
     def test_ambiguous_needs_dba(self) -> None:
-        run, status, _ = evaluate_trigger(
+        arm, status, _ = evaluate_arm(
             gated=False,
             top_label="Noise",
             dba_spl=40.0,
-            buffer_ready=True,
+            preroll_ready=True,
+            capture_active=False,
             config=self.cfg,
             state=self.state,
             now_monotonic=100.0,
         )
-        self.assertFalse(run)
+        self.assertFalse(arm)
         self.assertEqual(status, CLAP_STATUS_SKIPPED)
 
-        run2, status2, reason2 = evaluate_trigger(
+        arm2, status2, reason2 = evaluate_arm(
             gated=False,
             top_label="Noise",
             dba_spl=60.0,
-            buffer_ready=True,
+            preroll_ready=True,
+            capture_active=False,
             config=self.cfg,
             state=self.state,
             now_monotonic=100.0,
         )
-        self.assertTrue(run2)
-        self.assertEqual(status2, CLAP_STATUS_TRIGGERED)
+        self.assertTrue(arm2)
+        self.assertEqual(status2, CLAP_STATUS_SCHEDULED)
         self.assertIn("ambiguous", reason2)
 
-    def test_cooldown_carries(self) -> None:
-        self.state.last_trigger_monotonic = 100.0
-        self.state.last_result_monotonic = 100.0
-        self.state.last_result = {
-            "clap_predictions": [{"label": "car_passing", "confidence": 0.5}],
-            "clap_top_label": "car_passing",
-            "clap_top_confidence": 0.5,
-            "clap_model_name": "x",
-            "clap_model_version": "1",
-        }
-        run, status, reason = evaluate_trigger(
+    def test_cooldown_skips_without_carry(self) -> None:
+        self.state.last_arm_monotonic = 100.0
+        arm, status, reason = evaluate_arm(
             gated=False,
             top_label="Vehicle",
             dba_spl=70.0,
-            buffer_ready=True,
+            preroll_ready=True,
+            capture_active=False,
             config=self.cfg,
             state=self.state,
             now_monotonic=102.0,
         )
-        self.assertFalse(run)
-        self.assertEqual(status, CLAP_STATUS_CARRIED)
+        self.assertFalse(arm)
+        self.assertEqual(status, CLAP_STATUS_SKIPPED)
         self.assertEqual(reason, "cooldown")
+
+    def test_capture_active_is_pending(self) -> None:
+        arm, status, reason = evaluate_arm(
+            gated=False,
+            top_label="Vehicle",
+            dba_spl=70.0,
+            preroll_ready=True,
+            capture_active=True,
+            config=self.cfg,
+            state=self.state,
+            now_monotonic=100.0,
+        )
+        self.assertFalse(arm)
+        self.assertEqual(status, CLAP_STATUS_PENDING)
+        self.assertEqual(reason, "capturing")
+
+    def test_no_match_skips_not_carry(self) -> None:
+        arm, status, reason = evaluate_arm(
+            gated=False,
+            top_label="Music",
+            dba_spl=70.0,
+            preroll_ready=True,
+            capture_active=False,
+            config=self.cfg,
+            state=self.state,
+            now_monotonic=100.0,
+        )
+        self.assertFalse(arm)
+        self.assertEqual(status, CLAP_STATUS_SKIPPED)
+        self.assertEqual(reason, "no_match")
 
 
 class ClapPromptTests(unittest.TestCase):
@@ -156,7 +210,6 @@ class ClapPromptTests(unittest.TestCase):
     def test_legacy_placeholder_embeddings_not_compatible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "embeds.npz"
-            # Legacy 64-d placeholder cache without model_name
             np.savez_compressed(
                 path,
                 labels=np.asarray(["siren"]),
@@ -185,7 +238,6 @@ class ClapPreprocessTests(unittest.TestCase):
         np.testing.assert_array_equal(cropped, long_wave[-4800:])
 
     def test_extract_features_shape(self) -> None:
-        # Exactly 10 s @ 48 kHz
         pcm = np.random.randn(480_000).astype(np.float32) * 0.01
         feats, is_longer = extract_clap_features(pcm)
         self.assertEqual(feats.shape, (1, 1, 1001, 64))
@@ -203,7 +255,6 @@ class _FakeTextEncoder:
     model_version = "testhash12"
 
     def embed(self, texts: list[str]) -> np.ndarray:
-        # Orthogonal-ish rows so cosine ranking is stable.
         out = np.zeros((len(texts), EMBED_DIM), dtype=np.float32)
         for i, _ in enumerate(texts):
             out[i, i % EMBED_DIM] = 1.0

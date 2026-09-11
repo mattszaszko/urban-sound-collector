@@ -53,3 +53,13 @@ class AudioRingBuffer:
         return np.concatenate(
             (self._buf[self._write :], self._buf[: self._write])
         ).astype(np.float32, copy=False)
+
+    def last_n(self, n: int) -> np.ndarray:
+        """Return the newest n samples (or fewer if not yet filled)."""
+        n = int(n)
+        if n <= 0 or self._size == 0:
+            return np.zeros(0, dtype=np.float32)
+        snap = self.snapshot()
+        if snap.size <= n:
+            return snap
+        return snap[-n:].copy()
