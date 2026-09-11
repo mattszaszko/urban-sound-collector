@@ -79,9 +79,6 @@
                     justify-content:center;color:var(--muted);font-size:.8rem;
                     pointer-events:none;z-index:1}
   .live-chart-empty[hidden]{display:none}
-  @media(min-width:640px){
-    .live-chart-canvas-box{height:260px}
-  }
 
   /* Forms */
   label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:.25rem;margin-top:.75rem}
@@ -199,10 +196,47 @@
   .error-banner{background:#7f1d1d;color:#fca5a5;border-radius:8px;
                 padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem}
   .field-note{font-size:.7rem;color:var(--muted);margin-top:.35rem;line-height:1.45}
+
+  /* Run tab layout shells (stacked on mobile) */
+  .run-layout{display:flex;flex-direction:column;gap:0}
+  .run-layout > .card{margin-bottom:1rem}
+
   @media(min-width:640px){
-    body{max-width:900px;margin:0 auto;padding:1.5rem}
+    body{max-width:960px;margin:0 auto;padding:1.5rem}
+    header h1{font-size:1.25rem}
     .stat-grid{grid-template-columns:repeat(5,1fr)}
     .trigger-settings{grid-template-columns:repeat(3,1fr)}
+    .live-chart-canvas-box{height:280px}
+    #log-box{height:240px}
+  }
+
+  @media(min-width:960px){
+    body{max-width:1180px;padding:1.75rem 2rem}
+    .run-layout{
+      display:grid;
+      grid-template-columns:minmax(0,1.6fr) minmax(300px,.85fr);
+      gap:1rem;
+      align-items:start;
+      margin-bottom:1rem;
+    }
+    .run-layout > .card{margin-bottom:0}
+    #status-card{grid-column:1;grid-row:1}
+    #control-card{grid-column:2;grid-row:1;position:sticky;top:1rem}
+    .live-chart-canvas-box{height:320px}
+    #log-box{height:280px;font-size:.78rem}
+    .export-options{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:1rem 1.5rem}
+    .export-options .export-title{width:100%;margin-bottom:0}
+    .export-options .check-row{flex:1 1 16rem}
+    .card{padding:1.35rem 1.5rem}
+    .btn-start,.btn-stop{max-width:20rem}
+  }
+
+  @media(min-width:1280px){
+    body{max-width:1360px;padding:2rem 2.5rem}
+    .run-layout{grid-template-columns:minmax(0,1.75fr) minmax(320px,.8fr);gap:1.25rem}
+    .live-chart-canvas-box{height:380px}
+    #log-box{height:340px}
+    header h1{font-size:1.35rem}
   }
 </style>
 </head>
@@ -247,6 +281,7 @@
 <!-- ── RUN TAB ── -->
 <div class="tab-panel active" id="panel-run" role="tabpanel">
 
+<div class="run-layout">
 <!-- ── STATUS ── -->
 <div class="card" id="status-card">
   <h2>Status</h2>
@@ -314,7 +349,7 @@
 </div>
 
 <!-- ── CONTROL ── -->
-<div class="card">
+<div class="card" id="control-card">
   <h2>Control</h2>
 
   {% if not status.running %}
@@ -326,7 +361,7 @@
     <input type="text" name="run_name" value="{{ default_run_name }}"
            placeholder="run" pattern="[A-Za-z0-9_-]+"
            title="Letters, numbers, hyphens and underscores only">
-    <div style="font-size:.7rem;color:var(--muted);margin-top:.35rem">
+    <div class="field-note">
       Saved as <code style="color:var(--accent)">runs/&lt;name&gt;-YYYY-MM-DDTHH-MMZ.jsonl</code>
       (UTC start time appended automatically)
     </div>
@@ -371,6 +406,7 @@
   </form>
   {% endif %}
 </div>
+</div><!-- /run-layout -->
 
 <!-- ── LIVE LOG ── -->
 <div class="card">
