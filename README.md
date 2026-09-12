@@ -398,6 +398,9 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
   `yamnet_preprocess`), download sibling WAV when recorded, delete a run
   (JSONL + WAV; blocked while that run is active)
 - Password-protected login (session cookie, 7-day expiry)
+- **Prompts / Triggers** tabs: edit CLAP config; **Export / Import JSON**
+  (`clap_prompts.json`, `clap_triggers.json`) to copy sets between Pis — rebuild
+  embeddings after importing prompts
 - Optional **systemd** unit so the web UI auto-starts on Pi reboot
 - Named Cloudflare Tunnel for a stable public URL (e.g. `https://noise.mattszaszko.com`)
 

@@ -508,6 +508,9 @@
       <button type="button" class="btn btn-secondary" id="prompts-add-btn">+ Add row</button>
       <button type="button" class="btn btn-start" id="prompts-save-btn">Save prompts</button>
       <button type="button" class="btn btn-secondary" id="prompts-rebuild-btn">Rebuild embeddings</button>
+      <button type="button" class="btn btn-secondary" id="prompts-export-btn">↓ Export JSON</button>
+      <button type="button" class="btn btn-secondary" id="prompts-import-btn">↑ Import JSON</button>
+      <input type="file" id="prompts-import-file" accept="application/json,.json" hidden>
     </div>
     <div class="inline-status" id="prompts-status"></div>
   </div>
@@ -537,6 +540,9 @@
     <div class="btn-row" style="margin-top:.75rem">
       <button type="button" class="btn btn-start" id="triggers-save-btn">Save triggers</button>
       <button type="button" class="btn btn-secondary" id="catalog-refresh-btn">Refresh catalog</button>
+      <button type="button" class="btn btn-secondary" id="triggers-export-btn">↓ Export JSON</button>
+      <button type="button" class="btn btn-secondary" id="triggers-import-btn">↑ Import JSON</button>
+      <input type="file" id="triggers-import-file" accept="application/json,.json" hidden>
     </div>
     <div class="inline-status" id="triggers-status"></div>
   </div>
@@ -601,6 +607,83 @@ function setInlineStatus(el, msg, kind) {
   el.textContent = msg || '';
   el.classList.remove('ok', 'err');
   if (kind) el.classList.add(kind);
+}
+
+function downloadJson(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2) + '\n'], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function readJsonFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve(JSON.parse(String(reader.result || '')));
+      } catch (err) {
+        reject(new Error('Invalid JSON file'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsText(file);
+  });
+}
+
+function normalizePromptsPayload(raw) {
+  let list = null;
+  if (Array.isArray(raw)) list = raw;
+  else if (raw && typeof raw === 'object' && Array.isArray(raw.prompts)) list = raw.prompts;
+  else throw new Error('Expected { "prompts": [ { "label", "prompt" }, ... ] }');
+  const prompts = [];
+  const seen = new Set();
+  for (const item of list) {
+    if (!item || typeof item !== 'object') {
+      throw new Error('Each prompt must be an object with label and prompt');
+    }
+    const label = String(item.label || '').trim();
+    const prompt = String(item.prompt || '').trim();
+    if (!label || !prompt) {
+      throw new Error('Each prompt needs a non-empty label and prompt');
+    }
+    if (seen.has(label)) throw new Error(`Duplicate label: ${label}`);
+    seen.add(label);
+    prompts.push({ label, prompt });
+  }
+  if (!prompts.length) throw new Error('Prompt list is empty');
+  return prompts;
+}
+
+function normalizeTriggersPayload(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Expected a triggers JSON object');
+  }
+  const trigger_labels = Array.isArray(raw.trigger_labels)
+    ? raw.trigger_labels.map((x) => String(x).trim()).filter(Boolean)
+    : [];
+  const ambiguous_labels = Array.isArray(raw.ambiguous_labels)
+    ? raw.ambiguous_labels.map((x) => String(x).trim()).filter(Boolean)
+    : [];
+  const num = (v, fallback) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  return {
+    cooldown_seconds: num(raw.cooldown_seconds, 5),
+    dba_threshold: num(raw.dba_threshold, 55),
+    pre_roll_seconds: num(raw.pre_roll_seconds, 2),
+    post_roll_seconds: num(raw.post_roll_seconds, 8),
+    trigger_labels,
+    ambiguous_labels,
+  };
 }
 
 // ── Live log via SSE ──────────────────────────────────────────────
@@ -1082,8 +1165,7 @@ async function loadPrompts() {
 
 document.getElementById('prompts-add-btn').addEventListener('click', () => addPromptRow());
 
-document.getElementById('prompts-save-btn').addEventListener('click', async () => {
-  const prompts = collectPrompts();
+async function savePromptsToServer(prompts, statusMsg) {
   setInlineStatus(promptsStatus, 'Saving…');
   const { ok, data } = await apiFetch('/api/clap/prompts', {
     method: 'PUT',
@@ -1093,10 +1175,53 @@ document.getElementById('prompts-save-btn').addEventListener('click', async () =
     const msg = (data && data.error) || 'Save failed';
     setInlineStatus(promptsStatus, msg, 'err');
     alert(msg);
-    return;
+    return false;
   }
-  setInlineStatus(promptsStatus, `Saved ${data.count} prompt(s). Rebuild embeddings if needed.`, 'ok');
+  setInlineStatus(
+    promptsStatus,
+    statusMsg || `Saved ${data.count} prompt(s). Rebuild embeddings if needed.`,
+    'ok'
+  );
   await loadPrompts();
+  return true;
+}
+
+document.getElementById('prompts-save-btn').addEventListener('click', async () => {
+  await savePromptsToServer(collectPrompts());
+});
+
+document.getElementById('prompts-export-btn').addEventListener('click', () => {
+  const prompts = collectPrompts();
+  downloadJson('clap_prompts.json', { prompts });
+  setInlineStatus(promptsStatus, `Exported ${prompts.length} prompt(s).`, 'ok');
+});
+
+document.getElementById('prompts-import-btn').addEventListener('click', () => {
+  document.getElementById('prompts-import-file').click();
+});
+
+document.getElementById('prompts-import-file').addEventListener('change', async (ev) => {
+  const input = ev.target;
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const raw = await readJsonFile(file);
+    const prompts = normalizePromptsPayload(raw);
+    if (!confirm(`Replace prompts with ${prompts.length} from "${file.name}" and save to this Pi?`)) {
+      return;
+    }
+    promptsTbody.innerHTML = '';
+    prompts.forEach((p) => addPromptRow(p.label, p.prompt));
+    await savePromptsToServer(
+      prompts,
+      `Imported and saved ${prompts.length} prompt(s). Rebuild embeddings before enabling CLAP.`
+    );
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Import failed';
+    setInlineStatus(promptsStatus, msg, 'err');
+    alert(msg);
+  }
 });
 
 document.getElementById('prompts-rebuild-btn').addEventListener('click', async () => {
@@ -1119,6 +1244,10 @@ const trigSearch = document.getElementById('trig-search');
 let catalogLabels = [];
 let triggerSet = new Set();
 let ambiguousSet = new Set();
+let lastTriggerMeta = {
+  pre_roll_seconds: 2,
+  post_roll_seconds: 8,
+};
 
 function radioNameFor(label) {
   return 'trig-mode-' + encodeURIComponent(label).replace(/%/g, '_');
@@ -1275,6 +1404,10 @@ async function loadTriggerConfig() {
   }
   document.getElementById('trig-cooldown').value = data.cooldown_seconds ?? 5;
   document.getElementById('trig-dba').value = data.dba_threshold ?? 55;
+  lastTriggerMeta = {
+    pre_roll_seconds: data.pre_roll_seconds ?? 2,
+    post_roll_seconds: data.post_roll_seconds ?? 8,
+  };
   triggerSet = new Set(data.trigger_labels || []);
   ambiguousSet = new Set(data.ambiguous_labels || []);
   // Re-apply radios if catalog already rendered
@@ -1285,6 +1418,71 @@ async function loadTriggerConfig() {
     const inp = row.querySelector(`input[name="${name}"][value="${mode}"]`);
     if (inp) inp.checked = true;
   });
+  return true;
+}
+
+function collectTriggersPayload() {
+  const triggers = [];
+  const ambiguous = [];
+  themesContainer.querySelectorAll('.label-row').forEach((row) => {
+    const label = row.dataset.label;
+    const checked = row.querySelector('input[type="radio"]:checked');
+    const mode = checked ? checked.value : 'off';
+    if (mode === 'trigger') triggers.push(label);
+    else if (mode === 'ambiguous') ambiguous.push(label);
+  });
+  return {
+    cooldown_seconds: parseFloat(document.getElementById('trig-cooldown').value) || 0,
+    dba_threshold: parseFloat(document.getElementById('trig-dba').value) || 0,
+    pre_roll_seconds: lastTriggerMeta.pre_roll_seconds,
+    post_roll_seconds: lastTriggerMeta.post_roll_seconds,
+    trigger_labels: triggers,
+    ambiguous_labels: ambiguous,
+  };
+}
+
+function applyTriggersPayload(cfg) {
+  document.getElementById('trig-cooldown').value = cfg.cooldown_seconds;
+  document.getElementById('trig-dba').value = cfg.dba_threshold;
+  lastTriggerMeta = {
+    pre_roll_seconds: cfg.pre_roll_seconds,
+    post_roll_seconds: cfg.post_roll_seconds,
+  };
+  triggerSet = new Set(cfg.trigger_labels || []);
+  ambiguousSet = new Set(cfg.ambiguous_labels || []);
+  themesContainer.querySelectorAll('.label-row').forEach((row) => {
+    const label = row.dataset.label;
+    const mode = currentMode(label);
+    const name = radioNameFor(label);
+    const inp = row.querySelector(`input[name="${name}"][value="${mode}"]`);
+    if (inp) inp.checked = true;
+  });
+}
+
+async function saveTriggersToServer(body, statusMsg) {
+  setInlineStatus(triggersStatus, 'Saving…');
+  const { ok, data } = await apiFetch('/api/clap/triggers', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  if (!ok || !data || !data.ok) {
+    const msg = (data && data.error) || 'Save failed';
+    setInlineStatus(triggersStatus, msg, 'err');
+    alert(msg);
+    return false;
+  }
+  triggerSet = new Set(body.trigger_labels || []);
+  ambiguousSet = new Set(body.ambiguous_labels || []);
+  lastTriggerMeta = {
+    pre_roll_seconds: body.pre_roll_seconds ?? lastTriggerMeta.pre_roll_seconds,
+    post_roll_seconds: body.post_roll_seconds ?? lastTriggerMeta.post_roll_seconds,
+  };
+  setInlineStatus(
+    triggersStatus,
+    statusMsg ||
+      `Saved (${(body.trigger_labels || []).length} trigger, ${(body.ambiguous_labels || []).length} ambiguous).`,
+    'ok'
+  );
   return true;
 }
 
@@ -1299,40 +1497,50 @@ async function loadTriggersPanel() {
 trigSearch.addEventListener('input', filterLabels);
 
 document.getElementById('triggers-save-btn').addEventListener('click', async () => {
-  // Collect from radios for accuracy
-  const triggers = [];
-  const ambiguous = [];
-  themesContainer.querySelectorAll('.label-row').forEach((row) => {
-    const label = row.dataset.label;
-    const checked = row.querySelector('input[type="radio"]:checked');
-    const mode = checked ? checked.value : 'off';
-    if (mode === 'trigger') triggers.push(label);
-    else if (mode === 'ambiguous') ambiguous.push(label);
-  });
-  const body = {
-    cooldown_seconds: parseFloat(document.getElementById('trig-cooldown').value) || 0,
-    dba_threshold: parseFloat(document.getElementById('trig-dba').value) || 0,
-    trigger_labels: triggers,
-    ambiguous_labels: ambiguous,
-  };
-  setInlineStatus(triggersStatus, 'Saving…');
-  const { ok, data } = await apiFetch('/api/clap/triggers', {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  });
-  if (!ok || !data || !data.ok) {
-    const msg = (data && data.error) || 'Save failed';
-    setInlineStatus(triggersStatus, msg, 'err');
-    alert(msg);
-    return;
-  }
-  triggerSet = new Set(triggers);
-  ambiguousSet = new Set(ambiguous);
+  await saveTriggersToServer(collectTriggersPayload());
+});
+
+document.getElementById('triggers-export-btn').addEventListener('click', () => {
+  const body = collectTriggersPayload();
+  downloadJson('clap_triggers.json', body);
   setInlineStatus(
     triggersStatus,
-    `Saved (${triggers.length} trigger, ${ambiguous.length} ambiguous).`,
+    `Exported (${body.trigger_labels.length} trigger, ${body.ambiguous_labels.length} ambiguous).`,
     'ok'
   );
+});
+
+document.getElementById('triggers-import-btn').addEventListener('click', () => {
+  document.getElementById('triggers-import-file').click();
+});
+
+document.getElementById('triggers-import-file').addEventListener('change', async (ev) => {
+  const input = ev.target;
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const raw = await readJsonFile(file);
+    const cfg = normalizeTriggersPayload(raw);
+    if (!confirm(
+      `Replace trigger settings with "${file.name}" ` +
+      `(${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous) and save?`
+    )) {
+      return;
+    }
+    if (!themesContainer.querySelector('.label-row')) {
+      await loadCatalogAndApply();
+    }
+    applyTriggersPayload(cfg);
+    await saveTriggersToServer(
+      cfg,
+      `Imported and saved (${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous).`
+    );
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Import failed';
+    setInlineStatus(triggersStatus, msg, 'err');
+    alert(msg);
+  }
 });
 
 document.getElementById('catalog-refresh-btn').addEventListener('click', async () => {
