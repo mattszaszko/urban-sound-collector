@@ -1,68 +1,48 @@
 {
   "prompts": [
     {
-      "label": "ambulance_siren",
-      "prompt": "An ambulance emergency siren wailing outdoors on a city street"
+      "label": "ambient",
+      "prompt": "Continuous, low-level urban background noise with no dominant acoustic events"
     },
     {
-      "label": "police_siren",
-      "prompt": "A police car siren sounding while driving through urban streets"
+      "label": "wind",
+      "prompt": "Wind noise and turbulent gusts blowing against the recording microphone outdoors"
     },
     {
-      "label": "car_passing",
-      "prompt": "A passenger car driving past on a nearby road"
+      "label": "traffic",
+      "prompt": "A standard passenger car driving past on an asphalt street with tire roll sound"
     },
     {
-      "label": "heavy_truck",
-      "prompt": "A heavy diesel truck accelerating and rumbling past on a road"
+      "label": "revving",
+      "prompt": "A loud car accelerating with high-RPM engine revving and exhaust backfiring pops"
     },
     {
       "label": "motorcycle",
-      "prompt": "A motorcycle engine revving and passing by outdoors"
+      "prompt": "A loud motorcycle driving past with an aggressive, buzzing exhaust roar"
     },
     {
-      "label": "car_horn",
-      "prompt": "A car horn honking briefly in city traffic"
+      "label": "truck",
+      "prompt": "A heavy diesel truck or bus rumbling past with deep low-frequency engine vibrations"
     },
     {
-      "label": "people_talking",
-      "prompt": "People talking nearby in an outdoor urban environment"
+      "label": "speech",
+      "prompt": "Human voices speaking and conversing outdoors"
     },
     {
-      "label": "dog_barking",
-      "prompt": "A dog barking outdoors near a street or courtyard"
+      "label": "birds",
+      "prompt": "Birds chirping, singing, or calling from trees in a city park or street"
     },
     {
-      "label": "jackhammer",
-      "prompt": "A jackhammer or pneumatic drill breaking pavement on a construction site"
+      "label": "siren",
+      "prompt": "An emergency vehicle siren wailing in urban traffic"
     },
     {
-      "label": "drilling",
-      "prompt": "Power drilling or construction drilling outdoors"
+      "label": "horn",
+      "prompt": "A vehicle horn honking loudly in a city street"
     },
     {
-      "label": "birdsong",
-      "prompt": "Birds singing outdoors in a neighborhood or park"
-    },
-    {
-      "label": "rain_on_street",
-      "prompt": "Rain falling on pavement and streets in a city"
-    },
-    {
-      "label": "wind_noise",
-      "prompt": "Strong wind noise blowing across an outdoor microphone"
-    },
-    {
-      "label": "music_from_car",
-      "prompt": "Loud music playing from a car stereo outdoors"
-    },
-    {
-      "label": "bicycle_bell",
-      "prompt": "A bicycle bell ringing on a path or street"
-    },
-    {
-      "label": "silence",
-      "prompt": "Quiet outdoor ambient environment with little activity"
+      "label": "impact",
+      "prompt": "A sharp metallic bang, dumpster lid slam, or construction clatter"
     }
   ]
 }

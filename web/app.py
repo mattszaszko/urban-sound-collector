@@ -857,8 +857,8 @@ async def api_clap_triggers_put(request: Request):
         cfg = ClapTriggerConfig(
             cooldown_seconds=float(body.get("cooldown_seconds", 5)),
             dba_threshold=float(body.get("dba_threshold", 55)),
-            pre_roll_seconds=float(body.get("pre_roll_seconds", 2)),
-            post_roll_seconds=float(body.get("post_roll_seconds", 8)),
+            pre_roll_seconds=float(body.get("pre_roll_seconds", 7)),
+            post_roll_seconds=float(body.get("post_roll_seconds", 3)),
             trigger_labels=list(body.get("trigger_labels", [])),
             ambiguous_labels=list(body.get("ambiguous_labels", [])),
         )

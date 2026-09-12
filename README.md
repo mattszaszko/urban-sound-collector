@@ -345,7 +345,7 @@ Stop with **Ctrl+C**, or let `timeout` end the run.
 YAMNet still runs every open chunk. With **`--enable-clap`**, a 10 s ungained
 ring buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
 YAMNet trigger fires (see web **Triggers** tab). CLAP uses a **hybrid window**:
-2 s before the wake + 8 s after, **peak-normalized** before audio ONNX (no Branch B
+7 s before the wake + 3 s after, **peak-normalized** before audio ONNX (no Branch B
 AGC/HPF), then writes predictions on the later chunk with link meta
 (`trigger_chunk_index`, etc.). Statuses: `scheduled` → `pending` → `triggered`
 (no carry). `clap_model_name` should be `clap-htsat-unfused-onnx`.

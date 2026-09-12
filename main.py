@@ -380,7 +380,7 @@ def stream_live(
     Branch A: A-weighted loudness at 48 kHz (ungained).
     Branch B: YAMNet TFLite at 16 kHz (dynamic HPF + RMS normalize).
     Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
-    Optional CLAP: hybrid 2 s pre-roll + 8 s post-roll after YAMNet wake.
+    Optional CLAP: hybrid 7 s pre-roll + 3 s post-roll after YAMNet wake.
     Optional WAV: ungained mono 16-bit PCM @ capture rate.
 
     Returns:

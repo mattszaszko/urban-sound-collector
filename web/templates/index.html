@@ -522,7 +522,7 @@
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
       Map YAMNet labels to CLAP trigger modes. Off = ignore, Trigger = arm hybrid
-      CLAP (2&nbsp;s before + 8&nbsp;s after wake), Ambiguous = arm only when also loud
+      CLAP (7&nbsp;s before + 3&nbsp;s after wake), Ambiguous = arm only when also loud
       (dBA threshold). No label carry — only <code>triggered</code> rows have CLAP labels.
     </div>
     <div class="trigger-settings">
@@ -679,8 +679,8 @@ function normalizeTriggersPayload(raw) {
   return {
     cooldown_seconds: num(raw.cooldown_seconds, 5),
     dba_threshold: num(raw.dba_threshold, 55),
-    pre_roll_seconds: num(raw.pre_roll_seconds, 2),
-    post_roll_seconds: num(raw.post_roll_seconds, 8),
+    pre_roll_seconds: num(raw.pre_roll_seconds, 7),
+    post_roll_seconds: num(raw.post_roll_seconds, 3),
     trigger_labels,
     ambiguous_labels,
   };
@@ -1245,8 +1245,8 @@ let catalogLabels = [];
 let triggerSet = new Set();
 let ambiguousSet = new Set();
 let lastTriggerMeta = {
-  pre_roll_seconds: 2,
-  post_roll_seconds: 8,
+  pre_roll_seconds: 7,
+  post_roll_seconds: 3,
 };
 
 function radioNameFor(label) {
@@ -1405,8 +1405,8 @@ async function loadTriggerConfig() {
   document.getElementById('trig-cooldown').value = data.cooldown_seconds ?? 5;
   document.getElementById('trig-dba').value = data.dba_threshold ?? 55;
   lastTriggerMeta = {
-    pre_roll_seconds: data.pre_roll_seconds ?? 2,
-    post_roll_seconds: data.post_roll_seconds ?? 8,
+    pre_roll_seconds: data.pre_roll_seconds ?? 7,
+    post_roll_seconds: data.post_roll_seconds ?? 3,
   };
   triggerSet = new Set(data.trigger_labels || []);
   ambiguousSet = new Set(data.ambiguous_labels || []);

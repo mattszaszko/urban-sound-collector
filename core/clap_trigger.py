@@ -1,4 +1,4 @@
-"""YAMNet→CLAP arming rules (hybrid 2+8 capture; no carry)."""
+"""YAMNet→CLAP arming rules (hybrid 7+3 capture; no carry)."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ CLAP_STATUS_SKIPPED = "skipped"
 CLAP_STATUS_GATED = "gated"
 
 # Hybrid window defaults (seconds)
-CLAP_PRE_ROLL_SECONDS = 2.0
-CLAP_POST_ROLL_SECONDS = 8.0
+CLAP_PRE_ROLL_SECONDS = 7.0
+CLAP_POST_ROLL_SECONDS = 3.0
 
 
 @dataclass

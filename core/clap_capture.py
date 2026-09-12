@@ -12,7 +12,7 @@ from core.clap_trigger import CLAP_POST_ROLL_SECONDS, CLAP_PRE_ROLL_SECONDS
 
 @dataclass
 class HybridClapCapture:
-    """Accumulate a 2 s pre-roll + 8 s post-roll waveform for one CLAP inference."""
+    """Accumulate a 7 s pre-roll + 3 s post-roll waveform for one CLAP inference."""
 
     sample_rate: int
     pre_roll_seconds: float = CLAP_PRE_ROLL_SECONDS
