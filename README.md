@@ -378,7 +378,7 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 
 ### Features
 
-- Start a run with:
+- Start a run from the **Record** tab with:
   - **Hours** input (e.g. `8`, or `168` for a week)
   - **Output file name** prefix (prefilled from time of day: `morning` /
     `day` / `evening` / `night`); UTC start stamp is always appended
@@ -394,14 +394,13 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 - Live status: chunk count, elapsed time, last label, dBA, last CLAP (polls every 1 s)
 - Live **5‑minute loudness chart** (dBA + Gate L90 relative, YAMNet label-change markers, CLAP triggers)
 - Live log tail via Server-Sent Events (no page refresh needed)
-- **Data** tab: select a past run for a scrubbable loudness timeline (same series
-  as the live chart), human-impact cards (mean / L10 / L90 dBA, max LAFmax,
-  **% loud** = share of chunks with `LAFmax_dB ≥` threshold, default 65, editable
-  50–80), YAMNet/CLAP top labels; optional synced WAV listen when a sibling
-  recording exists (scrub seeks audio; play advances the playhead). Also:
-  download past JSONL (optional omit `spectrum` / `yamnet_preprocess`), download
-  sibling WAV, delete a run (JSONL + WAV; blocked while that run is active;
-  playback disabled while still recording)
+- **Data** tab: download past JSONL (optional omit `spectrum` /
+  `yamnet_preprocess`), download sibling WAV, delete a run (JSONL + WAV; blocked
+  while that run is active). **View** opens a dedicated analysis screen
+  (`/analyze/<run>.jsonl`, openable in a new tab) with impact cards (mean / L10 /
+  L90 dBA, max LAFmax, **% loud** = `LAFmax_dB ≥` threshold default 65), YAMNet/CLAP
+  labels, a scrubbable **2‑minute** loudness window that follows playback, and
+  synced WAV listen when recorded (playback disabled while still recording)
 - Password-protected login (session cookie, 7-day expiry)
 - **Prompts / Triggers** tabs: edit CLAP config; **Export / Import JSON**
   (`clap_prompts.json`, `clap_triggers.json`) to copy sets between Pis — rebuild

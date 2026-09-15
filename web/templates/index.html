@@ -147,8 +147,19 @@
   .view-btn{color:var(--text)}
   .del-btn{color:var(--red);border-color:var(--border)}
   .del-btn:hover{border-color:var(--red)}
-  #run-overview{margin-top:1rem}
-  #run-overview[hidden]{display:none}
+  #panel-analyze{display:none}
+  #panel-analyze.active{display:block}
+  body.analyze-mode .tab-bar{display:none}
+  body.analyze-mode .tab-panel{display:none !important}
+  body.analyze-mode #panel-analyze{display:block !important}
+  .analyze-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+                   justify-content:space-between;margin-bottom:.75rem}
+  .analyze-back{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;
+                background:var(--bg);border:1px solid var(--border);border-radius:8px;
+                color:var(--text);text-decoration:none;font-size:.82rem;font-weight:600}
+  .analyze-back:hover{border-color:var(--accent);color:var(--accent)}
+  #run-overview{margin-top:0}
+  .overview-chart-note{font-size:.72rem;color:var(--muted);margin:0 0 .45rem}
   .overview-head{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline;
                  justify-content:space-between;margin-bottom:.85rem}
   .overview-title{font-size:.95rem;font-weight:600;word-break:break-all}
@@ -279,7 +290,7 @@
   }
 </style>
 </head>
-<body>
+<body{% if analyze_run %} class="analyze-mode"{% endif %}>
 
 <header>
   <div>
@@ -300,8 +311,8 @@
   </div>
 </header>
 
-<nav class="tab-bar" role="tablist">
-  <button type="button" class="tab-btn active" data-tab="run" role="tab" aria-selected="true">Run</button>
+<nav class="tab-bar" role="tablist"{% if analyze_run %} hidden{% endif %}>
+  <button type="button" class="tab-btn active" data-tab="run" role="tab" aria-selected="true">Record</button>
   <button type="button" class="tab-btn" data-tab="data" role="tab" aria-selected="false">Data</button>
   <button type="button" class="tab-btn" data-tab="prompts" role="tab" aria-selected="false">Prompts</button>
   <button type="button" class="tab-btn" data-tab="triggers" role="tab" aria-selected="false">Triggers</button>
@@ -317,8 +328,8 @@
 <div class="error-banner">Could not delete that file.</div>
 {% endif %}
 
-<!-- ── RUN TAB ── -->
-<div class="tab-panel active" id="panel-run" role="tabpanel">
+<!-- ── RECORD TAB ── -->
+<div class="tab-panel{% if not analyze_run %} active{% endif %}" id="panel-run" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
 
 <div class="run-layout">
 <!-- ── STATUS ── -->
@@ -469,7 +480,7 @@
 </div><!-- /panel-run -->
 
 <!-- ── DATA TAB ── -->
-<div class="tab-panel" id="panel-data" role="tabpanel">
+<div class="tab-panel" id="panel-data" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
 <div class="card">
   <h2>Past runs</h2>
   {% if runs %}
@@ -500,7 +511,7 @@
         </div>
       </div>
       <div class="run-actions">
-        <button type="button" class="view-btn" data-view-run="{{ run.name }}">View</button>
+        <a class="view-btn" href="/analyze/{{ run.name }}">View</a>
         <a class="dl-btn" href="/runs/{{ run.name }}"
            data-filename="{{ run.name }}" download>↓ JSONL</a>
         {% if run.has_wav %}
@@ -518,45 +529,52 @@
   <div class="empty">No runs yet.</div>
   {% endif %}
 </div>
+</div><!-- /panel-data -->
 
-<div class="card" id="run-overview" hidden>
-  <div class="overview-head">
-    <div>
-      <div class="overview-title" id="ov-title">Run overview</div>
-      <div class="overview-sub" id="ov-sub"></div>
+<!-- ── ANALYZE (dedicated screen / openable in new tab) ── -->
+<div id="panel-analyze"{% if analyze_run %} class="active"{% endif %}{% if not analyze_run %} hidden{% endif %}>
+  <div class="analyze-toolbar">
+    <a class="analyze-back" href="/?tab=data">← Back to Data</a>
+  </div>
+  <div class="card" id="run-overview">
+    <div class="overview-head">
+      <div>
+        <div class="overview-title" id="ov-title">Run analysis</div>
+        <div class="overview-sub" id="ov-sub"></div>
+      </div>
+      <div class="loud-threshold-row">
+        <label for="ov-loud-thr">Loud if LAFmax ≥</label>
+        <input type="number" id="ov-loud-thr" min="50" max="80" step="1" value="65">
+        <span>dB</span>
+      </div>
     </div>
-    <div class="loud-threshold-row">
-      <label for="ov-loud-thr">Loud if LAFmax ≥</label>
-      <input type="number" id="ov-loud-thr" min="50" max="80" step="1" value="65">
-      <span>dB</span>
+    <div id="ov-status" class="inline-status"></div>
+    <div class="impact-grid" id="ov-impact"></div>
+    <div class="impact-grid" id="ov-labels" style="grid-template-columns:1fr 1fr"></div>
+    <div class="overview-chart-note">2&nbsp;min window · follows scrub / playback</div>
+    <div class="live-chart-legend" style="margin-bottom:.45rem">
+      <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
+      <span><i class="swatch line" style="background:#94a3b8"></i>Gate L90</span>
+      <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
+      <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
     </div>
-  </div>
-  <div id="ov-status" class="inline-status"></div>
-  <div class="impact-grid" id="ov-impact"></div>
-  <div class="impact-grid" id="ov-labels" style="grid-template-columns:1fr 1fr"></div>
-  <div class="live-chart-legend" style="margin-bottom:.45rem">
-    <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
-    <span><i class="swatch line" style="background:#94a3b8"></i>Gate L90</span>
-    <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
-    <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
-  </div>
-  <div class="overview-chart-box">
-    <canvas id="overview-loudness-chart" aria-label="Run loudness overview"></canvas>
-  </div>
-  <input type="range" class="overview-scrub" id="ov-scrub" min="0" max="0" value="0" step="1">
-  <div class="overview-detail" id="ov-detail">Select a point on the timeline.</div>
-  <div class="overview-audio-wrap" id="ov-audio-wrap" hidden>
-    <div class="overview-sub">Listen (synced to scrubber)</div>
-    <audio id="ov-audio" controls preload="metadata"></audio>
-    <div class="overview-audio-note" id="ov-audio-note" hidden>
-      Playback disabled while this run is still recording (WAV may be incomplete).
+    <div class="overview-chart-box">
+      <canvas id="overview-loudness-chart" aria-label="Run loudness overview"></canvas>
+    </div>
+    <input type="range" class="overview-scrub" id="ov-scrub" min="0" max="0" value="0" step="1">
+    <div class="overview-detail" id="ov-detail">Select a point on the timeline.</div>
+    <div class="overview-audio-wrap" id="ov-audio-wrap" hidden>
+      <div class="overview-sub">Listen (synced to scrubber)</div>
+      <audio id="ov-audio" controls preload="metadata"></audio>
+      <div class="overview-audio-note" id="ov-audio-note" hidden>
+        Playback disabled while this run is still recording (WAV may be incomplete).
+      </div>
     </div>
   </div>
 </div>
-</div><!-- /panel-data -->
 
 <!-- ── PROMPTS TAB ── -->
-<div class="tab-panel" id="panel-prompts" role="tabpanel">
+<div class="tab-panel" id="panel-prompts" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
   <div class="card">
     <h2>CLAP prompts</h2>
     <div class="status-row" id="prompts-sync-row">
@@ -592,7 +610,7 @@
 </div>
 
 <!-- ── TRIGGERS TAB ── -->
-<div class="tab-panel" id="panel-triggers" role="tabpanel">
+<div class="tab-panel" id="panel-triggers" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
   <div class="card">
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
@@ -762,23 +780,26 @@ function normalizeTriggersPayload(raw) {
 }
 
 // ── Live log via SSE ──────────────────────────────────────────────
+const ANALYZE_RUN = {{ analyze_run | tojson }};
 const box = document.getElementById('log-box');
 const placeholder = document.getElementById('log-placeholder');
 let seenFirst = false;
 
-const es = new EventSource('/api/log-stream');
-es.onmessage = (e) => {
-  if (!seenFirst) { placeholder.remove(); seenFirst = true; }
-  const p = document.createElement('p');
-  p.textContent = JSON.parse(e.data);
-  box.appendChild(p);
-  // keep last 200 lines
-  while (box.children.length > 200) box.firstChild.remove();
-  box.scrollTop = box.scrollHeight;
-};
-es.onerror = () => {
-  if (!seenFirst) placeholder.textContent = 'Not connected.';
-};
+if (!ANALYZE_RUN && box) {
+  const es = new EventSource('/api/log-stream');
+  es.onmessage = (e) => {
+    if (!seenFirst) { placeholder.remove(); seenFirst = true; }
+    const p = document.createElement('p');
+    p.textContent = JSON.parse(e.data);
+    box.appendChild(p);
+    // keep last 200 lines
+    while (box.children.length > 200) box.firstChild.remove();
+    box.scrollTop = box.scrollHeight;
+  };
+  es.onerror = () => {
+    if (!seenFirst && placeholder) placeholder.textContent = 'Not connected.';
+  };
+}
 
 // ── Status polling + live loudness chart (every 1 s) ──────────────
 function fmtElapsed(s) {
@@ -1050,9 +1071,11 @@ async function pollStatus() {
   }
 }
 
-ensureLoudnessChart();
-setInterval(pollStatus, 1000);
-pollStatus();
+if (!ANALYZE_RUN) {
+  ensureLoudnessChart();
+  setInterval(pollStatus, 1000);
+  pollStatus();
+}
 
 // ── Download field options ────────────────────────────────────────
 const spectrumToggle = document.getElementById('dl-include-spectrum');
@@ -1088,11 +1111,15 @@ const ovAudioWrap = document.getElementById('ov-audio-wrap');
 const ovAudio = document.getElementById('ov-audio');
 const ovAudioNote = document.getElementById('ov-audio-note');
 
+const OVERVIEW_WINDOW_MS = 120_000;
+
 let overviewChart = null;
 let overviewData = null;
 let overviewScrubPoints = [];
+let overviewSeries = { dba: [], l90: [], yam: [], clap: [] };
 let overviewPlayheadMs = null;
 let overviewStartedMs = null;
+let overviewEndedMs = null;
 let overviewSyncFromAudio = false;
 let overviewSelectedName = null;
 let overviewRaf = 0;
@@ -1246,6 +1273,61 @@ function nearestScrubIndex(ms) {
   return best;
 }
 
+function overviewWindowBounds(playheadMs) {
+  const start = overviewStartedMs;
+  const end = overviewEndedMs;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return { min: playheadMs - OVERVIEW_WINDOW_MS / 2, max: playheadMs + OVERVIEW_WINDOW_MS / 2 };
+  }
+  const span = Math.max(0, end - start);
+  if (span <= OVERVIEW_WINDOW_MS) {
+    return { min: start, max: Math.max(end, start + 1000) };
+  }
+  let min = playheadMs - OVERVIEW_WINDOW_MS / 2;
+  let max = playheadMs + OVERVIEW_WINDOW_MS / 2;
+  if (min < start) {
+    min = start;
+    max = start + OVERVIEW_WINDOW_MS;
+  } else if (max > end) {
+    max = end;
+    min = end - OVERVIEW_WINDOW_MS;
+  }
+  return { min, max };
+}
+
+function filterSeriesInWindow(series, min, max, padMs = 2000) {
+  const lo = min - padMs;
+  const hi = max + padMs;
+  return series.filter((p) => p.x >= lo && p.x <= hi);
+}
+
+function updateOverviewChartWindow(playheadMs) {
+  const chart = ensureOverviewChart();
+  if (!chart || !Number.isFinite(playheadMs)) return;
+  const { min, max } = overviewWindowBounds(playheadMs);
+  const dba = filterSeriesInWindow(overviewSeries.dba, min, max);
+  const l90 = filterSeriesInWindow(overviewSeries.l90, min, max);
+  const yam = filterSeriesInWindow(overviewSeries.yam, min, max);
+  const clap = filterSeriesInWindow(overviewSeries.clap, min, max);
+  chart.data.datasets[0].data = dba;
+  chart.data.datasets[1].data = l90;
+  chart.data.datasets[2].data = yam;
+  chart.data.datasets[3].data = clap;
+  chart.options.scales.x.min = min;
+  chart.options.scales.x.max = max;
+
+  const ys = []
+    .concat(dba.map((p) => p.y), l90.map((p) => p.y), yam.map((p) => p.y), clap.map((p) => p.y))
+    .filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (ys.length) {
+    const lo = Math.min(...ys);
+    const hi = Math.max(...ys);
+    const pad = Math.max(2, (hi - lo) * 0.12);
+    chart.options.scales.y.min = Math.floor(lo - pad);
+    chart.options.scales.y.max = Math.ceil(hi + pad);
+  }
+}
+
 function renderOverviewDetail(idx) {
   const p = overviewScrubPoints[idx];
   if (!p || !ovDetail) return;
@@ -1269,6 +1351,7 @@ function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}
   overviewPlayheadMs = Number.isFinite(tMs) ? tMs : ms;
   if (ovScrub) ovScrub.value = String(idx);
   renderOverviewDetail(idx);
+  updateOverviewChartWindow(overviewPlayheadMs);
   if (overviewChart) overviewChart.update('none');
 
   if (
@@ -1309,7 +1392,7 @@ function renderOverviewSummary(data) {
   const dist = s.disturbances || {};
   const yam = s.yamnet || {};
   const clap = s.clap || {};
-  ovTitle.textContent = data.name || 'Run overview';
+  ovTitle.textContent = data.name || 'Run analysis';
   ovSub.textContent = [
     s.device_id || '',
     s.run_id || '',
@@ -1338,20 +1421,18 @@ function renderOverviewSummary(data) {
         `<div class="hint" style="margin-top:.35rem">Gated chunks: ${yam.gated_chunks || 0}</div>`
     ),
     impactCard(
-      'CLAP triggers',
+      'CLAP labels',
       String(clap.triggered || 0),
       chipsHtml(clap.top_labels)
     ),
   ].join('');
 }
 
-function renderOverviewChart(data) {
-  const chart = ensureOverviewChart();
-  if (!chart) return;
-  const points = data.points || [];
+function buildOverviewSeries(data) {
+  const source = data.scrub_points || data.points || [];
   const dba = [];
   const l90 = [];
-  for (const p of points) {
+  for (const p of source) {
     const x = Date.parse(p.t);
     if (!Number.isFinite(x)) continue;
     if (p.dba != null) dba.push({ x, y: p.dba });
@@ -1363,30 +1444,7 @@ function renderOverviewChart(data) {
   const clap = (data.clap_markers || []).map((m) => ({
     x: Date.parse(m.t), y: m.dba, label: m.label,
   })).filter((m) => Number.isFinite(m.x));
-
-  chart.data.datasets[0].data = dba;
-  chart.data.datasets[1].data = l90;
-  chart.data.datasets[2].data = yam;
-  chart.data.datasets[3].data = clap;
-
-  const xs = []
-    .concat(dba.map((p) => p.x), l90.map((p) => p.x), yam.map((p) => p.x), clap.map((p) => p.x))
-    .filter((v) => Number.isFinite(v));
-  if (xs.length) {
-    chart.options.scales.x.min = Math.min(...xs);
-    chart.options.scales.x.max = Math.max(...xs);
-  }
-  const ys = []
-    .concat(dba.map((p) => p.y), l90.map((p) => p.y), yam.map((p) => p.y), clap.map((p) => p.y))
-    .filter((v) => typeof v === 'number' && Number.isFinite(v));
-  if (ys.length) {
-    const lo = Math.min(...ys);
-    const hi = Math.max(...ys);
-    const pad = Math.max(2, (hi - lo) * 0.12);
-    chart.options.scales.y.min = Math.floor(lo - pad);
-    chart.options.scales.y.max = Math.ceil(hi + pad);
-  }
-  chart.update('none');
+  overviewSeries = { dba, l90, yam, clap };
 }
 
 function setupOverviewAudio(data) {
@@ -1432,10 +1490,6 @@ function tickOverviewAudioSync() {
 async function loadRunOverview(name, { loudThreshold } = {}) {
   if (!runOverviewEl) return;
   overviewSelectedName = name;
-  document.querySelectorAll('.run-row').forEach((row) => {
-    row.classList.toggle('selected', row.dataset.runName === name);
-  });
-  runOverviewEl.hidden = false;
   setInlineStatus(ovStatus, 'Loading overview…');
   const thr = loudThreshold != null
     ? loudThreshold
@@ -1452,11 +1506,17 @@ async function loadRunOverview(name, { loudThreshold } = {}) {
   overviewStartedMs = data.summary && data.summary.started_at
     ? Date.parse(data.summary.started_at)
     : (overviewScrubPoints[0] ? Date.parse(overviewScrubPoints[0].t) : null);
+  overviewEndedMs = data.summary && data.summary.ended_at
+    ? Date.parse(data.summary.ended_at)
+    : (overviewScrubPoints.length
+      ? Date.parse(overviewScrubPoints[overviewScrubPoints.length - 1].t)
+      : overviewStartedMs);
   if (ovLoudThr && data.summary && data.summary.disturbances) {
     ovLoudThr.value = data.summary.disturbances.threshold_lafmax_db;
   }
   renderOverviewSummary(data);
-  renderOverviewChart(data);
+  buildOverviewSeries(data);
+  ensureOverviewChart();
   if (ovScrub) {
     ovScrub.max = String(Math.max(0, overviewScrubPoints.length - 1));
     ovScrub.value = '0';
@@ -1467,7 +1527,7 @@ async function loadRunOverview(name, { loudThreshold } = {}) {
   }
   setInlineStatus(
     ovStatus,
-    data.points_full ? '' : 'Chart downsampled for long run; stats use all chunks.',
+    data.points_full ? '' : 'Long run: series may be reduced for scrubbing; stats use all chunks.',
     data.points_full ? '' : 'ok'
   );
 }
@@ -1475,13 +1535,7 @@ async function loadRunOverview(name, { loudThreshold } = {}) {
 document.querySelectorAll('.run-row[data-run-name]').forEach((row) => {
   row.addEventListener('click', (e) => {
     if (e.target.closest('a, button, form, input')) return;
-    loadRunOverview(row.dataset.runName);
-  });
-});
-document.querySelectorAll('[data-view-run]').forEach((btn) => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    loadRunOverview(btn.getAttribute('data-view-run'));
+    window.location.href = `/analyze/${encodeURIComponent(row.dataset.runName)}`;
   });
 });
 
@@ -1517,10 +1571,13 @@ if (ovAudio) {
   });
 }
 
-// Prevent row click when using action buttons already handled; stop delete form bubble
 document.querySelectorAll('.run-actions').forEach((el) => {
   el.addEventListener('click', (e) => e.stopPropagation());
 });
+
+if (ANALYZE_RUN) {
+  loadRunOverview(ANALYZE_RUN);
+}
 
 // ── Shutdown ──────────────────────────────────────────────────────
 const shutdownBtn = document.getElementById('shutdown-btn');

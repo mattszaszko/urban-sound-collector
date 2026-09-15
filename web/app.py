@@ -483,15 +483,11 @@ async def logout():
 # Main UI
 # ---------------------------------------------------------------------------
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    if not is_authenticated(request):
-        return RedirectResponse("/login", status_code=303)
+def _index_context(request: Request, *, analyze_run: str | None = None) -> dict:
     status = _get_status()
     runs = _list_runs()
     error = request.query_params.get("error", "")
-    return _render(
-        "index.html",
+    return dict(
         request=request,
         status=status,
         runs=runs,
@@ -504,7 +500,27 @@ async def index(request: Request):
         site_label=SITE_LABEL,
         public_url=PUBLIC_URL,
         error=error,
+        analyze_run=analyze_run,
     )
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    return _render("index.html", **_index_context(request))
+
+
+@app.get("/analyze/{filename}", response_class=HTMLResponse)
+async def analyze_run_page(filename: str, request: Request):
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    if not filename.lower().endswith(".jsonl"):
+        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+    path = _safe_runs_path(filename)
+    if path is None or not path.exists() or not path.is_file():
+        return RedirectResponse("/?tab=data&error=not_found", status_code=303)
+    return _render("index.html", **_index_context(request, analyze_run=path.name))
 
 
 # ---------------------------------------------------------------------------
