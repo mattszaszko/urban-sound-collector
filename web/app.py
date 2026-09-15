@@ -29,6 +29,11 @@ from jinja2 import Environment, FileSystemLoader
 from core.export_filter import export_filename, iter_filtered_jsonl
 from core.host_identity import default_device_id, hostname
 from core.loudness import DEFAULT_CALIB_OFFSET
+from core.run_overview import (
+    DEFAULT_LOUD_THRESHOLD_LAFMAX,
+    build_run_overview,
+    slim_event_point,
+)
 from core.yamnet_preprocess import DEFAULT_GATE_SENSITIVITY_DB
 
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -215,50 +220,7 @@ def _parse_event_time(created_at: object) -> datetime | None:
 
 def _slim_series_point(event: dict, *, calib_offset: float) -> dict | None:
     """Project a JSONL event into a chart-friendly point."""
-    created = event.get("created_at")
-    if not isinstance(created, str):
-        return None
-    dba = event.get("dBA_spl")
-    try:
-        dba_f = float(dba) if dba is not None else None
-    except (TypeError, ValueError):
-        dba_f = None
-
-    prep = event.get("yamnet_preprocess")
-    l90_rel = None
-    gated = False
-    if isinstance(prep, dict):
-        floor = prep.get("ambient_noise_floor_dbfs")
-        try:
-            if floor is not None:
-                l90_rel = round(float(floor) + float(calib_offset), 1)
-        except (TypeError, ValueError):
-            l90_rel = None
-        gated = bool(prep.get("gated"))
-
-    yamnet = event.get("top_label")
-    if not isinstance(yamnet, str):
-        yamnet = None
-    if yamnet == "gated":
-        gated = True
-
-    clap_status = event.get("clap_status")
-    if not isinstance(clap_status, str):
-        clap_status = None
-    clap_label = event.get("clap_top_label")
-    if not isinstance(clap_label, str):
-        clap_label = None
-
-    return {
-        "t": created,
-        "dba": dba_f,
-        "l90_rel": l90_rel,
-        "yamnet": yamnet,
-        "gated": gated,
-        "clap_status": clap_status,
-        "clap": clap_label,
-    }
-
+    return slim_event_point(event, calib_offset=calib_offset)
 
 def _status_series(*, window_s: int = 300) -> dict:
     """Build a slim rolling series for the live loudness chart."""
@@ -449,6 +411,41 @@ def _safe_runs_path(filename: str) -> Path | None:
     if not str(path).startswith(str(RUNS_DIR.resolve())):
         return None
     return path
+
+
+def _iter_jsonl_events(path: Path) -> list[dict]:
+    """Load all JSONL events from ``path`` (skip bad lines)."""
+    events: list[dict] = []
+    try:
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        return []
+    return events
+
+
+def _run_overview_payload(path: Path, *, loud_threshold: float) -> dict:
+    wav_path = path.with_suffix(".wav")
+    has_wav = wav_path.is_file()
+    active = _active_output_path()
+    recording_active = active is not None and path.resolve() == active
+    events = _iter_jsonl_events(path)
+    return build_run_overview(
+        events,
+        name=path.name,
+        has_wav=has_wav,
+        wav_name=wav_path.name if has_wav else None,
+        recording_active=recording_active,
+        loud_threshold=loud_threshold,
+        calib_offset=float(DEFAULT_CALIB_OFFSET),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -684,14 +681,18 @@ async def download_run(filename: str, request: Request):
     if path is None or not path.exists() or not path.is_file():
         return HTMLResponse("Not found", status_code=404)
 
-    # Audio (or any non-JSONL) — serve as attachment without filtering.
+    # Audio (or any non-JSONL) — serve for playback or download.
     if path.suffix.lower() != ".jsonl":
         media = "audio/wav" if path.suffix.lower() == ".wav" else "application/octet-stream"
-        return FileResponse(
-            path,
-            filename=path.name,
-            media_type=media,
-        )
+        force_download = _query_flag(request, "download", default=False)
+        # Omit filename= so browsers can stream/play inline (Range seeks work).
+        if force_download:
+            return FileResponse(
+                path,
+                filename=path.name,
+                media_type=media,
+            )
+        return FileResponse(path, media_type=media)
 
     include_spectrum = _query_flag(request, "spectrum", default=True)
     include_yamnet_preprocess = _query_flag(
@@ -726,6 +727,25 @@ async def download_run(filename: str, request: Request):
         media_type="application/x-ndjson",
         headers=headers,
     )
+
+
+@app.get("/api/runs/{filename}/overview")
+async def api_run_overview(filename: str, request: Request):
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if not filename.lower().endswith(".jsonl"):
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    path = _safe_runs_path(filename)
+    if path is None or not path.exists() or not path.is_file():
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+
+    raw_thr = request.query_params.get("loud_threshold", str(DEFAULT_LOUD_THRESHOLD_LAFMAX))
+    try:
+        thr = float(raw_thr)
+    except (TypeError, ValueError):
+        thr = DEFAULT_LOUD_THRESHOLD_LAFMAX
+    thr = max(50.0, min(80.0, thr))
+    return JSONResponse(_run_overview_payload(path, loud_threshold=thr))
 
 
 @app.post("/api/runs/delete")

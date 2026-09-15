@@ -131,18 +131,57 @@
   /* Runs table */
   .run-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
            justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);
-           font-size:.8rem}
+           font-size:.8rem;cursor:pointer;border-radius:8px;padding-left:.35rem;padding-right:.35rem}
+  .run-row:hover{background:rgba(51,65,85,.35)}
+  .run-row.selected{background:rgba(14,165,233,.12);outline:1px solid rgba(14,165,233,.45)}
   .run-row:last-child{border-bottom:none}
   .run-info{min-width:0;flex:1 1 12rem}
   .run-name{color:var(--text);word-break:break-all}
   .run-meta{color:var(--muted);white-space:normal}
   .run-actions{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
-  .dl-btn,.del-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
+  .run-actions a,.run-actions form,.run-actions button{cursor:pointer}
+  .dl-btn,.del-btn,.view-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
           border-radius:6px;color:var(--accent);text-decoration:none;
           font-size:.75rem;white-space:nowrap;cursor:pointer;font-family:inherit}
-  .dl-btn:hover{border-color:var(--accent)}
+  .dl-btn:hover,.view-btn:hover{border-color:var(--accent)}
+  .view-btn{color:var(--text)}
   .del-btn{color:var(--red);border-color:var(--border)}
   .del-btn:hover{border-color:var(--red)}
+  #run-overview{margin-top:1rem}
+  #run-overview[hidden]{display:none}
+  .overview-head{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline;
+                 justify-content:space-between;margin-bottom:.85rem}
+  .overview-title{font-size:.95rem;font-weight:600;word-break:break-all}
+  .overview-sub{font-size:.72rem;color:var(--muted)}
+  .impact-grid{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;margin-bottom:.85rem}
+  .impact-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.65rem .75rem}
+  .impact-card .k{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .impact-card .v{font-size:1.05rem;font-weight:700;margin-top:.15rem}
+  .impact-card .hint{font-size:.7rem;color:var(--muted);margin-top:.2rem;line-height:1.35}
+  .label-chips{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.35rem}
+  .label-chip{font-size:.7rem;padding:.2rem .45rem;border-radius:999px;background:var(--surface);
+              border:1px solid var(--border);color:var(--text)}
+  .loud-threshold-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+                      font-size:.78rem;color:var(--muted);margin:.35rem 0 .75rem}
+  .loud-threshold-row input[type="number"]{width:4.5rem;padding:.35rem .45rem;margin:0}
+  .overview-chart-box{position:relative;height:240px;background:var(--bg);
+                      border:1px solid var(--border);border-radius:8px;padding:.35rem}
+  .overview-scrub{width:100%;margin:.65rem 0 .35rem;accent-color:var(--accent)}
+  .overview-detail{font-size:.78rem;color:var(--muted);line-height:1.45;
+                   background:var(--bg);border:1px solid var(--border);border-radius:8px;
+                   padding:.65rem .75rem;margin-bottom:.65rem}
+  .overview-detail strong{color:var(--text);font-weight:600}
+  .overview-audio-wrap{margin-top:.5rem}
+  .overview-audio-wrap audio{width:100%;margin-top:.35rem}
+  .overview-audio-note{font-size:.72rem;color:var(--yellow);margin-top:.35rem}
+  @media(min-width:640px){
+    .impact-grid{grid-template-columns:repeat(3,1fr)}
+    .overview-chart-box{height:300px}
+  }
+  @media(min-width:960px){
+    .impact-grid{grid-template-columns:repeat(4,1fr)}
+    .overview-chart-box{height:340px}
+  }
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
                   padding:.85rem;background:var(--bg);border:1px solid var(--border);
                   border-radius:8px}
@@ -452,7 +491,7 @@
     </label>
   </div>
     {% for run in runs %}
-    <div class="run-row">
+    <div class="run-row" data-run-name="{{ run.name }}" data-has-wav="{{ '1' if run.has_wav else '0' }}">
       <div class="run-info">
         <div class="run-name">{{ run.name }}</div>
         <div class="run-meta">
@@ -461,10 +500,11 @@
         </div>
       </div>
       <div class="run-actions">
+        <button type="button" class="view-btn" data-view-run="{{ run.name }}">View</button>
         <a class="dl-btn" href="/runs/{{ run.name }}"
            data-filename="{{ run.name }}" download>↓ JSONL</a>
         {% if run.has_wav %}
-        <a class="dl-btn" href="/runs/{{ run.wav_name }}" download>↓ Audio</a>
+        <a class="dl-btn" href="/runs/{{ run.wav_name }}?download=1" download>↓ Audio</a>
         {% endif %}
         <form method="post" action="/api/runs/delete" style="display:inline;margin:0"
               onsubmit="return confirm('Delete {{ run.name }}{% if run.has_wav %} and its WAV{% endif %}? This cannot be undone.');">
@@ -477,6 +517,41 @@
   {% else %}
   <div class="empty">No runs yet.</div>
   {% endif %}
+</div>
+
+<div class="card" id="run-overview" hidden>
+  <div class="overview-head">
+    <div>
+      <div class="overview-title" id="ov-title">Run overview</div>
+      <div class="overview-sub" id="ov-sub"></div>
+    </div>
+    <div class="loud-threshold-row">
+      <label for="ov-loud-thr">Loud if LAFmax ≥</label>
+      <input type="number" id="ov-loud-thr" min="50" max="80" step="1" value="65">
+      <span>dB</span>
+    </div>
+  </div>
+  <div id="ov-status" class="inline-status"></div>
+  <div class="impact-grid" id="ov-impact"></div>
+  <div class="impact-grid" id="ov-labels" style="grid-template-columns:1fr 1fr"></div>
+  <div class="live-chart-legend" style="margin-bottom:.45rem">
+    <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
+    <span><i class="swatch line" style="background:#94a3b8"></i>Gate L90</span>
+    <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
+    <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
+  </div>
+  <div class="overview-chart-box">
+    <canvas id="overview-loudness-chart" aria-label="Run loudness overview"></canvas>
+  </div>
+  <input type="range" class="overview-scrub" id="ov-scrub" min="0" max="0" value="0" step="1">
+  <div class="overview-detail" id="ov-detail">Select a point on the timeline.</div>
+  <div class="overview-audio-wrap" id="ov-audio-wrap" hidden>
+    <div class="overview-sub">Listen (synced to scrubber)</div>
+    <audio id="ov-audio" controls preload="metadata"></audio>
+    <div class="overview-audio-note" id="ov-audio-note" hidden>
+      Playback disabled while this run is still recording (WAV may be incomplete).
+    </div>
+  </div>
 </div>
 </div><!-- /panel-data -->
 
@@ -998,6 +1073,454 @@ if (spectrumToggle && preprocessToggle) {
   preprocessToggle.addEventListener('change', updateDownloadLinks);
   updateDownloadLinks();
 }
+
+// ── Data tab run overview (scrub + optional audio) ────────────────
+const runOverviewEl = document.getElementById('run-overview');
+const ovStatus = document.getElementById('ov-status');
+const ovImpact = document.getElementById('ov-impact');
+const ovLabels = document.getElementById('ov-labels');
+const ovTitle = document.getElementById('ov-title');
+const ovSub = document.getElementById('ov-sub');
+const ovScrub = document.getElementById('ov-scrub');
+const ovDetail = document.getElementById('ov-detail');
+const ovLoudThr = document.getElementById('ov-loud-thr');
+const ovAudioWrap = document.getElementById('ov-audio-wrap');
+const ovAudio = document.getElementById('ov-audio');
+const ovAudioNote = document.getElementById('ov-audio-note');
+
+let overviewChart = null;
+let overviewData = null;
+let overviewScrubPoints = [];
+let overviewPlayheadMs = null;
+let overviewStartedMs = null;
+let overviewSyncFromAudio = false;
+let overviewSelectedName = null;
+let overviewRaf = 0;
+
+const overviewPlayheadPlugin = {
+  id: 'overviewPlayhead',
+  afterDatasetsDraw(chart) {
+    if (overviewPlayheadMs == null) return;
+    const { ctx, chartArea, scales } = chart;
+    const x = scales.x.getPixelForValue(overviewPlayheadMs);
+    if (x < chartArea.left || x > chartArea.right) return;
+    ctx.save();
+    ctx.strokeStyle = '#f472b6';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, chartArea.top);
+    ctx.lineTo(x, chartArea.bottom);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+
+function fmtNum(v, digits = 1) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  return Number(v).toFixed(digits);
+}
+
+function ensureOverviewChart() {
+  if (overviewChart) return overviewChart;
+  if (typeof Chart === 'undefined') return null;
+  const canvas = document.getElementById('overview-loudness-chart');
+  if (!canvas) return null;
+  Chart.register(labelMarkerPlugin, overviewPlayheadPlugin);
+  overviewChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label: 'dBA',
+          data: [],
+          borderColor: '#0ea5e9',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+          spanGaps: true,
+        },
+        {
+          label: 'Gate L90 (rel.)',
+          data: [],
+          borderColor: '#94a3b8',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          tension: 0.1,
+          spanGaps: true,
+        },
+        {
+          label: 'YAMNet',
+          type: 'scatter',
+          data: [],
+          showLine: false,
+          pointRadius: 4,
+          backgroundColor: '#22c55e',
+          borderColor: '#14532d',
+          borderWidth: 1,
+          showPointLabels: true,
+          pointLabelColor: '#86efac',
+        },
+        {
+          label: 'CLAP',
+          type: 'scatter',
+          data: [],
+          showLine: false,
+          pointRadius: 5,
+          backgroundColor: '#f59e0b',
+          borderColor: '#78350f',
+          borderWidth: 1,
+          showPointLabels: true,
+          pointLabelColor: '#fcd34d',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      onClick(evt) {
+        const xScale = overviewChart.scales.x;
+        const x = xScale.getValueForPixel(evt.x);
+        if (!Number.isFinite(x)) return;
+        setOverviewPlayheadMs(x, { seekAudio: true });
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              if (!items.length) return '';
+              const x = items[0].parsed.x;
+              return Number.isFinite(x) ? new Date(x).toISOString().slice(11, 19) + 'Z' : '';
+            },
+            label(ctx) {
+              const raw = ctx.raw || {};
+              const y = ctx.parsed.y;
+              const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
+              return raw.label ? `${base} · ${raw.label}` : base;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          ticks: {
+            color: '#94a3b8',
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 8,
+            callback(v) {
+              const d = new Date(v);
+              if (Number.isNaN(d.getTime())) return '';
+              return d.toISOString().slice(11, 16);
+            },
+          },
+          grid: { color: 'rgba(51,65,85,.7)' },
+        },
+        y: {
+          title: { display: true, text: 'dB (rel.)', color: '#94a3b8', font: { size: 10 } },
+          ticks: { color: '#94a3b8' },
+          grid: { color: 'rgba(51,65,85,.7)' },
+        },
+      },
+    },
+  });
+  return overviewChart;
+}
+
+function nearestScrubIndex(ms) {
+  if (!overviewScrubPoints.length) return 0;
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < overviewScrubPoints.length; i += 1) {
+    const t = Date.parse(overviewScrubPoints[i].t);
+    if (!Number.isFinite(t)) continue;
+    const d = Math.abs(t - ms);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function renderOverviewDetail(idx) {
+  const p = overviewScrubPoints[idx];
+  if (!p || !ovDetail) return;
+  const bits = [
+    `<strong>${p.t || '—'}</strong>`,
+    `dBA ${fmtNum(p.dba)}`,
+    `LAFmax ${fmtNum(p.lafmax)}`,
+    `L90 ${fmtNum(p.l90_rel)}`,
+    p.gated ? 'gated' : (p.yamnet || '—'),
+  ];
+  if (p.clap_status === 'triggered' && p.clap) bits.push(`CLAP ${p.clap}`);
+  else if (p.clap_status) bits.push(`clap:${p.clap_status}`);
+  ovDetail.innerHTML = bits.join(' · ');
+}
+
+function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}) {
+  if (!overviewScrubPoints.length) return;
+  const idx = nearestScrubIndex(ms);
+  const p = overviewScrubPoints[idx];
+  const tMs = Date.parse(p.t);
+  overviewPlayheadMs = Number.isFinite(tMs) ? tMs : ms;
+  if (ovScrub) ovScrub.value = String(idx);
+  renderOverviewDetail(idx);
+  if (overviewChart) overviewChart.update('none');
+
+  if (
+    seekAudio &&
+    !fromAudio &&
+    ovAudio &&
+    overviewStartedMs != null &&
+    ovAudio.getAttribute('src') &&
+    ovAudioWrap &&
+    !ovAudioWrap.hidden
+  ) {
+    const offset = Math.max(0, (overviewPlayheadMs - overviewStartedMs) / 1000);
+    try {
+      if (Number.isFinite(ovAudio.duration) && ovAudio.duration > 0) {
+        ovAudio.currentTime = Math.min(offset, Math.max(0, ovAudio.duration - 0.05));
+      } else {
+        ovAudio.currentTime = offset;
+      }
+    } catch { /* ignore seek errors before metadata */ }
+  }
+}
+
+function impactCard(k, v, hint) {
+  return `<div class="impact-card"><div class="k">${k}</div><div class="v">${v}</div>` +
+    (hint ? `<div class="hint">${hint}</div>` : '') + '</div>';
+}
+
+function chipsHtml(items) {
+  if (!items || !items.length) return '<span class="hint">None</span>';
+  return `<div class="label-chips">${items.map((it) =>
+    `<span class="label-chip">${it.label} · ${it.count}</span>`
+  ).join('')}</div>`;
+}
+
+function renderOverviewSummary(data) {
+  const s = data.summary || {};
+  const loud = s.loudness || {};
+  const dist = s.disturbances || {};
+  const yam = s.yamnet || {};
+  const clap = s.clap || {};
+  ovTitle.textContent = data.name || 'Run overview';
+  ovSub.textContent = [
+    s.device_id || '',
+    s.run_id || '',
+    fmtElapsed(s.duration_s),
+    `${s.chunks || 0} chunks`,
+  ].filter(Boolean).join(' · ');
+
+  ovImpact.innerHTML = [
+    impactCard('Duration', fmtElapsed(s.duration_s), `${s.chunks || 0} chunks`),
+    impactCard('Mean dBA', fmtNum(loud.dba_mean), `L50 ${fmtNum(loud.dba_l50)}`),
+    impactCard('L10 / L90 dBA', `${fmtNum(loud.dba_l10)} / ${fmtNum(loud.dba_l90)}`, 'Louder 10% / quieter 90%'),
+    impactCard('Max LAFmax', fmtNum(loud.lafmax_max), `Mean ${fmtNum(loud.lafmax_mean)}`),
+    impactCard(
+      '% loud',
+      `${fmtNum(dist.loud_pct, 1)}%`,
+      `LAFmax ≥ ${fmtNum(dist.threshold_lafmax_db, 0)} · ${dist.loud_chunks || 0} chunks`
+    ),
+    impactCard('Gate open', `${fmtNum(dist.gate_open_pct, 1)}%`, `Gated ${fmtNum(dist.gated_pct, 1)}%`),
+  ].join('');
+
+  ovLabels.innerHTML = [
+    impactCard(
+      'YAMNet labels',
+      `${yam.classified_chunks || 0} classified`,
+      chipsHtml(yam.top_labels) +
+        `<div class="hint" style="margin-top:.35rem">Gated chunks: ${yam.gated_chunks || 0}</div>`
+    ),
+    impactCard(
+      'CLAP triggers',
+      String(clap.triggered || 0),
+      chipsHtml(clap.top_labels)
+    ),
+  ].join('');
+}
+
+function renderOverviewChart(data) {
+  const chart = ensureOverviewChart();
+  if (!chart) return;
+  const points = data.points || [];
+  const dba = [];
+  const l90 = [];
+  for (const p of points) {
+    const x = Date.parse(p.t);
+    if (!Number.isFinite(x)) continue;
+    if (p.dba != null) dba.push({ x, y: p.dba });
+    if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
+  }
+  const yam = (data.yamnet_markers || []).map((m) => ({
+    x: Date.parse(m.t), y: m.dba, label: m.label,
+  })).filter((m) => Number.isFinite(m.x));
+  const clap = (data.clap_markers || []).map((m) => ({
+    x: Date.parse(m.t), y: m.dba, label: m.label,
+  })).filter((m) => Number.isFinite(m.x));
+
+  chart.data.datasets[0].data = dba;
+  chart.data.datasets[1].data = l90;
+  chart.data.datasets[2].data = yam;
+  chart.data.datasets[3].data = clap;
+
+  const xs = []
+    .concat(dba.map((p) => p.x), l90.map((p) => p.x), yam.map((p) => p.x), clap.map((p) => p.x))
+    .filter((v) => Number.isFinite(v));
+  if (xs.length) {
+    chart.options.scales.x.min = Math.min(...xs);
+    chart.options.scales.x.max = Math.max(...xs);
+  }
+  const ys = []
+    .concat(dba.map((p) => p.y), l90.map((p) => p.y), yam.map((p) => p.y), clap.map((p) => p.y))
+    .filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (ys.length) {
+    const lo = Math.min(...ys);
+    const hi = Math.max(...ys);
+    const pad = Math.max(2, (hi - lo) * 0.12);
+    chart.options.scales.y.min = Math.floor(lo - pad);
+    chart.options.scales.y.max = Math.ceil(hi + pad);
+  }
+  chart.update('none');
+}
+
+function setupOverviewAudio(data) {
+  if (!ovAudioWrap || !ovAudio) return;
+  ovAudio.pause();
+  ovAudio.removeAttribute('src');
+  ovAudio.load();
+  if (!data.has_wav || !data.wav_name) {
+    ovAudioWrap.hidden = true;
+    ovAudioNote.hidden = true;
+    return;
+  }
+  ovAudioWrap.hidden = false;
+  if (data.recording_active) {
+    ovAudioNote.hidden = false;
+    ovAudio.controls = false;
+    return;
+  }
+  ovAudioNote.hidden = true;
+  ovAudio.controls = true;
+  ovAudio.src = `/runs/${encodeURIComponent(data.wav_name)}`;
+  ovAudio.load();
+}
+
+function stopOverviewAudioLoop() {
+  if (overviewRaf) {
+    cancelAnimationFrame(overviewRaf);
+    overviewRaf = 0;
+  }
+}
+
+function tickOverviewAudioSync() {
+  if (!ovAudio || ovAudio.paused || overviewStartedMs == null) {
+    overviewRaf = 0;
+    return;
+  }
+  overviewSyncFromAudio = true;
+  setOverviewPlayheadMs(overviewStartedMs + ovAudio.currentTime * 1000, { fromAudio: true });
+  overviewSyncFromAudio = false;
+  overviewRaf = requestAnimationFrame(tickOverviewAudioSync);
+}
+
+async function loadRunOverview(name, { loudThreshold } = {}) {
+  if (!runOverviewEl) return;
+  overviewSelectedName = name;
+  document.querySelectorAll('.run-row').forEach((row) => {
+    row.classList.toggle('selected', row.dataset.runName === name);
+  });
+  runOverviewEl.hidden = false;
+  setInlineStatus(ovStatus, 'Loading overview…');
+  const thr = loudThreshold != null
+    ? loudThreshold
+    : (parseFloat(ovLoudThr && ovLoudThr.value) || 65);
+  const { ok, data } = await apiFetch(
+    `/api/runs/${encodeURIComponent(name)}/overview?loud_threshold=${encodeURIComponent(thr)}`
+  );
+  if (!ok || !data || !data.ok) {
+    setInlineStatus(ovStatus, (data && data.error) || 'Failed to load overview', 'err');
+    return;
+  }
+  overviewData = data;
+  overviewScrubPoints = data.scrub_points || data.points || [];
+  overviewStartedMs = data.summary && data.summary.started_at
+    ? Date.parse(data.summary.started_at)
+    : (overviewScrubPoints[0] ? Date.parse(overviewScrubPoints[0].t) : null);
+  if (ovLoudThr && data.summary && data.summary.disturbances) {
+    ovLoudThr.value = data.summary.disturbances.threshold_lafmax_db;
+  }
+  renderOverviewSummary(data);
+  renderOverviewChart(data);
+  if (ovScrub) {
+    ovScrub.max = String(Math.max(0, overviewScrubPoints.length - 1));
+    ovScrub.value = '0';
+  }
+  setupOverviewAudio(data);
+  if (overviewScrubPoints.length) {
+    setOverviewPlayheadMs(Date.parse(overviewScrubPoints[0].t), { seekAudio: true });
+  }
+  setInlineStatus(
+    ovStatus,
+    data.points_full ? '' : 'Chart downsampled for long run; stats use all chunks.',
+    data.points_full ? '' : 'ok'
+  );
+}
+
+document.querySelectorAll('.run-row[data-run-name]').forEach((row) => {
+  row.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, form, input')) return;
+    loadRunOverview(row.dataset.runName);
+  });
+});
+document.querySelectorAll('[data-view-run]').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    loadRunOverview(btn.getAttribute('data-view-run'));
+  });
+});
+
+if (ovScrub) {
+  ovScrub.addEventListener('input', () => {
+    const idx = parseInt(ovScrub.value, 10) || 0;
+    const p = overviewScrubPoints[idx];
+    if (!p) return;
+    setOverviewPlayheadMs(Date.parse(p.t), { seekAudio: true });
+  });
+}
+
+if (ovLoudThr) {
+  let thrTimer = null;
+  ovLoudThr.addEventListener('change', () => {
+    if (!overviewSelectedName) return;
+    clearTimeout(thrTimer);
+    thrTimer = setTimeout(() => {
+      loadRunOverview(overviewSelectedName, { loudThreshold: parseFloat(ovLoudThr.value) || 65 });
+    }, 150);
+  });
+}
+
+if (ovAudio) {
+  ovAudio.addEventListener('play', () => {
+    stopOverviewAudioLoop();
+    overviewRaf = requestAnimationFrame(tickOverviewAudioSync);
+  });
+  ovAudio.addEventListener('pause', () => stopOverviewAudioLoop());
+  ovAudio.addEventListener('seeked', () => {
+    if (overviewSyncFromAudio || overviewStartedMs == null) return;
+    setOverviewPlayheadMs(overviewStartedMs + ovAudio.currentTime * 1000, { fromAudio: true });
+  });
+}
+
+// Prevent row click when using action buttons already handled; stop delete form bubble
+document.querySelectorAll('.run-actions').forEach((el) => {
+  el.addEventListener('click', (e) => e.stopPropagation());
+});
 
 // ── Shutdown ──────────────────────────────────────────────────────
 const shutdownBtn = document.getElementById('shutdown-btn');
