@@ -262,6 +262,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
             "Enable event-driven CLAP zero-shot on a 10 s hybrid ring window "
             "(HPF + peak-norm before ONNX; requires rebuilt prompt embeddings)."
         ),
+    )
     parser.add_argument(
         "--record-wav",
         action="store_true",
