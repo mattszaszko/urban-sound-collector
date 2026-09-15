@@ -350,6 +350,53 @@ class ClapClassifierMockTests(unittest.TestCase):
             assert audio.last is not None
             self.assertAlmostEqual(float(np.max(np.abs(audio.last))), 1.0, places=5)
 
+    def test_hpf_before_peak_norm_removes_lf_peak_dominance(self) -> None:
+        """A loud 20 Hz component should not set peak after HPF + peak-norm."""
+        with tempfile.TemporaryDirectory() as tmp:
+            prompts = Path(tmp) / "prompts.json"
+            embeds = Path(tmp) / "embeds.npz"
+            save_prompt_pairs(
+                [ClapPromptPair(label="a", prompt="Alpha")],
+                prompts,
+            )
+            rebuild_text_embeddings(
+                prompts_path=prompts,
+                embeddings_path=embeds,
+                text_encoder=_FakeTextEncoder(),
+            )
+
+            class _CaptureAudio:
+                model_version = "t"
+                last: np.ndarray | None = None
+
+                def embed(self, pcm_48k: np.ndarray) -> np.ndarray:
+                    self.last = np.asarray(pcm_48k, dtype=np.float32).copy()
+                    out = np.zeros(EMBED_DIM, dtype=np.float32)
+                    out[0] = 1.0
+                    return out
+
+            audio = _CaptureAudio()
+            clf = ClapClassifier(
+                prompts_path=prompts,
+                embeddings_path=embeds,
+                audio_encoder=audio,  # type: ignore[arg-type]
+            )
+            sr = 48_000
+            t = np.arange(sr, dtype=np.float32) / sr
+            # Loud rumble + quieter 1 kHz tone — without HPF, rumble sets peak.
+            wave = (
+                0.9 * np.sin(2 * np.pi * 20.0 * t)
+                + 0.1 * np.sin(2 * np.pi * 1000.0 * t)
+            ).astype(np.float32)
+            clf.predict(wave)
+            assert audio.last is not None
+            self.assertAlmostEqual(float(np.max(np.abs(audio.last))), 1.0, places=4)
+            # After HPF the surviving energy is midband; residual LF should be small.
+            skip = int(0.05 * sr)
+            # Rough LF energy via moving average of abs (20 Hz period ~2400 samples).
+            lf_proxy = float(np.mean(np.abs(audio.last[skip:])))
+            self.assertGreater(lf_proxy, 0.05)  # mid tone still present after peak-norm
+
     def test_missing_models_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             empty = Path(tmp) / "clap"

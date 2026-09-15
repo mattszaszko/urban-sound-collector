@@ -259,10 +259,9 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         "--enable-clap",
         action="store_true",
         help=(
-            "Enable event-driven CLAP zero-shot on a 10 s ungained ring buffer "
-            "(requires rebuilt prompt embeddings)."
+            "Enable event-driven CLAP zero-shot on a 10 s hybrid ring window "
+            "(HPF + peak-norm before ONNX; requires rebuilt prompt embeddings)."
         ),
-    )
     parser.add_argument(
         "--record-wav",
         action="store_true",
@@ -380,7 +379,8 @@ def stream_live(
     Branch A: A-weighted loudness at 48 kHz (ungained).
     Branch B: YAMNet TFLite at 16 kHz (dynamic HPF + RMS normalize).
     Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
-    Optional CLAP: hybrid 7 s pre-roll + 3 s post-roll after YAMNet wake.
+    Optional CLAP: hybrid 7 s pre-roll + 3 s post-roll after YAMNet wake
+    (same HPF as Branch B, then peak-norm; no RMS AGC).
     Optional WAV: ungained mono 16-bit PCM @ capture rate.
 
     Returns:
@@ -764,7 +764,7 @@ def main(argv: List[str] | None = None) -> int:
         clap_classifier = None
         if args.enable_clap:
             try:
-                clap_classifier = ClapClassifier()
+                clap_classifier = ClapClassifier(hpf_hz=args.yamnet_hpf_hz)
             except (FileNotFoundError, RuntimeError, ValueError) as exc:
                 logger.error("CLAP unavailable: %s", exc)
                 return 1

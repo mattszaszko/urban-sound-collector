@@ -23,6 +23,7 @@ from core.yamnet_preprocess import (
     GATE_REASON_HOLD,
     GATE_REASON_L90,
     YamnetPreprocessor,
+    apply_butter_hpf,
     dbfs_to_linear,
     linear_to_dbfs,
     peak_subwindow_rms_dbfs,
@@ -61,6 +62,20 @@ class YamnetPreprocessorTests(unittest.TestCase):
         self.assertEqual(DEFAULT_MAX_GAIN_MIN_DB, 12.0)
         self.assertEqual(DEFAULT_MAX_GAIN_CEILING_DB, 40.0)
         self.assertEqual(self.engine.hpf_order, 4)
+
+    def test_apply_butter_hpf_attenuates_20hz(self) -> None:
+        sr = float(CAPTURE_SAMPLE_RATE)
+        t = np.arange(int(sr), dtype=np.float64) / sr
+        low = (0.5 * np.sin(2 * np.pi * 20.0 * t)).astype(np.float32)
+        mid = (0.5 * np.sin(2 * np.pi * 1000.0 * t)).astype(np.float32)
+        low_out = apply_butter_hpf(low, sample_rate=sr)
+        mid_out = apply_butter_hpf(mid, sample_rate=sr)
+        # Skip startup transient (~50 ms).
+        skip = int(0.05 * sr)
+        low_rms = float(np.sqrt(np.mean(np.square(low_out[skip:]))))
+        mid_rms = float(np.sqrt(np.mean(np.square(mid_out[skip:]))))
+        self.assertLess(low_rms, 0.05)
+        self.assertGreater(mid_rms, 0.3)
 
     def test_silence_predictions_shape(self) -> None:
         preds = silence_predictions()

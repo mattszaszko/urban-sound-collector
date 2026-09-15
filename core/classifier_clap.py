@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from core.audio_constants import CAPTURE_SAMPLE_RATE
 from core.clap_onnx import (
     CLAP_MODEL_NAME,
     AudioEncoder,
@@ -28,6 +29,11 @@ from core.clap_prompts import (
     load_prompt_pairs,
     prompts_hash,
     save_embeddings,
+)
+from core.yamnet_preprocess import (
+    DEFAULT_HPF_HZ,
+    DEFAULT_HPF_ORDER,
+    apply_butter_hpf,
 )
 
 # Re-export for callers / tests
@@ -112,10 +118,16 @@ class ClapClassifier:
         top_k: int = 3,
         audio_encoder: AudioEncoder | None = None,
         clap_dir: Path | None = None,
+        sample_rate: float = float(CAPTURE_SAMPLE_RATE),
+        hpf_hz: float = DEFAULT_HPF_HZ,
+        hpf_order: int = DEFAULT_HPF_ORDER,
     ) -> None:
         self.prompts_path = prompts_path
         self.embeddings_path = embeddings_path
         self.top_k = max(1, int(top_k))
+        self.sample_rate = float(sample_rate)
+        self.hpf_hz = float(hpf_hz)
+        self.hpf_order = int(hpf_order)
         self._labels: list[str] = []
         self._embeddings: np.ndarray | None = None
         self._hash: str | None = None
@@ -167,7 +179,13 @@ class ClapClassifier:
             raise RuntimeError("CLAP classifier has no embeddings loaded")
         started = time.perf_counter()
         mono = np.asarray(pcm_48k, dtype=np.float32).reshape(-1)
-        # Peak-normalize the hybrid window (no Branch B AGC/HPF).
+        # Same Butterworth HPF as Branch B, then peak-norm (no RMS AGC).
+        mono = apply_butter_hpf(
+            mono,
+            sample_rate=self.sample_rate,
+            hpf_hz=self.hpf_hz,
+            hpf_order=self.hpf_order,
+        )
         peak = float(np.max(np.abs(mono))) if mono.size else 0.0
         if peak > 1e-8:
             mono = mono / peak

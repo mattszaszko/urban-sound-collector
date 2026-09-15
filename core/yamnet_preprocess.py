@@ -107,6 +107,32 @@ def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def apply_butter_hpf(
+    samples: np.ndarray,
+    *,
+    sample_rate: float,
+    hpf_hz: float = DEFAULT_HPF_HZ,
+    hpf_order: int = DEFAULT_HPF_ORDER,
+) -> np.ndarray:
+    """Apply a Butterworth high-pass (same design as Branch B) to a buffer.
+
+    One-shot / offline use (e.g. CLAP hybrid window). Initializes filter state
+    from the first sample to reduce startup transient. Does not share state
+    with ``YamnetPreprocessor``'s streaming HPF.
+    """
+    mono = np.asarray(samples, dtype=np.float64).reshape(-1)
+    if mono.size == 0:
+        return mono.astype(np.float32)
+    if hpf_hz <= 0 or hpf_order < 1:
+        return mono.astype(np.float32)
+
+    nyquist = float(sample_rate) / 2.0
+    cutoff = min(max(float(hpf_hz), 1.0), nyquist * 0.99)
+    sos = butter(int(hpf_order), cutoff, btype="high", fs=float(sample_rate), output="sos")
+    zi = sosfilt_zi(sos) * float(mono[0])
+    filtered, _ = sosfilt(sos, mono, zi=zi)
+    return filtered.astype(np.float32, copy=False)
+
 @dataclass
 class YamnetPrepResult:
     """Output of one Branch B preprocessing pass."""

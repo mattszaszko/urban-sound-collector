@@ -333,7 +333,7 @@ tail -n 20 logs/*.log
 | `--quiet` | off | Suppress JSON on stdout |
 | `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
 | `--no-spectrum` | off | Disable Branch C spectral analysis |
-| `--enable-clap` | off | Event-driven CLAP zero-shot (requires ONNX + rebuilt embeddings) |
+| `--enable-clap` | off | Event-driven CLAP zero-shot; hybrid window gets same HPF as YAMNet + peak-norm (requires ONNX + rebuilt embeddings) |
 | `--record-wav` | off | Write ungained mono 16-bit WAV @ 48 kHz (sibling of `-o` by default) |
 | `--wav-path` | (from `-o`) | Explicit WAV path (implies recording) |
 | `--log-dir` | `logs` | Per-run log directory |
@@ -342,11 +342,12 @@ Stop with **Ctrl+C**, or let `timeout` end the run.
 
 ### CLAP (optional, event-driven)
 
-YAMNet still runs every open chunk. With **`--enable-clap`**, a 10 s ungained
+YAMNet still runs every open chunk. With **`--enable-clap`**, a 10 s
 ring buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
 YAMNet trigger fires (see web **Triggers** tab). CLAP uses a **hybrid window**:
-7 s before the wake + 3 s after, **peak-normalized** before audio ONNX (no Branch B
-AGC/HPF), then writes predictions on the later chunk with link meta
+7 s before the wake + 3 s after, then the same **~80 Hz Butterworth HPF** as
+Branch B and **peak-normalization** before audio ONNX (still **no** Branch B
+RMS AGC), then writes predictions on the later chunk with link meta
 (`trigger_chunk_index`, etc.). Statuses: `scheduled` → `pending` → `triggered`
 (no carry). `clap_model_name` should be `clap-htsat-unfused-onnx`.
 
