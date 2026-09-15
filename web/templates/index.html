@@ -152,6 +152,31 @@
   body.analyze-mode .tab-bar{display:none}
   body.analyze-mode .tab-panel{display:none !important}
   body.analyze-mode #panel-analyze{display:block !important}
+  body.report-mode .tab-bar{display:none}
+  body.report-mode .tab-panel{display:none !important}
+  body.report-mode #panel-analyze{display:none !important}
+  body.report-mode #panel-report{display:block !important}
+  #panel-report{display:none}
+  #panel-report.active{display:block}
+  .report-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+                  justify-content:space-between;margin-bottom:.75rem}
+  .report-zone{margin-bottom:1.1rem}
+  .report-zone h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
+                  color:var(--muted);margin:0 0 .65rem;font-weight:600}
+  .report-header-line{font-size:1.05rem;font-weight:700;margin-bottom:.35rem}
+  .report-sub{font-size:.78rem;color:var(--muted);margin-bottom:.75rem}
+  .report-chart-box{position:relative;height:260px;background:var(--bg);
+                    border:1px solid var(--border);border-radius:8px;padding:.35rem}
+  .diet-row{display:grid;grid-template-columns:9rem 1fr 3.5rem;gap:.5rem;
+            align-items:center;margin-bottom:.45rem;font-size:.8rem}
+  .diet-bar{height:.55rem;background:var(--border);border-radius:999px;overflow:hidden}
+  .diet-bar > i{display:block;height:100%;background:var(--accent);border-radius:999px}
+  .takeaway-box{margin-top:.85rem;padding:.85rem;border:1px solid var(--border);
+                border-radius:8px;background:var(--bg);font-size:.88rem;line-height:1.45}
+  .data-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+                margin-bottom:.85rem}
+  .data-toolbar .btn{width:auto;margin:0;padding:.45rem .85rem;font-size:.8rem}
+  .run-check{width:auto;margin:0 .35rem 0 0;accent-color:var(--accent)}
   .analyze-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
                    justify-content:space-between;margin-bottom:.75rem}
   .analyze-back{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;
@@ -290,7 +315,7 @@
   }
 </style>
 </head>
-<body{% if analyze_run %} class="analyze-mode"{% endif %}>
+<body{% if analyze_run %} class="analyze-mode"{% elif report_runs %} class="report-mode"{% endif %}>
 
 <header>
   <div>
@@ -311,7 +336,7 @@
   </div>
 </header>
 
-<nav class="tab-bar" role="tablist"{% if analyze_run %} hidden{% endif %}>
+<nav class="tab-bar" role="tablist"{% if analyze_run or report_runs %} hidden{% endif %}>
   <button type="button" class="tab-btn active" data-tab="run" role="tab" aria-selected="true">Record</button>
   <button type="button" class="tab-btn" data-tab="data" role="tab" aria-selected="false">Data</button>
   <button type="button" class="tab-btn" data-tab="prompts" role="tab" aria-selected="false">Prompts</button>
@@ -329,7 +354,7 @@
 {% endif %}
 
 <!-- ── RECORD TAB ── -->
-<div class="tab-panel{% if not analyze_run %} active{% endif %}" id="panel-run" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
+<div class="tab-panel{% if not analyze_run and not report_runs %} active{% endif %}" id="panel-run" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
 
 <div class="run-layout">
 <!-- ── STATUS ── -->
@@ -480,10 +505,17 @@
 </div><!-- /panel-run -->
 
 <!-- ── DATA TAB ── -->
-<div class="tab-panel" id="panel-data" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
+<div class="tab-panel" id="panel-data" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
 <div class="card">
   <h2>Past runs</h2>
   {% if runs %}
+  <div class="data-toolbar">
+    <label class="check-row" style="margin:0;cursor:pointer">
+      <input type="checkbox" id="runs-select-all" class="run-check">
+      <div>Select all</div>
+    </label>
+    <button type="button" class="btn" id="generate-report-btn" disabled>Generate report</button>
+  </div>
   <div class="export-options" id="export-options">
     <div class="export-title">Download options</div>
     <label class="check-row">
@@ -503,11 +535,14 @@
   </div>
     {% for run in runs %}
     <div class="run-row" data-run-name="{{ run.name }}" data-has-wav="{{ '1' if run.has_wav else '0' }}">
-      <div class="run-info">
-        <div class="run-name">{{ run.name }}</div>
-        <div class="run-meta">
-          {{ run.mtime }} · {{ run.lines }} events · {{ run.size_kb }} KB
-          {% if run.has_wav %} · audio {{ run.wav_size_kb }} KB{% endif %}
+      <div class="run-info" style="display:flex;gap:.5rem;align-items:flex-start">
+        <input type="checkbox" class="run-check run-select" value="{{ run.name }}" aria-label="Select {{ run.name }}">
+        <div>
+          <div class="run-name">{{ run.name }}</div>
+          <div class="run-meta">
+            {{ run.mtime }} · {{ run.lines }} events · {{ run.size_kb }} KB
+            {% if run.has_wav %} · audio {{ run.wav_size_kb }} KB{% endif %}
+          </div>
         </div>
       </div>
       <div class="run-actions">
@@ -573,8 +608,39 @@
   </div>
 </div>
 
+<!-- ── MULTI-RUN REPORT (three-zone dashboard) ── -->
+<div id="panel-report"{% if report_runs %} class="active"{% endif %}{% if not report_runs %} hidden{% endif %}>
+  <div class="report-toolbar">
+    <a class="analyze-back" href="/?tab=data">← Back to Data</a>
+  </div>
+  <div class="card report-zone" id="report-zone-a">
+    <h2>Executive summary</h2>
+    <div class="report-header-line" id="rpt-header">Loading…</div>
+    <div class="report-sub" id="rpt-sub"></div>
+    <div id="rpt-status" class="inline-status"></div>
+    <div class="impact-grid" id="rpt-impact"></div>
+  </div>
+  <div class="card report-zone" id="report-zone-b">
+    <h2>24-hour noise profile</h2>
+    <div class="overview-chart-note">Hourly L<sub>eq</sub> (local time) · night 22:00–06:59 shaded · gaps left empty</div>
+    <div class="report-chart-box">
+      <canvas id="report-hourly-chart" aria-label="Hourly Leq profile"></canvas>
+    </div>
+  </div>
+  <div class="card report-zone" id="report-zone-c">
+    <h2>What is making the noise?</h2>
+    <div class="overview-chart-note">Sound diet by event duration (not event count)</div>
+    <div id="rpt-diet"></div>
+    <div class="takeaway-box" id="rpt-takeaway"></div>
+    <div style="margin-top:.85rem">
+      <div class="overview-chart-note">Top acoustic events</div>
+      <div id="rpt-events" class="overview-detail"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ── PROMPTS TAB ── -->
-<div class="tab-panel" id="panel-prompts" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
+<div class="tab-panel" id="panel-prompts" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
   <div class="card">
     <h2>CLAP prompts</h2>
     <div class="status-row" id="prompts-sync-row">
@@ -610,7 +676,7 @@
 </div>
 
 <!-- ── TRIGGERS TAB ── -->
-<div class="tab-panel" id="panel-triggers" role="tabpanel"{% if analyze_run %} hidden{% endif %}>
+<div class="tab-panel" id="panel-triggers" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
   <div class="card">
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
@@ -781,11 +847,12 @@ function normalizeTriggersPayload(raw) {
 
 // ── Live log via SSE ──────────────────────────────────────────────
 const ANALYZE_RUN = {{ analyze_run | tojson }};
+const REPORT_RUNS = {{ report_runs | tojson }};
 const box = document.getElementById('log-box');
 const placeholder = document.getElementById('log-placeholder');
 let seenFirst = false;
 
-if (!ANALYZE_RUN && box) {
+if (!ANALYZE_RUN && !REPORT_RUNS.length && box) {
   const es = new EventSource('/api/log-stream');
   es.onmessage = (e) => {
     if (!seenFirst) { placeholder.remove(); seenFirst = true; }
@@ -1071,7 +1138,7 @@ async function pollStatus() {
   }
 }
 
-if (!ANALYZE_RUN) {
+if (!ANALYZE_RUN && !REPORT_RUNS.length) {
   ensureLoudnessChart();
   setInterval(pollStatus, 1000);
   pollStatus();
@@ -1577,6 +1644,196 @@ document.querySelectorAll('.run-actions').forEach((el) => {
 
 if (ANALYZE_RUN) {
   loadRunOverview(ANALYZE_RUN);
+}
+
+// ── Multi-run report dashboard ────────────────────────────────────
+const generateReportBtn = document.getElementById('generate-report-btn');
+const runsSelectAll = document.getElementById('runs-select-all');
+let reportHourlyChart = null;
+
+function selectedRunNames() {
+  return Array.from(document.querySelectorAll('.run-select:checked')).map((el) => el.value);
+}
+
+function syncReportButton() {
+  if (!generateReportBtn) return;
+  generateReportBtn.disabled = selectedRunNames().length === 0;
+}
+
+document.querySelectorAll('.run-select').forEach((el) => {
+  el.addEventListener('click', (e) => e.stopPropagation());
+  el.addEventListener('change', syncReportButton);
+});
+if (runsSelectAll) {
+  runsSelectAll.addEventListener('change', () => {
+    document.querySelectorAll('.run-select').forEach((el) => {
+      el.checked = runsSelectAll.checked;
+    });
+    syncReportButton();
+  });
+}
+if (generateReportBtn) {
+  generateReportBtn.addEventListener('click', () => {
+    const names = selectedRunNames();
+    if (!names.length) return;
+    window.location.href = `/report?runs=${encodeURIComponent(names.join(','))}`;
+  });
+}
+syncReportButton();
+
+function renderReportImpact(zoneA) {
+  const el = document.getElementById('rpt-impact');
+  if (!el) return;
+  el.innerHTML = [
+    impactCard('Ambient L<sub>eq</sub>', zoneA.leq_db != null ? `${Number(zoneA.leq_db).toFixed(1)} dBA` : '—', zoneA.leq_context || ''),
+    impactCard('Peak LAFmax', zoneA.peak_lafmax_db != null ? `${Number(zoneA.peak_lafmax_db).toFixed(1)} dBA` : '—', zoneA.peak_lafmax_at_local || ''),
+    impactCard('Chunks', String(zoneA.chunk_count || 0), `${(zoneA.runs || []).length} run(s)`),
+    impactCard('Timezone', zoneA.timezone || '—', 'Local civil time'),
+  ].join('');
+}
+
+function renderReportDiet(zoneC) {
+  const el = document.getElementById('rpt-diet');
+  if (!el) return;
+  const diet = zoneC.sound_diet || [];
+  if (!diet.length) {
+    el.innerHTML = '<div class="empty">No elevated acoustic events in this selection.</div>';
+    return;
+  }
+  el.innerHTML = diet.map((row) => {
+    const pct = Number(row.pct) || 0;
+    return `<div class="diet-row">
+      <div>${row.macro}</div>
+      <div class="diet-bar"><i style="width:${Math.min(100, pct)}%"></i></div>
+      <div style="text-align:right">${pct.toFixed(1)}%</div>
+    </div>`;
+  }).join('');
+}
+
+function renderReportEvents(zoneC) {
+  const el = document.getElementById('rpt-events');
+  if (!el) return;
+  const rows = zoneC.acoustic_events_top || [];
+  if (!rows.length) {
+    el.textContent = 'No events.';
+    return;
+  }
+  el.innerHTML = rows.map((e) =>
+    `<div style="margin-bottom:.35rem"><strong>${e.resolved_label}</strong> · ${e.macro}` +
+    ` · ${Number(e.duration_s).toFixed(1)}s · max ${e.max_dba} dBA · ${e.start_local}</div>`
+  ).join('');
+}
+
+function ensureReportHourlyChart() {
+  if (reportHourlyChart) return reportHourlyChart;
+  if (typeof Chart === 'undefined') return null;
+  const canvas = document.getElementById('report-hourly-chart');
+  if (!canvas) return null;
+  reportHourlyChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Hourly Leq',
+        data: [],
+        borderColor: '#0ea5e9',
+        backgroundColor: 'rgba(14,165,233,.12)',
+        borderWidth: 2,
+        pointRadius: 3,
+        spanGaps: true,
+        tension: 0.2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const v = ctx.parsed.y;
+              return v == null ? 'No data' : `Leq ${Number(v).toFixed(1)} dBA`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#94a3b8' },
+          grid: { color: 'rgba(51,65,85,.7)' },
+        },
+        y: {
+          title: { display: true, text: 'dBA Leq', color: '#94a3b8', font: { size: 10 } },
+          ticks: { color: '#94a3b8' },
+          grid: { color: 'rgba(51,65,85,.7)' },
+        },
+      },
+    },
+    plugins: [{
+      id: 'nightBand',
+      beforeDraw(chart) {
+        const meta = chart.data.datasets[0]._nightFlags;
+        if (!meta || !meta.length) return;
+        const { ctx, chartArea, scales } = chart;
+        const yScale = scales.y;
+        meta.forEach((isNight, i) => {
+          if (!isNight) return;
+          const x = scales.x.getPixelForValue(i);
+          const half = (scales.x.getPixelForValue(1) - scales.x.getPixelForValue(0)) / 2;
+          ctx.save();
+          ctx.fillStyle = 'rgba(148,163,184,.12)';
+          ctx.fillRect(x - half, chartArea.top, half * 2, chartArea.bottom - chartArea.top);
+          ctx.restore();
+        });
+      },
+    }],
+  });
+  return reportHourlyChart;
+}
+
+function renderReportHourly(zoneB) {
+  const chart = ensureReportHourlyChart();
+  if (!chart) return;
+  const hourly = zoneB.hourly || [];
+  chart.data.labels = hourly.map((h) => `${String(h.hour).padStart(2, '0')}:00`);
+  chart.data.datasets[0].data = hourly.map((h) => (h.leq_db == null ? null : h.leq_db));
+  chart.data.datasets[0]._nightFlags = hourly.map((h) => h.period === 'night');
+  chart.update('none');
+}
+
+async function loadDashboardReport(files) {
+  const status = document.getElementById('rpt-status');
+  setInlineStatus(status, 'Building report…');
+  const { ok, data } = await apiFetch('/api/runs/report', {
+    method: 'POST',
+    body: JSON.stringify({ files }),
+  });
+  if (!ok || !data || !data.ok) {
+    setInlineStatus(status, (data && data.error) || 'Failed to build report', 'err');
+    return;
+  }
+  const a = data.zone_a || {};
+  const b = data.zone_b || {};
+  const c = data.zone_c || {};
+  document.getElementById('rpt-header').textContent = a.header_line || 'Report';
+  document.getElementById('rpt-sub').textContent = [
+    a.timezone ? `Timezone ${a.timezone}` : '',
+    `${a.chunk_count || 0} chunks`,
+    (data.meta && data.meta.acoustic_event_count != null)
+      ? `${data.meta.acoustic_event_count} acoustic events` : '',
+  ].filter(Boolean).join(' · ');
+  renderReportImpact(a);
+  renderReportHourly(b);
+  renderReportDiet(c);
+  renderReportEvents(c);
+  document.getElementById('rpt-takeaway').textContent = c.takeaway || '';
+  setInlineStatus(status, '');
+}
+
+if (REPORT_RUNS && REPORT_RUNS.length) {
+  loadDashboardReport(REPORT_RUNS);
 }
 
 // ── Shutdown ──────────────────────────────────────────────────────

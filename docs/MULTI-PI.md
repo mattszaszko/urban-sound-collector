@@ -17,6 +17,7 @@ noise-site-b.mattszaszko.com  →  tunnel B  →  Pi B  →  localhost:8080
 | **Never share a tunnel token** | Two Pis with the same token split traffic randomly |
 | **Same Git repo on every Pi** | Code is identical; `.env` differs per device |
 | **Unique `SITE_LABEL` + `PUBLIC_URL`** | So the web UI shows which Pi you are on |
+| **`SITE_TIMEZONE` (IANA)** | Hourly report profiles / night shading (default `Europe/Amsterdam`) |
 
 Data never mixes: each Pi writes only to its own `runs/` and `logs/` folders.
 
@@ -32,6 +33,7 @@ Use this table when adding Pi #2, #3, …
 | Subdomain | `noise.mattszaszko.com` | `noise-site-b.mattszaszko.com` |
 | Cloudflare tunnel | `urban-noise-pi` (keep) | **Create new** tunnel |
 | `SITE_LABEL` in `.env` | e.g. `Amsterdam window` | e.g. `Site B balcony` |
+| `SITE_TIMEZONE` in `.env` | e.g. `Europe/Amsterdam` | e.g. `Europe/Berlin` |
 | `PUBLIC_URL` in `.env` | `https://noise.mattszaszko.com` | `https://noise-site-b.mattszaszko.com` |
 | `DEVICE_ID` in `.env` | leave empty → hostname | leave empty → hostname |
 | `SECRET_KEY` | unique | **new** random key per Pi |

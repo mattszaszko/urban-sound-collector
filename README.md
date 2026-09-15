@@ -397,11 +397,14 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 - Live log tail via Server-Sent Events (no page refresh needed)
 - **Data** tab: download past JSONL (optional omit `spectrum` /
   `yamnet_preprocess`), download sibling WAV, delete a run (JSONL + WAV; blocked
-  while that run is active). **View** opens a dedicated analysis screen
-  (`/analyze/<run>.jsonl`, openable in a new tab) with impact cards (mean / L10 /
-  L90 dBA, max LAFmax, **% loud** = `LAFmax_dB ≥` threshold default 65), YAMNet/CLAP
-  labels, a scrubbable **2‑minute** loudness window that follows playback, and
-  synced WAV listen when recorded (playback disabled while still recording)
+  while that run is active). **View** opens a per-run analysis screen
+  (`/analyze/<run>.jsonl`) with scrubbable loudness + optional synced WAV.
+  Multi-select runs → **Generate report** opens `/report` with a three-zone
+  dashboard: ambient L<sub>eq</sub> + peak LAFmax, 24-hour hourly L<sub>eq</sub>
+  (local time via `SITE_TIMEZONE`, default `Europe/Amsterdam`), and a
+  **duration-weighted** sound diet from energy-envelope acoustic events
+  (YAMNet labels vote inside each event; tire-hiss heuristic for Wind/fan at
+  high SPL)
 - Password-protected login (session cookie, 7-day expiry)
 - **Prompts / Triggers** tabs: edit CLAP config; **Export / Import JSON**
   (`clap_prompts.json`, `clap_triggers.json`) to copy sets between Pis — rebuild
@@ -527,6 +530,7 @@ Keep the page open until the countdown finishes and you see **Safe to unplug pow
 | `PORT` | `8080` | Web server port |
 | `DEVICE_ID` | *(hostname)* | Logical id in JSONL; empty = Pi hostname |
 | `SITE_LABEL` | *(empty)* | Human label shown in web UI (set per Pi) |
+| `SITE_TIMEZONE` | `Europe/Amsterdam` | IANA zone for multi-run report hours / night shading |
 | `PUBLIC_URL` | *(empty)* | This Pi's public URL (set per Pi) |
 | `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device in UI |
 | `SHUTDOWN_GRACE_SEC` | `60` | Countdown before poweroff from web UI |

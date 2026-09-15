@@ -29,6 +29,7 @@ from jinja2 import Environment, FileSystemLoader
 from core.export_filter import export_filename, iter_filtered_jsonl
 from core.host_identity import default_device_id, hostname
 from core.loudness import DEFAULT_CALIB_OFFSET
+from core.report import DEFAULT_SITE_TIMEZONE, build_dashboard_report
 from core.run_overview import (
     DEFAULT_LOUD_THRESHOLD_LAFMAX,
     build_run_overview,
@@ -73,6 +74,7 @@ DEFAULT_ALSA_DEVICE = os.environ.get(
 )
 SITE_LABEL = os.environ.get("SITE_LABEL", "").strip()
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip()
+SITE_TIMEZONE = os.environ.get("SITE_TIMEZONE", DEFAULT_SITE_TIMEZONE).strip() or DEFAULT_SITE_TIMEZONE
 SHUTDOWN_GRACE_SEC = max(15, int(os.environ.get("SHUTDOWN_GRACE_SEC", "60")))
 
 os.environ["SECRET_KEY"] = SECRET_KEY
@@ -483,7 +485,12 @@ async def logout():
 # Main UI
 # ---------------------------------------------------------------------------
 
-def _index_context(request: Request, *, analyze_run: str | None = None) -> dict:
+def _index_context(
+    request: Request,
+    *,
+    analyze_run: str | None = None,
+    report_runs: list[str] | None = None,
+) -> dict:
     status = _get_status()
     runs = _list_runs()
     error = request.query_params.get("error", "")
@@ -501,6 +508,7 @@ def _index_context(request: Request, *, analyze_run: str | None = None) -> dict:
         public_url=PUBLIC_URL,
         error=error,
         analyze_run=analyze_run,
+        report_runs=report_runs or [],
     )
 
 
@@ -521,6 +529,24 @@ async def analyze_run_page(filename: str, request: Request):
     if path is None or not path.exists() or not path.is_file():
         return RedirectResponse("/?tab=data&error=not_found", status_code=303)
     return _render("index.html", **_index_context(request, analyze_run=path.name))
+
+
+@app.get("/report", response_class=HTMLResponse)
+async def report_page(request: Request):
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    raw = request.query_params.get("runs", "")
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    safe: list[str] = []
+    for name in names[:32]:
+        if not name.lower().endswith(".jsonl"):
+            continue
+        path = _safe_runs_path(name)
+        if path is not None and path.is_file():
+            safe.append(path.name)
+    if not safe:
+        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+    return _render("index.html", **_index_context(request, report_runs=safe))
 
 
 # ---------------------------------------------------------------------------
@@ -762,6 +788,56 @@ async def api_run_overview(filename: str, request: Request):
         thr = DEFAULT_LOUD_THRESHOLD_LAFMAX
     thr = max(50.0, min(80.0, thr))
     return JSONResponse(_run_overview_payload(path, loud_threshold=thr))
+
+
+@app.post("/api/runs/report")
+async def api_runs_report(request: Request):
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+
+    files = body.get("files") or []
+    if not isinstance(files, list) or not files:
+        return JSONResponse({"ok": False, "error": "no_files"}, status_code=400)
+    if len(files) > 32:
+        return JSONResponse({"ok": False, "error": "too_many_files"}, status_code=400)
+
+    min_conf = body.get("min_confidence")
+    try:
+        min_confidence = float(min_conf) if min_conf is not None else None
+    except (TypeError, ValueError):
+        min_confidence = None
+
+    run_events: list[tuple[str, list]] = []
+    for raw_name in files:
+        if not isinstance(raw_name, str):
+            continue
+        name = raw_name.strip()
+        if not name.lower().endswith(".jsonl"):
+            return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+        path = _safe_runs_path(name)
+        if path is None or not path.exists() or not path.is_file():
+            return JSONResponse(
+                {"ok": False, "error": "not_found", "file": name},
+                status_code=404,
+            )
+        run_events.append((path.name, _iter_jsonl_events(path)))
+
+    if not run_events:
+        return JSONResponse({"ok": False, "error": "no_files"}, status_code=400)
+
+    payload = build_dashboard_report(
+        run_events,
+        timezone_name=SITE_TIMEZONE,
+        site_label=SITE_LABEL or None,
+        min_confidence=min_confidence,
+    )
+    return JSONResponse(payload)
 
 
 @app.post("/api/runs/delete")

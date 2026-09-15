@@ -1,0 +1,63 @@
+{
+  "min_confidence": 0.25,
+  "macros": [
+    "Traffic & Transit",
+    "Human & Community",
+    "Environmental & Weather",
+    "Infrastructure & Mechanical",
+    "Unclassified / Ambient"
+  ],
+  "theme_to_macro": {
+    "Vehicles": "Traffic & Transit",
+    "Human voice": "Human & Community",
+    "Human non-speech": "Human & Community",
+    "Music": "Human & Community",
+    "Animals": "Human & Community",
+    "Nature and weather": "Environmental & Weather",
+    "Environments / noise": "Environmental & Weather",
+    "Tools and industry": "Infrastructure & Mechanical",
+    "Alarms and signals": "Infrastructure & Mechanical",
+    "Other": "Unclassified / Ambient",
+    "Domestic / interior": "Unclassified / Ambient"
+  },
+  "label_overrides": {
+    "Vehicle / Tire Rolling": "Traffic & Transit"
+  },
+  "blacklist_labels": [
+    "Heart sounds, heartbeat",
+    "Heart murmur",
+    "Printer",
+    "Typewriter",
+    "Computer keyboard",
+    "Writing",
+    "Door",
+    "Doorbell",
+    "Cupboard open or close",
+    "Drawer open or close",
+    "Dishes, pots, and pans",
+    "Cutlery, silverware",
+    "Sink (filling or washing)",
+    "Bathtub (filling or washing)",
+    "Toilet flush",
+    "Keys jangling",
+    "Coin (dropping)",
+    "Scissors",
+    "Microwave oven",
+    "Blender",
+    "Hair dryer",
+    "Toothbrush",
+    "Electric toothbrush",
+    "Vacuum cleaner"
+  ],
+  "blacklist_themes": ["Domestic / interior"],
+  "segmentation": {
+    "active_dba_threshold": 45.0,
+    "max_gap_chunks": 2,
+    "min_event_chunks": 2
+  },
+  "tire_hiss": {
+    "source_labels": ["Wind", "White noise", "Mechanical fan"],
+    "target_label": "Vehicle / Tire Rolling",
+    "confused_min_event_max_dba": 52.0
+  }
+}
