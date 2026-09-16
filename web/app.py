@@ -389,30 +389,31 @@ def _format_duration(seconds: float | int | None) -> str | None:
 
 
 def _jsonl_list_stats(path: Path) -> tuple[int, datetime | None, datetime | None]:
-    """Count JSONL lines and capture first/last ``created_at`` (UTC)."""
+    """Return (event_count, first_created_at, last_created_at) cheaply.
+
+    Reads only the first and last JSONL records (not the full file). Event count
+    prefers ``chunk_index + 1`` from the last record; falls back to a binary
+    newline count when that field is missing.
+    """
+    first_event = _read_jsonl_event(path, last=False)
+    last_event = _read_jsonl_event(path, last=True)
+    first_at = _parse_event_time(first_event.get("created_at")) if first_event else None
+    last_at = _parse_event_time(last_event.get("created_at")) if last_event else None
+
     lines = 0
-    first_at: datetime | None = None
-    last_at: datetime | None = None
-    try:
-        with path.open(encoding="utf-8") as f:
-            for raw in f:
-                if not raw.strip():
-                    continue
-                lines += 1
-                try:
-                    event = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(event, dict):
-                    continue
-                dt = _parse_event_time(event.get("created_at"))
-                if dt is None:
-                    continue
-                if first_at is None:
-                    first_at = dt
-                last_at = dt
-    except OSError:
-        return 0, None, None
+    if last_event is not None:
+        raw_idx = last_event.get("chunk_index")
+        try:
+            if raw_idx is not None:
+                lines = int(raw_idx) + 1
+        except (TypeError, ValueError):
+            lines = 0
+    if lines <= 0:
+        try:
+            with path.open("rb") as f:
+                lines = sum(1 for ln in f if ln.strip())
+        except OSError:
+            lines = 0
     return lines, first_at, last_at
 
 
