@@ -27,6 +27,7 @@ from fastapi.responses import (
 )
 from jinja2 import Environment, FileSystemLoader
 
+from core.audio_constants import CAPTURE_STARTUP_DISCARD_SECONDS
 from core.events import event_recording_id
 from core.export_filter import export_filename, iter_filtered_jsonl
 from core.host_identity import default_device_id, hostname
@@ -561,6 +562,221 @@ def _iter_jsonl_events(path: Path) -> list[dict]:
     return events
 
 
+# Fields required for report aggregation (spectrum etc. are dropped to save RAM).
+_REPORT_EVENT_KEYS = (
+    "created_at",
+    "device_id",
+    "dBA_spl",
+    "LAFmax_dB",
+    "top_label",
+    "top_confidence",
+    "clap_status",
+)
+
+
+def _slim_event_for_report(event: dict) -> dict:
+    """Keep only fields needed by dashboard aggregation."""
+    out = {k: event[k] for k in _REPORT_EVENT_KEYS if k in event}
+    prep = event.get("yamnet_preprocess")
+    if isinstance(prep, dict) and "gated" in prep:
+        out["yamnet_preprocess"] = {"gated": bool(prep.get("gated"))}
+    return out
+
+
+def _iter_jsonl_events_for_report(path: Path) -> list[dict]:
+    """Load JSONL events for reports without bulky spectrum / CLAP payloads."""
+    events: list[dict] = []
+    try:
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(raw, dict):
+                    events.append(_slim_event_for_report(raw))
+    except OSError:
+        return []
+    return events
+
+
+def _report_error_payload(
+    *,
+    code: str,
+    message: str,
+    **extra: object,
+) -> dict:
+    return {
+        "stage": "error",
+        "ok": False,
+        "code": code,
+        "error": message,
+        **extra,
+    }
+
+
+def _build_report_ndjson(
+    files: list[str],
+    *,
+    min_confidence: float | None,
+) -> Iterator[str]:
+    """Yield NDJSON progress lines, then a final done/error object."""
+
+    def _line(obj: dict) -> str:
+        return json.dumps(obj, ensure_ascii=False) + "\n"
+
+    total = len(files)
+    yield _line(
+        {
+            "stage": "start",
+            "ok": True,
+            "message": f"Preparing report for {total} recording(s)…",
+            "total": total,
+        }
+    )
+
+    recording_events: list[tuple[str, list]] = []
+    total_bytes = 0
+    try:
+        for index, name in enumerate(files, start=1):
+            path = _safe_recordings_path(name)
+            if path is None or not path.exists() or not path.is_file():
+                yield _line(
+                    _report_error_payload(
+                        code="not_found",
+                        message=f"Recording not found: {name}",
+                        file=name,
+                    )
+                )
+                return
+            try:
+                size = path.stat().st_size
+            except OSError as exc:
+                yield _line(
+                    _report_error_payload(
+                        code="io_error",
+                        message=f"Could not read {name}: {exc}",
+                        file=name,
+                    )
+                )
+                return
+            total_bytes += size
+            yield _line(
+                {
+                    "stage": "loading",
+                    "ok": True,
+                    "message": (
+                        f"Loading {name} ({index}/{total}, "
+                        f"{_format_bytes(size)})…"
+                    ),
+                    "file": name,
+                    "index": index,
+                    "total": total,
+                    "bytes": size,
+                }
+            )
+            try:
+                events = _iter_jsonl_events_for_report(path)
+            except MemoryError:
+                yield _line(
+                    _report_error_payload(
+                        code="oom",
+                        message=(
+                            "The Pi ran out of memory while loading recordings. "
+                            "Select fewer/shorter files and try again."
+                        ),
+                        file=name,
+                    )
+                )
+                return
+            recording_events.append((path.name, events))
+            yield _line(
+                {
+                    "stage": "loaded",
+                    "ok": True,
+                    "message": f"Loaded {len(events):,} chunks from {name}",
+                    "file": name,
+                    "index": index,
+                    "total": total,
+                    "chunks": len(events),
+                }
+            )
+
+        yield _line(
+            {
+                "stage": "aggregating",
+                "ok": True,
+                "message": "Computing Leq, timeline, events, and sound diet…",
+                "bytes_total": total_bytes,
+            }
+        )
+
+        try:
+            payload = build_dashboard_report(
+                recording_events,
+                timezone_name=SITE_TIMEZONE,
+                site_label=SITE_LABEL or None,
+                min_confidence=min_confidence,
+            )
+        except MemoryError:
+            yield _line(
+                _report_error_payload(
+                    code="oom",
+                    message=(
+                        "The Pi ran out of memory while aggregating the report. "
+                        "Select fewer/shorter files and try again."
+                    ),
+                )
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            yield _line(
+                _report_error_payload(
+                    code="aggregate_failed",
+                    message=f"Report aggregation failed: {exc}",
+                )
+            )
+            return
+
+        if not payload.get("ok", True):
+            yield _line(
+                _report_error_payload(
+                    code="aggregate_failed",
+                    message=str(payload.get("error") or "Report aggregation failed"),
+                )
+            )
+            return
+
+        yield _line(
+            {
+                "stage": "done",
+                "ok": True,
+                "message": "Report ready",
+                "report": payload,
+            }
+        )
+    except MemoryError:
+        yield _line(
+            _report_error_payload(
+                code="oom",
+                message=(
+                    "The Pi ran out of memory while building the report. "
+                    "Select fewer/shorter files and try again."
+                ),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        yield _line(
+            _report_error_payload(
+                code="internal",
+                message=f"Unexpected error while building report: {exc}",
+            )
+        )
+
+
 def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
     wav_path = path.with_suffix(".wav")
     has_wav = wav_path.is_file()
@@ -682,6 +898,11 @@ async def report_page(request: Request):
 # Control API
 # ---------------------------------------------------------------------------
 
+def _wants_json(request: Request) -> bool:
+    accept = (request.headers.get("accept") or "").lower()
+    return "application/json" in accept
+
+
 @app.post("/api/start")
 async def api_start(
     request: Request,
@@ -693,10 +914,25 @@ async def api_start(
     enable_clap: str = Form(""),
     record_audio: str = Form(""),
 ):
+    wants_json = _wants_json(request)
     if not is_authenticated(request):
+        if wants_json:
+            return JSONResponse(
+                {"ok": False, "code": "unauthorized", "error": "Sign in required"},
+                status_code=401,
+            )
         return RedirectResponse("/login", status_code=303)
 
     if _find_collector_process():
+        if wants_json:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "code": "already_recording",
+                    "error": "A recording is already active. Stop it before starting a new one.",
+                },
+                status_code=409,
+            )
         return RedirectResponse("/?error=already_recording", status_code=303)
 
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -705,6 +941,8 @@ async def api_start(
     safe_name = _sanitize_recording_name(recording_name)
     output = RECORDINGS_DIR / f"{safe_name}-{_utc_now()}.jsonl"
     duration = _hours_to_timeout(hours)
+    clap_on = enable_clap in {"1", "true", "on", "yes"}
+    wav_on = record_audio in {"1", "true", "on", "yes"}
     cmd = [
         PYTHON, str(MAIN_PY),
         "--device-id", device_id,
@@ -714,9 +952,9 @@ async def api_start(
         "-o", str(output),
         "--yamnet-gate-sensitivity-db", str(gate_sensitivity_db),
     ]
-    if enable_clap in {"1", "true", "on", "yes"}:
+    if clap_on:
         cmd.append("--enable-clap")
-    if record_audio in {"1", "true", "on", "yes"}:
+    if wav_on:
         cmd.append("--record-wav")
     full_cmd = ["timeout", duration] + cmd
 
@@ -726,6 +964,18 @@ async def api_start(
         stderr=subprocess.DEVNULL,
         start_new_session=True,  # detach from web server process group
     )
+    if wants_json:
+        return JSONResponse(
+            {
+                "ok": True,
+                "code": "started",
+                "message": "Collector process started",
+                "output_file": str(output),
+                "enable_clap": clap_on,
+                "record_audio": wav_on,
+                "startup_discard_s": float(CAPTURE_STARTUP_DISCARD_SECONDS),
+            }
+        )
     return RedirectResponse("/", status_code=303)
 
 
@@ -922,19 +1172,59 @@ async def api_recording_overview(filename: str, request: Request):
 @app.post("/api/recordings/report")
 async def api_recordings_report(request: Request):
     if not is_authenticated(request):
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+        return JSONResponse(
+            _report_error_payload(code="unauthorized", message="Sign in required"),
+            status_code=401,
+        )
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
-        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+        return JSONResponse(
+            _report_error_payload(code="bad_request", message="Invalid JSON body"),
+            status_code=400,
+        )
     if not isinstance(body, dict):
-        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+        return JSONResponse(
+            _report_error_payload(code="bad_request", message="Invalid request body"),
+            status_code=400,
+        )
 
-    files = body.get("files") or []
-    if not isinstance(files, list) or not files:
-        return JSONResponse({"ok": False, "error": "no_files"}, status_code=400)
-    if len(files) > 32:
-        return JSONResponse({"ok": False, "error": "too_many_files"}, status_code=400)
+    files_raw = body.get("files") or []
+    if not isinstance(files_raw, list) or not files_raw:
+        return JSONResponse(
+            _report_error_payload(code="no_files", message="No recordings selected"),
+            status_code=400,
+        )
+    if len(files_raw) > 32:
+        return JSONResponse(
+            _report_error_payload(
+                code="too_many_files",
+                message="Too many recordings (max 32). Select fewer files.",
+            ),
+            status_code=400,
+        )
+
+    files: list[str] = []
+    for raw_name in files_raw:
+        if not isinstance(raw_name, str):
+            return JSONResponse(
+                _report_error_payload(
+                    code="bad_request",
+                    message="Each file name must be a string",
+                ),
+                status_code=400,
+            )
+        name = raw_name.strip()
+        if not name.lower().endswith(".jsonl"):
+            return JSONResponse(
+                _report_error_payload(
+                    code="bad_request",
+                    message=f"Not a JSONL recording: {name}",
+                    file=name,
+                ),
+                status_code=400,
+            )
+        files.append(name)
 
     min_conf = body.get("min_confidence")
     try:
@@ -942,31 +1232,14 @@ async def api_recordings_report(request: Request):
     except (TypeError, ValueError):
         min_confidence = None
 
-    recording_events: list[tuple[str, list]] = []
-    for raw_name in files:
-        if not isinstance(raw_name, str):
-            continue
-        name = raw_name.strip()
-        if not name.lower().endswith(".jsonl"):
-            return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
-        path = _safe_recordings_path(name)
-        if path is None or not path.exists() or not path.is_file():
-            return JSONResponse(
-                {"ok": False, "error": "not_found", "file": name},
-                status_code=404,
-            )
-        recording_events.append((path.name, _iter_jsonl_events(path)))
-
-    if not recording_events:
-        return JSONResponse({"ok": False, "error": "no_files"}, status_code=400)
-
-    payload = build_dashboard_report(
-        recording_events,
-        timezone_name=SITE_TIMEZONE,
-        site_label=SITE_LABEL or None,
-        min_confidence=min_confidence,
+    return StreamingResponse(
+        _build_report_ndjson(files, min_confidence=min_confidence),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
-    return JSONResponse(payload)
 
 
 @app.post("/api/recordings/delete")

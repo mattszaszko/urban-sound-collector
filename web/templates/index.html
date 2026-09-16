@@ -131,7 +131,7 @@
   /* Recordings table */
   .recording-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
            justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);
-           font-size:.8rem;cursor:pointer;border-radius:8px;padding-left:.35rem;padding-right:.35rem}
+           font-size:.8rem;border-radius:8px;padding-left:.35rem;padding-right:.35rem}
   .recording-row:hover{background:rgba(51,65,85,.35)}
   .recording-row.selected{background:rgba(14,165,233,.12);outline:1px solid rgba(14,165,233,.45)}
   .recording-row:last-child{border-bottom:none}
@@ -172,6 +172,21 @@
                    font-size:.72rem;font-weight:600;padding:.35rem .7rem;cursor:pointer}
   .report-view-btn:hover{color:var(--text)}
   .report-view-btn.active{background:rgba(14,165,233,.18);color:var(--accent)}
+  .report-progress{margin:.35rem 0 .85rem;padding:.75rem .85rem;border:1px solid var(--border);
+                   border-radius:8px;background:var(--bg)}
+  .report-progress[hidden]{display:none !important}
+  .report-progress-title{font-size:.82rem;font-weight:600;margin-bottom:.35rem}
+  .report-progress-msg{font-size:.78rem;color:var(--muted);line-height:1.4}
+  .report-progress-code{font-size:.72rem;color:var(--red);margin-top:.45rem;
+                        font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .report-progress.err{border-color:rgba(239,68,68,.45)}
+  .report-progress.err .report-progress-msg{color:#fca5a5}
+  .report-progress.busy .report-progress-title::after{
+    content:'';display:inline-block;width:.55rem;height:.55rem;margin-left:.45rem;
+    border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;
+    animation:spin .8s linear infinite;vertical-align:-.05rem}
+  #start-progress{margin-top:1rem}
+  @keyframes spin{to{transform:rotate(360deg)}}
   .report-header-line{font-size:1.05rem;font-weight:700;margin-bottom:.35rem}
   .report-sub{font-size:.78rem;color:var(--muted);margin-bottom:.75rem}
   .report-chart-box{position:relative;height:260px;background:var(--bg);
@@ -442,7 +457,7 @@
   <h2>Control</h2>
 
   {% if not status.recording %}
-  <form method="post" action="/api/start">
+  <form method="post" action="/api/start" id="start-recording-form">
     <label>Duration (hours)</label>
     <input type="number" name="hours" value="8" min="0.25" max="336" step="0.25">
 
@@ -487,8 +502,13 @@
       </div>
     </label>
 
-    <button class="btn btn-start" type="submit">▶ Start recording</button>
+    <button class="btn btn-start" type="submit" id="start-recording-btn">▶ Start recording</button>
   </form>
+  <div class="report-progress" id="start-progress" hidden>
+    <div class="report-progress-title" id="start-progress-title">Starting recording</div>
+    <div class="report-progress-msg" id="start-progress-msg">Preparing…</div>
+    <div class="report-progress-code" id="start-progress-code" hidden></div>
+  </div>
   {% else %}
   <form method="post" action="/api/stop">
     <button class="btn btn-stop" type="submit">■ Stop recording</button>
@@ -641,6 +661,11 @@
     <div class="report-header-line" id="rpt-header">Loading…</div>
     <div class="report-sub" id="rpt-sub"></div>
     <div id="rpt-status" class="inline-status"></div>
+    <div class="report-progress" id="rpt-progress" hidden>
+      <div class="report-progress-title" id="rpt-progress-title">Building report</div>
+      <div class="report-progress-msg" id="rpt-progress-msg">Starting…</div>
+      <div class="report-progress-code" id="rpt-progress-code" hidden></div>
+    </div>
     <div class="impact-grid" id="rpt-impact"></div>
   </div>
   <div class="card report-zone" id="report-zone-b">
@@ -1176,6 +1201,215 @@ if (!ANALYZE_RECORDING && !REPORT_RECORDINGS.length) {
   pollStatus();
 }
 
+const START_ERROR_HINTS = {
+  unauthorized: 'Sign in again, then retry.',
+  already_recording: 'Stop the active recording before starting another.',
+  start_timeout: 'Collector did not produce a first chunk in time. Check Live log and ALSA device.',
+  start_failed: 'Collector process exited before the first chunk.',
+  network: 'Network/tunnel error while starting.',
+  bad_response: 'Unexpected response from the start API.',
+};
+
+function setStartProgress({ title, message, code, busy, err }) {
+  const box = document.getElementById('start-progress');
+  const titleEl = document.getElementById('start-progress-title');
+  const msgEl = document.getElementById('start-progress-msg');
+  const codeEl = document.getElementById('start-progress-code');
+  if (!box || !titleEl || !msgEl || !codeEl) return;
+  box.hidden = false;
+  box.classList.toggle('busy', !!busy);
+  box.classList.toggle('err', !!err);
+  titleEl.textContent = title || 'Starting recording';
+  msgEl.textContent = message || '';
+  if (code) {
+    const hint = START_ERROR_HINTS[code] || '';
+    codeEl.hidden = false;
+    codeEl.textContent = hint ? `Error code: ${code} — ${hint}` : `Error code: ${code}`;
+  } else {
+    codeEl.hidden = true;
+    codeEl.textContent = '';
+  }
+}
+
+function hideStartProgress() {
+  const box = document.getElementById('start-progress');
+  if (!box) return;
+  box.hidden = true;
+  box.classList.remove('busy', 'err');
+}
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForFirstChunk({ enableClap, discardSeconds }) {
+  const discardMs = Math.max(0, Number(discardSeconds) || 2) * 1000;
+  const startedAt = Date.now();
+  const deadline = startedAt + 90000;
+  let sawProcess = false;
+
+  while (Date.now() < deadline) {
+    let status = null;
+    try {
+      const res = await fetch('/api/status', { credentials: 'same-origin' });
+      if (res.ok) status = await res.json();
+    } catch {
+      setStartProgress({
+        title: 'Starting recording',
+        message: 'Waiting for status from the Pi…',
+        busy: true,
+      });
+      await sleepMs(500);
+      continue;
+    }
+
+    const recording = !!(status && status.recording);
+    const chunks = status && status.chunk_count != null ? Number(status.chunk_count) : 0;
+    const elapsed = Date.now() - startedAt;
+
+    if (recording) sawProcess = true;
+
+    if (recording && chunks >= 1) {
+      setStartProgress({
+        title: 'Recording live',
+        message: `First chunk received (${chunks} so far). Opening live view…`,
+        busy: true,
+      });
+      return { ok: true };
+    }
+
+    if (!recording && sawProcess) {
+      return {
+        ok: false,
+        code: 'start_failed',
+        message: 'Collector process stopped before the first chunk was written.',
+      };
+    }
+
+    if (!recording) {
+      setStartProgress({
+        title: 'Starting recording',
+        message: 'Launching collector process…',
+        busy: true,
+      });
+    } else if (elapsed < 2500) {
+      setStartProgress({
+        title: 'Starting recording',
+        message: enableClap
+          ? 'Loading YAMNet and CLAP models…'
+          : 'Loading YAMNet model…',
+        busy: true,
+      });
+    } else if (elapsed < 2500 + discardMs + 1500) {
+      const secs = Math.max(1, Math.ceil(discardSeconds || 2));
+      setStartProgress({
+        title: 'Starting recording',
+        message: `Settling microphone (discarding first ~${secs} s of startup noise)…`,
+        busy: true,
+      });
+    } else {
+      setStartProgress({
+        title: 'Starting recording',
+        message: 'Waiting for first audio chunk…',
+        busy: true,
+      });
+    }
+
+    await sleepMs(400);
+  }
+
+  return {
+    ok: false,
+    code: 'start_timeout',
+    message: 'Timed out waiting for the first chunk (90 s).',
+  };
+}
+
+const startRecordingForm = document.getElementById('start-recording-form');
+const startRecordingBtn = document.getElementById('start-recording-btn');
+if (startRecordingForm) {
+  startRecordingForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (startRecordingBtn) {
+      startRecordingBtn.disabled = true;
+      startRecordingBtn.classList.add('btn-disabled');
+    }
+    const enableClap = !!(startRecordingForm.querySelector('[name="enable_clap"]') || {}).checked;
+    setStartProgress({
+      title: 'Starting recording',
+      message: 'Sending start request…',
+      busy: true,
+    });
+
+    let startData = null;
+    try {
+      const res = await fetch('/api/start', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+        body: new FormData(startRecordingForm),
+      });
+      try {
+        startData = await res.json();
+      } catch {
+        startData = null;
+      }
+      if (!res.ok || !startData || !startData.ok) {
+        const code = (startData && startData.code) || `http_${res.status}`;
+        setStartProgress({
+          title: 'Start failed',
+          message: (startData && startData.error) || 'Could not start the collector.',
+          code: String(code),
+          err: true,
+        });
+        if (startRecordingBtn) {
+          startRecordingBtn.disabled = false;
+          startRecordingBtn.classList.remove('btn-disabled');
+        }
+        return;
+      }
+    } catch {
+      setStartProgress({
+        title: 'Start failed',
+        message: 'Network error while contacting /api/start.',
+        code: 'network',
+        err: true,
+      });
+      if (startRecordingBtn) {
+        startRecordingBtn.disabled = false;
+        startRecordingBtn.classList.remove('btn-disabled');
+      }
+      return;
+    }
+
+    setStartProgress({
+      title: 'Starting recording',
+      message: startData.message || 'Collector process started…',
+      busy: true,
+    });
+
+    const wait = await waitForFirstChunk({
+      enableClap: !!(startData.enable_clap || enableClap),
+      discardSeconds: startData.startup_discard_s,
+    });
+    if (!wait.ok) {
+      setStartProgress({
+        title: 'Start failed',
+        message: wait.message || 'Recording did not become live.',
+        code: wait.code || 'start_failed',
+        err: true,
+      });
+      if (startRecordingBtn) {
+        startRecordingBtn.disabled = false;
+        startRecordingBtn.classList.remove('btn-disabled');
+      }
+      return;
+    }
+
+    window.location.href = '/?tab=record';
+  });
+}
+
 // ── Download field options ────────────────────────────────────────
 const spectrumToggle = document.getElementById('dl-include-spectrum');
 const preprocessToggle = document.getElementById('dl-include-preprocess');
@@ -1631,13 +1865,6 @@ async function loadRecordingOverview(name, { loudThreshold } = {}) {
   );
 }
 
-document.querySelectorAll('.recording-row[data-recording-name]').forEach((row) => {
-  row.addEventListener('click', (e) => {
-    if (e.target.closest('a, button, form, input')) return;
-    window.location.href = `/analyze/${encodeURIComponent(row.dataset.recordingName)}`;
-  });
-});
-
 if (ovScrub) {
   ovScrub.addEventListener('input', () => {
     const idx = parseInt(ovScrub.value, 10) || 0;
@@ -1669,10 +1896,6 @@ if (ovAudio) {
     setOverviewPlayheadMs(overviewStartedMs + ovAudio.currentTime * 1000, { fromAudio: true });
   });
 }
-
-document.querySelectorAll('.recording-actions').forEach((el) => {
-  el.addEventListener('click', (e) => e.stopPropagation());
-});
 
 if (ANALYZE_RECORDING) {
   loadRecordingOverview(ANALYZE_RECORDING);
@@ -1874,34 +2097,189 @@ document.querySelectorAll('.report-view-btn').forEach((btn) => {
   btn.addEventListener('click', () => setReportProfileView(btn.dataset.view));
 });
 
-async function loadDashboardReport(files) {
-  const status = document.getElementById('rpt-status');
-  setInlineStatus(status, 'Building report…');
-  const { ok, data } = await apiFetch('/api/recordings/report', {
-    method: 'POST',
-    body: JSON.stringify({ files }),
-  });
-  if (!ok || !data || !data.ok) {
-    setInlineStatus(status, (data && data.error) || 'Failed to build report', 'err');
-    return;
+const REPORT_ERROR_HINTS = {
+  unauthorized: 'Sign in again, then retry.',
+  bad_request: 'The report request was invalid.',
+  no_files: 'Select at least one recording on the Data tab.',
+  too_many_files: 'Select 32 recordings or fewer.',
+  not_found: 'One of the selected files is missing on disk.',
+  io_error: 'Could not read a recording file from disk.',
+  oom: 'Out of memory on the Pi. Try fewer/shorter recordings.',
+  aggregate_failed: 'Aggregation crashed while building charts/events.',
+  internal: 'Unexpected server error while building the report.',
+  network: 'Network/tunnel dropped before the report finished.',
+  stream_error: 'Could not read the progress stream from the server.',
+};
+
+function setReportProgress({ title, message, code, busy, err }) {
+  const box = document.getElementById('rpt-progress');
+  const titleEl = document.getElementById('rpt-progress-title');
+  const msgEl = document.getElementById('rpt-progress-msg');
+  const codeEl = document.getElementById('rpt-progress-code');
+  if (!box || !titleEl || !msgEl || !codeEl) return;
+  box.hidden = false;
+  box.classList.toggle('busy', !!busy);
+  box.classList.toggle('err', !!err);
+  titleEl.textContent = title || 'Building report';
+  msgEl.textContent = message || '';
+  if (code) {
+    const hint = REPORT_ERROR_HINTS[code] || '';
+    codeEl.hidden = false;
+    codeEl.textContent = hint ? `Error code: ${code} — ${hint}` : `Error code: ${code}`;
+  } else {
+    codeEl.hidden = true;
+    codeEl.textContent = '';
   }
-  const a = data.zone_a || {};
-  const b = data.zone_b || {};
-  const c = data.zone_c || {};
+}
+
+function hideReportProgress() {
+  const box = document.getElementById('rpt-progress');
+  if (!box) return;
+  box.hidden = true;
+  box.classList.remove('busy', 'err');
+}
+
+function applyReportPayload(payload) {
+  const a = (payload && payload.zone_a) || {};
+  const b = (payload && payload.zone_b) || {};
+  const c = (payload && payload.zone_c) || {};
   reportZoneB = b;
   document.getElementById('rpt-header').textContent = a.header_line || 'Report';
   document.getElementById('rpt-sub').textContent = [
     a.timezone ? `Timezone ${a.timezone}` : '',
     `${a.chunk_count || 0} chunks`,
-    (data.meta && data.meta.acoustic_event_count != null)
-      ? `${data.meta.acoustic_event_count} acoustic events` : '',
+    (payload.meta && payload.meta.acoustic_event_count != null)
+      ? `${payload.meta.acoustic_event_count} acoustic events` : '',
   ].filter(Boolean).join(' · ');
   renderReportImpact(a);
   setReportProfileView(b.default_view || 'timeline');
   renderReportDiet(c);
   renderReportEvents(c);
   document.getElementById('rpt-takeaway').textContent = c.takeaway || '';
+}
+
+async function loadDashboardReport(files) {
+  const status = document.getElementById('rpt-status');
   setInlineStatus(status, '');
+  setReportProgress({
+    title: 'Building report',
+    message: 'Starting…',
+    busy: true,
+  });
+  document.getElementById('rpt-header').textContent = 'Building report…';
+  document.getElementById('rpt-sub').textContent = '';
+
+  let response;
+  try {
+    response = await fetch('/api/recordings/report', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files }),
+    });
+  } catch (err) {
+    setReportProgress({
+      title: 'Report failed',
+      message: 'Could not reach the Pi (network or tunnel).',
+      code: 'network',
+      err: true,
+    });
+    setInlineStatus(status, 'Failed to build report', 'err');
+    return;
+  }
+
+  // Early JSON error (auth / validation) before stream starts.
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (!response.ok && contentType.includes('application/json')) {
+    let data = null;
+    try { data = await response.json(); } catch { /* ignore */ }
+    const code = (data && (data.code || data.error)) || `http_${response.status}`;
+    setReportProgress({
+      title: 'Report failed',
+      message: (data && data.error) || 'Request was rejected before building started.',
+      code: String(code),
+      err: true,
+    });
+    setInlineStatus(status, 'Failed to build report', 'err');
+    return;
+  }
+
+  if (!response.body) {
+    setReportProgress({
+      title: 'Report failed',
+      message: 'No response body from the server.',
+      code: 'stream_error',
+      err: true,
+    });
+    setInlineStatus(status, 'Failed to build report', 'err');
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let sawDone = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n');
+      buffer = parts.pop() || '';
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line) continue;
+        let msg;
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (msg.stage === 'error' || msg.ok === false) {
+          setReportProgress({
+            title: 'Report failed',
+            message: msg.error || msg.message || 'Unknown failure',
+            code: msg.code || 'internal',
+            err: true,
+          });
+          setInlineStatus(status, 'Failed to build report', 'err');
+          return;
+        }
+        if (msg.stage === 'done' && msg.report) {
+          sawDone = true;
+          applyReportPayload(msg.report);
+          hideReportProgress();
+          setInlineStatus(status, '');
+          return;
+        }
+        setReportProgress({
+          title: 'Building report',
+          message: msg.message || `Stage: ${msg.stage || 'working'}`,
+          busy: true,
+        });
+      }
+    }
+  } catch (err) {
+    setReportProgress({
+      title: 'Report failed',
+      message: 'Connection lost while the report was building (often OOM or tunnel timeout).',
+      code: 'network',
+      err: true,
+    });
+    setInlineStatus(status, 'Failed to build report', 'err');
+    return;
+  }
+
+  if (!sawDone) {
+    setReportProgress({
+      title: 'Report failed',
+      message: 'The server stopped before sending a finished report.',
+      code: 'stream_error',
+      err: true,
+    });
+    setInlineStatus(status, 'Failed to build report', 'err');
+  }
 }
 
 if (REPORT_RECORDINGS && REPORT_RECORDINGS.length) {

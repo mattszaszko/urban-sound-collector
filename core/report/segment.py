@@ -100,7 +100,7 @@ def prepare_chunks(
                 vote_label=vote,
                 device_id=device if isinstance(device, str) else None,
                 source_file=source_file,
-                raw=event,
+                raw={},
             )
         )
     out.sort(key=lambda c: c.dt_utc)
