@@ -403,8 +403,9 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
   while that recording is active). **View** opens a per-recording analysis screen
   (`/analyze/<name>.jsonl`) with scrubbable loudness + optional synced WAV.
   Multi-select recordings → **Generate report** opens `/report` with a three-zone
-  dashboard: ambient L<sub>eq</sub> + peak LAFmax, 24-hour hourly L<sub>eq</sub>
-  (local time via `SITE_TIMEZONE`, default `Europe/Amsterdam`), and a
+  dashboard: ambient L<sub>eq</sub> + peak LAFmax, a chronological hourly
+  L<sub>eq</sub> timeline (optional **Typical day** clock-hour view; local time via
+  `SITE_TIMEZONE`, default `Europe/Amsterdam`), and a
   **duration-weighted** sound diet from energy-envelope acoustic events
   (YAMNet labels vote inside each event; tire-hiss heuristic for Wind/fan at
   high SPL)

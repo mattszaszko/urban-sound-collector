@@ -92,11 +92,33 @@ class AggregateTests(unittest.TestCase):
         )
         self.assertTrue(report["ok"])
         self.assertEqual(report["meta"]["timezone"], "Europe/Amsterdam")
-        hourly = report["zone_b"]["hourly"]
+        hourly = report["zone_b"]["typical_day"]
         hour13 = next(h for h in hourly if h["hour"] == 13)
         self.assertIsNotNone(hour13["leq_db"])
         hour12 = next(h for h in hourly if h["hour"] == 12)
         self.assertIsNone(hour12["leq_db"])
+        self.assertEqual(report["zone_b"]["default_view"], "timeline")
+        self.assertEqual(report["zone_b"]["hourly"], report["zone_b"]["typical_day"])
+
+    def test_timeline_crosses_midnight(self) -> None:
+        # 21:30 UTC in mid-Sep = 23:30 Europe/Amsterdam (CEST).
+        base = datetime(2026, 9, 15, 21, 30, tzinfo=timezone.utc)
+        events = []
+        for i in range(0, 10 * 3600, 60):  # 10 hours of minute samples
+            events.append(_evt(i, dba=50.0, base=base))
+        report = build_dashboard_report(
+            [("overnight.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+        )
+        timeline = report["zone_b"]["timeline"]
+        self.assertGreaterEqual(len(timeline), 10)
+        self.assertEqual(timeline[0]["hour"], 23)
+        self.assertIsNotNone(timeline[0]["leq_db"])
+        hours = [row["hour"] for row in timeline]
+        self.assertIn(23, hours)
+        self.assertIn(0, hours)
+        self.assertTrue(any(row["label"].startswith("15 Sep") for row in timeline))
+        self.assertTrue(any(row["label"].startswith("16 Sep") for row in timeline))
 
     def test_gated_still_in_leq_not_in_votes(self) -> None:
         events = [

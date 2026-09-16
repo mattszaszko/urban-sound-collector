@@ -10,7 +10,7 @@ def build_takeaway(
     zone_b: dict[str, Any],
     zone_c: dict[str, Any],
 ) -> str:
-    hourly = zone_b.get("hourly") or []
+    hourly = zone_b.get("typical_day") or zone_b.get("hourly") or []
     day_rows = [
         h
         for h in hourly

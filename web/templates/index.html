@@ -163,6 +163,15 @@
   .report-zone{margin-bottom:1.1rem}
   .report-zone h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
                   color:var(--muted);margin:0 0 .65rem;font-weight:600}
+  .report-zone-head{display:flex;flex-wrap:wrap;gap:.55rem 1rem;align-items:center;
+                    justify-content:space-between;margin-bottom:.45rem}
+  .report-zone-head h2{margin:0}
+  .report-view-toggle{display:inline-flex;border:1px solid var(--border);border-radius:8px;
+                      overflow:hidden;background:var(--bg)}
+  .report-view-btn{appearance:none;border:0;background:transparent;color:var(--muted);
+                   font-size:.72rem;font-weight:600;padding:.35rem .7rem;cursor:pointer}
+  .report-view-btn:hover{color:var(--text)}
+  .report-view-btn.active{background:rgba(14,165,233,.18);color:var(--accent)}
   .report-header-line{font-size:1.05rem;font-weight:700;margin-bottom:.35rem}
   .report-sub{font-size:.78rem;color:var(--muted);margin-bottom:.75rem}
   .report-chart-box{position:relative;height:260px;background:var(--bg);
@@ -635,8 +644,16 @@
     <div class="impact-grid" id="rpt-impact"></div>
   </div>
   <div class="card report-zone" id="report-zone-b">
-    <h2>24-hour noise profile</h2>
-    <div class="overview-chart-note">Hourly L<sub>eq</sub> (local time) · night 22:00–06:59 shaded · gaps left empty</div>
+    <div class="report-zone-head">
+      <h2>Noise profile</h2>
+      <div class="report-view-toggle" role="group" aria-label="Noise profile view">
+        <button type="button" class="report-view-btn active" data-view="timeline" id="rpt-view-timeline">Timeline</button>
+        <button type="button" class="report-view-btn" data-view="typical" id="rpt-view-typical">Typical day</button>
+      </div>
+    </div>
+    <div class="overview-chart-note" id="rpt-chart-note">
+      Chronological hourly L<sub>eq</sub> (local time) · night 22:00–06:59 shaded · gaps left empty
+    </div>
     <div class="report-chart-box">
       <canvas id="report-hourly-chart" aria-label="Hourly Leq profile"></canvas>
     </div>
@@ -1767,6 +1784,11 @@ function ensureReportHourlyChart() {
         legend: { display: false },
         tooltip: {
           callbacks: {
+            title(items) {
+              const i = items && items[0] ? items[0].dataIndex : -1;
+              const labels = (reportHourlyChart && reportHourlyChart.data.labels) || [];
+              return i >= 0 ? String(labels[i] || '') : '';
+            },
             label(ctx) {
               const v = ctx.parsed.y;
               return v == null ? 'No data' : `Leq ${Number(v).toFixed(1)} dBA`;
@@ -1776,7 +1798,12 @@ function ensureReportHourlyChart() {
       },
       scales: {
         x: {
-          ticks: { color: '#94a3b8' },
+          ticks: {
+            color: '#94a3b8',
+            maxRotation: 45,
+            autoSkip: true,
+            maxTicksLimit: 14,
+          },
           grid: { color: 'rgba(51,65,85,.7)' },
         },
         y: {
@@ -1792,7 +1819,6 @@ function ensureReportHourlyChart() {
         const meta = chart.data.datasets[0]._nightFlags;
         if (!meta || !meta.length) return;
         const { ctx, chartArea, scales } = chart;
-        const yScale = scales.y;
         meta.forEach((isNight, i) => {
           if (!isNight) return;
           const x = scales.x.getPixelForValue(i);
@@ -1808,15 +1834,45 @@ function ensureReportHourlyChart() {
   return reportHourlyChart;
 }
 
+let reportZoneB = null;
+let reportProfileView = 'timeline';
+
+function setReportProfileView(view) {
+  reportProfileView = view === 'typical' ? 'typical' : 'timeline';
+  document.querySelectorAll('.report-view-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.view === reportProfileView);
+  });
+  const note = document.getElementById('rpt-chart-note');
+  if (note) {
+    note.innerHTML = reportProfileView === 'typical'
+      ? 'Typical day · all chunks by clock hour (0–23) · night 22:00–06:59 shaded · gaps left empty'
+      : 'Chronological hourly L<sub>eq</sub> (local time) · night 22:00–06:59 shaded · gaps left empty';
+  }
+  if (reportZoneB) renderReportHourly(reportZoneB);
+}
+
 function renderReportHourly(zoneB) {
   const chart = ensureReportHourlyChart();
   if (!chart) return;
-  const hourly = zoneB.hourly || [];
-  chart.data.labels = hourly.map((h) => `${String(h.hour).padStart(2, '0')}:00`);
-  chart.data.datasets[0].data = hourly.map((h) => (h.leq_db == null ? null : h.leq_db));
-  chart.data.datasets[0]._nightFlags = hourly.map((h) => h.period === 'night');
+  const useTypical = reportProfileView === 'typical';
+  const rows = useTypical
+    ? (zoneB.typical_day || zoneB.hourly || [])
+    : (zoneB.timeline && zoneB.timeline.length
+      ? zoneB.timeline
+      : (zoneB.typical_day || zoneB.hourly || []));
+  chart.data.labels = rows.map((h) => (
+    useTypical
+      ? `${String(h.hour).padStart(2, '0')}:00`
+      : (h.label || `${String(h.hour).padStart(2, '0')}:00`)
+  ));
+  chart.data.datasets[0].data = rows.map((h) => (h.leq_db == null ? null : h.leq_db));
+  chart.data.datasets[0]._nightFlags = rows.map((h) => h.period === 'night');
   chart.update('none');
 }
+
+document.querySelectorAll('.report-view-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setReportProfileView(btn.dataset.view));
+});
 
 async function loadDashboardReport(files) {
   const status = document.getElementById('rpt-status');
@@ -1832,6 +1888,7 @@ async function loadDashboardReport(files) {
   const a = data.zone_a || {};
   const b = data.zone_b || {};
   const c = data.zone_c || {};
+  reportZoneB = b;
   document.getElementById('rpt-header').textContent = a.header_line || 'Report';
   document.getElementById('rpt-sub').textContent = [
     a.timezone ? `Timezone ${a.timezone}` : '',
@@ -1840,7 +1897,7 @@ async function loadDashboardReport(files) {
       ? `${data.meta.acoustic_event_count} acoustic events` : '',
   ].filter(Boolean).join(' · ');
   renderReportImpact(a);
-  renderReportHourly(b);
+  setReportProfileView(b.default_view || 'timeline');
   renderReportDiet(c);
   renderReportEvents(c);
   document.getElementById('rpt-takeaway').textContent = c.takeaway || '';

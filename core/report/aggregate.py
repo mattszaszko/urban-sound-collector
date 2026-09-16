@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timedelta
 from typing import Any
 
 from core.report.copy import build_takeaway
@@ -78,6 +79,7 @@ def sound_diet_from_events(events: list[AcousticEvent]) -> list[dict[str, Any]]:
 
 
 def build_hourly_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
+    """Clock-hour (typical day) profile: all chunks bucketed by local hour 0–23."""
     buckets: dict[int, list[float]] = {h: [] for h in range(24)}
     for c in chunks:
         buckets[c.dt_local.hour].append(c.dba)
@@ -92,6 +94,43 @@ def build_hourly_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
                 "period": period,
             }
         )
+    return out
+
+
+def build_timeline_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
+    """Chronological hourly L_eq from first to last local hour in the selection."""
+    if not chunks:
+        return []
+
+    def _hour_floor(dt: datetime) -> datetime:
+        return dt.replace(minute=0, second=0, microsecond=0)
+
+    start = _hour_floor(chunks[0].dt_local)
+    end = _hour_floor(chunks[-1].dt_local)
+    if end < start:
+        return []
+
+    buckets: dict[datetime, list[float]] = {}
+    for c in chunks:
+        key = _hour_floor(c.dt_local)
+        buckets.setdefault(key, []).append(c.dba)
+
+    out: list[dict[str, Any]] = []
+    cur = start
+    while cur <= end:
+        levels = buckets.get(cur, [])
+        hour = int(cur.hour)
+        out.append(
+            {
+                "t_local": cur.isoformat(timespec="seconds"),
+                "label": cur.strftime("%d %b %H:%M"),
+                "hour": hour,
+                "leq_db": energetic_leq(levels) if levels else None,
+                "period": "night" if hour in NIGHT_HOURS else "day",
+                "chunk_count": len(levels),
+            }
+        )
+        cur = cur + timedelta(hours=1)
     return out
 
 
@@ -177,9 +216,15 @@ def build_dashboard_report(
         "chunk_count": len(all_chunks),
     }
 
+    typical_day = build_hourly_profile(all_chunks)
+    timeline = build_timeline_profile(all_chunks)
     zone_b = {
         "timezone": tz_name,
-        "hourly": build_hourly_profile(all_chunks),
+        "timeline": timeline,
+        "typical_day": typical_day,
+        # Alias kept for takeaway / older clients.
+        "hourly": typical_day,
+        "default_view": "timeline",
         "night_hours": sorted(NIGHT_HOURS, key=lambda h: (h < 12, h)),
     }
 
