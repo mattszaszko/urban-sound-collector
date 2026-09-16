@@ -1,4 +1,4 @@
-"""Multi-run acoustic event report and three-zone dashboard aggregations."""
+"""Multi-recording acoustic event report and three-zone dashboard aggregations."""
 
 from core.report.aggregate import build_dashboard_report, leq_context, sound_diet_from_events
 from core.report.segment import (

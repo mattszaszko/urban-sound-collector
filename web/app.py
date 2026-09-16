@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -26,13 +27,15 @@ from fastapi.responses import (
 )
 from jinja2 import Environment, FileSystemLoader
 
+from core.events import event_recording_id
 from core.export_filter import export_filename, iter_filtered_jsonl
 from core.host_identity import default_device_id, hostname
 from core.loudness import DEFAULT_CALIB_OFFSET
 from core.report import DEFAULT_SITE_TIMEZONE, build_dashboard_report
-from core.run_overview import (
+from core.report.timeutil import resolve_zone, to_local
+from core.recording_overview import (
     DEFAULT_LOUD_THRESHOLD_LAFMAX,
-    build_run_overview,
+    build_recording_overview,
     slim_event_point,
 )
 from core.yamnet_preprocess import DEFAULT_GATE_SENSITIVITY_DB
@@ -43,7 +46,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # Paths (relative to repo root)
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-RUNS_DIR = REPO_ROOT / "runs"
+RECORDINGS_DIR = REPO_ROOT / "recordings"
 LOGS_DIR = REPO_ROOT / "logs"
 MAIN_PY = REPO_ROOT / "main.py"
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
@@ -112,7 +115,7 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%MZ")
 
 
-def _default_run_name() -> str:
+def _default_recording_name() -> str:
     """Suggest a sensible prefix from the current UTC hour."""
     hour = datetime.now(timezone.utc).hour
     if 5 <= hour < 12:
@@ -124,10 +127,10 @@ def _default_run_name() -> str:
     return "night"
 
 
-def _sanitize_run_name(name: str) -> str:
-    """Keep only safe filename characters; fall back to 'run'."""
+def _sanitize_recording_name(name: str) -> str:
+    """Keep only safe filename characters; fall back to 'recording'."""
     cleaned = "".join(c for c in name.strip() if c.isalnum() or c in "-_")
-    return cleaned or "run"
+    return cleaned or "recording"
 
 
 def _hours_to_timeout(hours: float) -> str:
@@ -232,7 +235,7 @@ def _status_series(*, window_s: int = 300) -> dict:
     if path is None:
         return {
             "ok": True,
-            "running": False,
+            "recording": False,
             "window_s": window_s,
             "calib_offset": calib,
             "points": [],
@@ -253,7 +256,7 @@ def _status_series(*, window_s: int = 300) -> dict:
             points.append(slim)
     return {
         "ok": True,
-        "running": True,
+        "recording": True,
         "window_s": window_s,
         "calib_offset": calib,
         "points": points,
@@ -307,7 +310,7 @@ def _get_status() -> dict:
     """Return current collector status dict."""
     proc = _find_collector_process()
     if proc is None:
-        return {"running": False}
+        return {"recording": False}
 
     # Find the output file from the cmdline
     cmd = proc.cmdline()
@@ -321,7 +324,7 @@ def _get_status() -> dict:
     last_label = None
     last_dba = None
     started_at = None
-    run_id = None
+    recording_id = None
 
     if output_file:
         output_path = Path(output_file)
@@ -330,12 +333,12 @@ def _get_status() -> dict:
             chunk_count = last_event.get("chunk_index", 0) + 1
             last_label = last_event.get("top_label")
             last_dba = last_event.get("dBA_spl")
-            run_id = last_event.get("run_id")
+            recording_id = event_recording_id(last_event)
         first_event = _read_jsonl_event(output_path, last=False)
         if first_event:
             started_at = first_event.get("created_at")
-            if run_id is None:
-                run_id = first_event.get("run_id")
+            if recording_id is None:
+                recording_id = event_recording_id(first_event)
         output_file = str(output_path)
 
     elapsed_s = None
@@ -349,7 +352,7 @@ def _get_status() -> dict:
             pass
 
     return {
-        "running": True,
+        "recording": True,
         "pid": proc.pid,
         "output_file": output_file,
         "chunk_count": chunk_count,
@@ -357,41 +360,165 @@ def _get_status() -> dict:
         "last_dba": last_dba,
         "elapsed_s": elapsed_s,
         "started_at": started_at,
-        "run_id": run_id,
+        "recording_id": recording_id,
     }
 
 
-def _list_runs() -> list[dict]:
-    """Return past JSONL runs sorted newest first."""
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    runs = []
-    for p in sorted(RUNS_DIR.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
+def _format_duration(seconds: float | int | None) -> str | None:
+    """Human duration: minutes; hours + minutes; or days + hours + minutes."""
+    if seconds is None:
+        return None
+    try:
+        total = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return None
+    if total < 0:
+        return None
+    if total < 60:
+        return "< 1 min" if total > 0 else "0 min"
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days} d")
+    if hours or days:
+        parts.append(f"{hours} h")
+    parts.append(f"{minutes} min")
+    return " ".join(parts)
+
+
+def _jsonl_list_stats(path: Path) -> tuple[int, datetime | None, datetime | None]:
+    """Count JSONL lines and capture first/last ``created_at`` (UTC)."""
+    lines = 0
+    first_at: datetime | None = None
+    last_at: datetime | None = None
+    try:
+        with path.open(encoding="utf-8") as f:
+            for raw in f:
+                if not raw.strip():
+                    continue
+                lines += 1
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                dt = _parse_event_time(event.get("created_at"))
+                if dt is None:
+                    continue
+                if first_at is None:
+                    first_at = dt
+                last_at = dt
+    except OSError:
+        return 0, None, None
+    return lines, first_at, last_at
+
+
+def _list_recordings() -> list[dict]:
+    """Return past JSONL recordings sorted newest first."""
+    RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    zone, _, _ = resolve_zone(SITE_TIMEZONE)
+    recordings = []
+    for p in sorted(RECORDINGS_DIR.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
         size = p.stat().st_size
-        lines = 0
-        if size > 0:
-            with p.open("rb") as f:
-                lines = sum(1 for _ in f)
+        lines, first_at, last_at = _jsonl_list_stats(p) if size > 0 else (0, None, None)
+
+        duration_s = None
+        if first_at is not None and last_at is not None:
+            duration_s = max(0, int((last_at - first_at).total_seconds()))
+            # Single-chunk files: treat as ~1 s rather than 0.
+            if duration_s == 0 and lines >= 1:
+                duration_s = 1
+
+        if first_at is not None:
+            local = to_local(first_at, zone)
+            started_label = local.strftime("%Y-%m-%d %H:%M")
+            # Include short zone abbrev when available (CET/CEST).
+            tz_name = local.tzname() or SITE_TIMEZONE
+            started_display = f"{started_label} {tz_name}"
+        else:
+            # Fallback: file mtime in site timezone.
+            mtime_utc = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
+            local = to_local(mtime_utc, zone)
+            tz_name = local.tzname() or SITE_TIMEZONE
+            started_display = f"{local.strftime('%Y-%m-%d %H:%M')} {tz_name}"
+
         wav_path = p.with_suffix(".wav")
         has_wav = wav_path.is_file()
+        wav_size = wav_path.stat().st_size if has_wav else 0
         entry: dict = {
             "name": p.name,
-            "size_kb": round(size / 1024, 1),
+            "size_label": _format_bytes(size),
             "lines": lines,
-            "mtime": datetime.fromtimestamp(
-                p.stat().st_mtime, tz=timezone.utc
-            ).strftime("%Y-%m-%d %H:%M UTC"),
+            "started_display": started_display,
+            "duration_label": _format_duration(duration_s),
             "has_wav": has_wav,
             "wav_name": wav_path.name if has_wav else None,
-            "wav_size_kb": (
-                round(wav_path.stat().st_size / 1024, 1) if has_wav else None
-            ),
+            "wav_size_label": _format_bytes(wav_size) if has_wav else None,
         }
-        runs.append(entry)
-    return runs
+        recordings.append(entry)
+    return recordings
+
+
+def _format_bytes(n: int) -> str:
+    """Human-readable byte size (binary units)."""
+    size = float(max(0, int(n)))
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024.0 or unit == "TB":
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TB"
+
+
+def _disk_usage_summary(path: Path | None = None) -> dict:
+    """Return free/total disk stats for the filesystem holding ``path``."""
+    target = path or RECORDINGS_DIR
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        usage = shutil.disk_usage(target)
+    except OSError:
+        return {
+            "ok": False,
+            "free_bytes": 0,
+            "total_bytes": 0,
+            "used_bytes": 0,
+            "free_pct": 0.0,
+            "free_label": "—",
+            "total_label": "—",
+            "line": "Disk space unavailable",
+            "level": "unknown",
+        }
+
+    free_pct = (100.0 * usage.free / usage.total) if usage.total else 0.0
+    # Warn when free space is getting tight for WAV (~330 MB/h) + JSONL.
+    if usage.free < 1 * 1024**3 or free_pct < 10.0:
+        level = "critical"
+    elif usage.free < 4 * 1024**3 or free_pct < 20.0:
+        level = "warn"
+    else:
+        level = "ok"
+
+    free_label = _format_bytes(usage.free)
+    total_label = _format_bytes(usage.total)
+    return {
+        "ok": True,
+        "free_bytes": int(usage.free),
+        "total_bytes": int(usage.total),
+        "used_bytes": int(usage.used),
+        "free_pct": round(free_pct, 1),
+        "free_label": free_label,
+        "total_label": total_label,
+        "line": f"{free_label} free of {total_label} ({free_pct:.0f}%)",
+        "level": level,
+    }
 
 
 def _active_output_path() -> Path | None:
-    """Return the collector ``-o`` path if a run is active."""
+    """Return the collector ``-o`` path if a recording is active."""
     proc = _find_collector_process()
     if proc is None:
         return None
@@ -405,12 +532,12 @@ def _active_output_path() -> Path | None:
     return None
 
 
-def _safe_runs_path(filename: str) -> Path | None:
-    """Resolve a basename under RUNS_DIR, or None if unsafe/missing parent guard."""
+def _safe_recordings_path(filename: str) -> Path | None:
+    """Resolve a basename under RECORDINGS_DIR, or None if unsafe/missing parent guard."""
     if not filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
         return None
-    path = (RUNS_DIR / filename).resolve()
-    if not str(path).startswith(str(RUNS_DIR.resolve())):
+    path = (RECORDINGS_DIR / filename).resolve()
+    if not str(path).startswith(str(RECORDINGS_DIR.resolve())):
         return None
     return path
 
@@ -433,13 +560,13 @@ def _iter_jsonl_events(path: Path) -> list[dict]:
     return events
 
 
-def _run_overview_payload(path: Path, *, loud_threshold: float) -> dict:
+def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
     wav_path = path.with_suffix(".wav")
     has_wav = wav_path.is_file()
     active = _active_output_path()
     recording_active = active is not None and path.resolve() == active
     events = _iter_jsonl_events(path)
-    return build_run_overview(
+    return build_recording_overview(
         events,
         name=path.name,
         has_wav=has_wav,
@@ -488,27 +615,28 @@ async def logout():
 def _index_context(
     request: Request,
     *,
-    analyze_run: str | None = None,
-    report_runs: list[str] | None = None,
+    analyze_recording: str | None = None,
+    report_recordings: list[str] | None = None,
 ) -> dict:
     status = _get_status()
-    runs = _list_runs()
+    recordings = _list_recordings()
     error = request.query_params.get("error", "")
     return dict(
         request=request,
         status=status,
-        runs=runs,
+        recordings=recordings,
+        disk=_disk_usage_summary(RECORDINGS_DIR),
         default_device_id=DEFAULT_DEVICE_ID,
         default_alsa_device=DEFAULT_ALSA_DEVICE,
-        default_run_name=_default_run_name(),
+        default_recording_name=_default_recording_name(),
         default_gate_sensitivity_db=DEFAULT_GATE_SENSITIVITY_DB,
         device_id=DEFAULT_DEVICE_ID,
         pi_hostname=hostname(),
         site_label=SITE_LABEL,
         public_url=PUBLIC_URL,
         error=error,
-        analyze_run=analyze_run,
-        report_runs=report_runs or [],
+        analyze_recording=analyze_recording,
+        report_recordings=report_recordings or [],
     )
 
 
@@ -520,33 +648,33 @@ async def index(request: Request):
 
 
 @app.get("/analyze/{filename}", response_class=HTMLResponse)
-async def analyze_run_page(filename: str, request: Request):
+async def analyze_recording_page(filename: str, request: Request):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
     if not filename.lower().endswith(".jsonl"):
         return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
-    path = _safe_runs_path(filename)
+    path = _safe_recordings_path(filename)
     if path is None or not path.exists() or not path.is_file():
         return RedirectResponse("/?tab=data&error=not_found", status_code=303)
-    return _render("index.html", **_index_context(request, analyze_run=path.name))
+    return _render("index.html", **_index_context(request, analyze_recording=path.name))
 
 
 @app.get("/report", response_class=HTMLResponse)
 async def report_page(request: Request):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    raw = request.query_params.get("runs", "")
+    raw = request.query_params.get("recordings") or request.query_params.get("runs", "")
     names = [n.strip() for n in raw.split(",") if n.strip()]
     safe: list[str] = []
     for name in names[:32]:
         if not name.lower().endswith(".jsonl"):
             continue
-        path = _safe_runs_path(name)
+        path = _safe_recordings_path(name)
         if path is not None and path.is_file():
             safe.append(path.name)
     if not safe:
         return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
-    return _render("index.html", **_index_context(request, report_runs=safe))
+    return _render("index.html", **_index_context(request, report_recordings=safe))
 
 
 # ---------------------------------------------------------------------------
@@ -557,7 +685,7 @@ async def report_page(request: Request):
 async def api_start(
     request: Request,
     hours: float = Form(8.0),
-    run_name: str = Form("run"),
+    recording_name: str = Form("recording"),
     device_id: str = Form(DEFAULT_DEVICE_ID),
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
     gate_sensitivity_db: float = Form(DEFAULT_GATE_SENSITIVITY_DB),
@@ -568,13 +696,13 @@ async def api_start(
         return RedirectResponse("/login", status_code=303)
 
     if _find_collector_process():
-        return RedirectResponse("/?error=already_running", status_code=303)
+        return RedirectResponse("/?error=already_recording", status_code=303)
 
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    safe_name = _sanitize_run_name(run_name)
-    output = RUNS_DIR / f"{safe_name}-{_utc_now()}.jsonl"
+    safe_name = _sanitize_recording_name(recording_name)
+    output = RECORDINGS_DIR / f"{safe_name}-{_utc_now()}.jsonl"
     duration = _hours_to_timeout(hours)
     cmd = [
         PYTHON, str(MAIN_PY),
@@ -715,11 +843,11 @@ def _query_flag(request: Request, name: str, *, default: bool = True) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-@app.get("/runs/{filename}")
-async def download_run(filename: str, request: Request):
+@app.get("/recordings/{filename}")
+async def download_recording(filename: str, request: Request):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    path = _safe_runs_path(filename)
+    path = _safe_recordings_path(filename)
     if path is None or not path.exists() or not path.is_file():
         return HTMLResponse("Not found", status_code=404)
 
@@ -771,13 +899,13 @@ async def download_run(filename: str, request: Request):
     )
 
 
-@app.get("/api/runs/{filename}/overview")
-async def api_run_overview(filename: str, request: Request):
+@app.get("/api/recordings/{filename}/overview")
+async def api_recording_overview(filename: str, request: Request):
     if not is_authenticated(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
     if not filename.lower().endswith(".jsonl"):
         return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
-    path = _safe_runs_path(filename)
+    path = _safe_recordings_path(filename)
     if path is None or not path.exists() or not path.is_file():
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
 
@@ -787,11 +915,11 @@ async def api_run_overview(filename: str, request: Request):
     except (TypeError, ValueError):
         thr = DEFAULT_LOUD_THRESHOLD_LAFMAX
     thr = max(50.0, min(80.0, thr))
-    return JSONResponse(_run_overview_payload(path, loud_threshold=thr))
+    return JSONResponse(_recording_overview_payload(path, loud_threshold=thr))
 
 
-@app.post("/api/runs/report")
-async def api_runs_report(request: Request):
+@app.post("/api/recordings/report")
+async def api_recordings_report(request: Request):
     if not is_authenticated(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
     try:
@@ -813,26 +941,26 @@ async def api_runs_report(request: Request):
     except (TypeError, ValueError):
         min_confidence = None
 
-    run_events: list[tuple[str, list]] = []
+    recording_events: list[tuple[str, list]] = []
     for raw_name in files:
         if not isinstance(raw_name, str):
             continue
         name = raw_name.strip()
         if not name.lower().endswith(".jsonl"):
             return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
-        path = _safe_runs_path(name)
+        path = _safe_recordings_path(name)
         if path is None or not path.exists() or not path.is_file():
             return JSONResponse(
                 {"ok": False, "error": "not_found", "file": name},
                 status_code=404,
             )
-        run_events.append((path.name, _iter_jsonl_events(path)))
+        recording_events.append((path.name, _iter_jsonl_events(path)))
 
-    if not run_events:
+    if not recording_events:
         return JSONResponse({"ok": False, "error": "no_files"}, status_code=400)
 
     payload = build_dashboard_report(
-        run_events,
+        recording_events,
         timezone_name=SITE_TIMEZONE,
         site_label=SITE_LABEL or None,
         min_confidence=min_confidence,
@@ -840,8 +968,8 @@ async def api_runs_report(request: Request):
     return JSONResponse(payload)
 
 
-@app.post("/api/runs/delete")
-async def api_runs_delete(
+@app.post("/api/recordings/delete")
+async def api_recordings_delete(
     request: Request,
     filename: str = Form(...),
 ):
@@ -851,7 +979,7 @@ async def api_runs_delete(
     if not filename.lower().endswith(".jsonl"):
         return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
 
-    path = _safe_runs_path(filename)
+    path = _safe_recordings_path(filename)
     if path is None:
         return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
     if not path.exists() or not path.is_file():
@@ -859,7 +987,7 @@ async def api_runs_delete(
 
     active = _active_output_path()
     if active is not None and path.resolve() == active:
-        return RedirectResponse("/?tab=data&error=run_in_use", status_code=303)
+        return RedirectResponse("/?tab=data&error=recording_in_use", status_code=303)
 
     wav_path = path.with_suffix(".wav")
     try:

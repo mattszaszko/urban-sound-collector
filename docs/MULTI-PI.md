@@ -19,7 +19,7 @@ noise-site-b.mattszaszko.com  →  tunnel B  →  Pi B  →  localhost:8080
 | **Unique `SITE_LABEL` + `PUBLIC_URL`** | So the web UI shows which Pi you are on |
 | **`SITE_TIMEZONE` (IANA)** | Hourly report profiles / night shading (default `Europe/Amsterdam`) |
 
-Data never mixes: each Pi writes only to its own `runs/` and `logs/` folders.
+Data never mixes: each Pi writes only to its own `recordings/` and `logs/` folders.
 
 ---
 
@@ -84,7 +84,7 @@ pip install ai-edge-litert
 # pip install tflite-runtime
 # or use: python3.11 -m venv .venv
 pip install -r web/requirements-web.txt
-mkdir -p runs logs
+mkdir -p recordings logs
 ```
 
 ### 5. Microphone test
@@ -123,8 +123,8 @@ timeout 1m python main.py \
   --alsa-device plughw:CARD=sndrpigooglevoi,DEV=0 \
   --backend arecord \
   --quiet \
-  -o "runs/test-$(date -u +%Y-%m-%dT%H-%MZ).jsonl"
-wc -l runs/test-*.jsonl
+  -o "recordings/test-$(date -u +%Y-%m-%dT%H-%MZ).jsonl"
+wc -l recordings/test-*.jsonl
 ```
 
 ### 8. Web UI systemd service
@@ -159,7 +159,7 @@ sudo systemctl status cloudflared
    - Domain: `mattszaszko.com`
    - Service: `HTTP` → `localhost:8080`
 
-6. Open `PUBLIC_URL` from `.env` in a browser → log in → start a test run.
+6. Open `PUBLIC_URL` from `.env` in a browser → log in → start a test recording.
 
 ### 10. Reboot test
 

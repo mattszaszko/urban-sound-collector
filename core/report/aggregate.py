@@ -96,7 +96,7 @@ def build_hourly_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
 
 
 def build_dashboard_report(
-    run_events: list[tuple[str, list[dict]]],
+    recording_events: list[tuple[str, list[dict]]],
     *,
     timezone_name: str | None = None,
     site_label: str | None = None,
@@ -106,7 +106,7 @@ def build_dashboard_report(
     """
     Build Zone A/B/C payload.
 
-    ``run_events`` is a list of ``(filename, events)`` from selected JSONL files.
+    ``recording_events`` is a list of ``(filename, events)`` from selected JSONL files.
     """
     zone, tz_name, tz_warning = resolve_zone(timezone_name or DEFAULT_SITE_TIMEZONE)
     label_map = load_label_map(label_map_path)
@@ -115,8 +115,8 @@ def build_dashboard_report(
     themes = load_display_theme_map()
 
     all_chunks: list[AcousticChunk] = []
-    run_summaries: list[dict[str, Any]] = []
-    for name, events in run_events:
+    recording_summaries: list[dict[str, Any]] = []
+    for name, events in recording_events:
         prepared = prepare_chunks(
             events,
             zone=zone,
@@ -125,7 +125,7 @@ def build_dashboard_report(
             source_file=name,
         )
         all_chunks.extend(prepared)
-        run_summaries.append({"name": name, "chunks": len(prepared)})
+        recording_summaries.append({"name": name, "chunks": len(prepared)})
 
     all_chunks.sort(key=lambda c: c.dt_utc)
     acoustic_events = segment_acoustic_events(
@@ -173,7 +173,7 @@ def build_dashboard_report(
         "peak_lafmax_db": round(peak_laf, 1) if peak_laf is not None else None,
         "peak_lafmax_at_local": peak_at_local,
         "peak_lafmax_at_utc": peak_at_utc,
-        "runs": run_summaries,
+        "recordings": recording_summaries,
         "chunk_count": len(all_chunks),
     }
 

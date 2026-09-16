@@ -1,13 +1,14 @@
-"""Past-run overview stats and slim chart series for the Data tab."""
+"""Past-recording overview stats and slim chart series for the Data tab."""
 
 from __future__ import annotations
 
 from collections import Counter
 from typing import Any
 
+from core.events import event_recording_id
 from core.loudness import DEFAULT_CALIB_OFFSET
 
-# Target chart points when downsampling long runs.
+# Target chart points when downsampling long recordings.
 CHART_MAX_POINTS = 1500
 DEFAULT_LOUD_THRESHOLD_LAFMAX = 65.0
 
@@ -158,7 +159,7 @@ def downsample_points(points: list[dict], max_points: int = CHART_MAX_POINTS) ->
     return out
 
 
-def build_run_overview(
+def build_recording_overview(
     events: list[dict],
     *,
     name: str,
@@ -178,7 +179,7 @@ def build_run_overview(
     clap_counts: Counter[str] = Counter()
     clap_triggered = 0
     device_id = None
-    run_id = None
+    recording_id = None
 
     for event in events:
         slim = slim_event_point(event, calib_offset=calib_offset)
@@ -187,8 +188,8 @@ def build_run_overview(
         points_full.append(slim)
         if device_id is None and isinstance(event.get("device_id"), str):
             device_id = event["device_id"]
-        if run_id is None and isinstance(event.get("run_id"), str):
-            run_id = event["run_id"]
+        if recording_id is None:
+            recording_id = event_recording_id(event)
         if slim["dba"] is not None:
             dbas.append(float(slim["dba"]))
         if slim["lafmax"] is not None:
@@ -249,7 +250,7 @@ def build_run_overview(
         "calib_offset": float(calib_offset),
         "summary": {
             "device_id": device_id,
-            "run_id": run_id,
+            "recording_id": recording_id,
             "started_at": started_at,
             "ended_at": ended_at,
             "duration_s": duration_s,

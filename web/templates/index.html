@@ -52,12 +52,12 @@
   .status-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem}
   .badge{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .7rem;
          border-radius:999px;font-size:.8rem;font-weight:600}
-  .badge.running{background:#14532d;color:var(--green)}
+  .badge.recording{background:#14532d;color:var(--green)}
   .badge.idle{background:#1e293b;border:1px solid var(--border);color:var(--muted)}
   .badge.ok{background:#14532d;color:var(--green)}
   .badge.warn{background:#713f12;color:var(--yellow)}
   .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
-  .running .dot{animation:pulse 1.4s infinite}
+  .recording .dot{animation:pulse 1.4s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
   .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem}
@@ -128,18 +128,18 @@
            height:200px;overflow-y:auto;border:1px solid var(--border)}
   #log-box p{margin:0;line-height:1.6;white-space:pre-wrap;word-break:break-all}
 
-  /* Runs table */
-  .run-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+  /* Recordings table */
+  .recording-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
            justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);
            font-size:.8rem;cursor:pointer;border-radius:8px;padding-left:.35rem;padding-right:.35rem}
-  .run-row:hover{background:rgba(51,65,85,.35)}
-  .run-row.selected{background:rgba(14,165,233,.12);outline:1px solid rgba(14,165,233,.45)}
-  .run-row:last-child{border-bottom:none}
-  .run-info{min-width:0;flex:1 1 12rem}
-  .run-name{color:var(--text);word-break:break-all}
-  .run-meta{color:var(--muted);white-space:normal}
-  .run-actions{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
-  .run-actions a,.run-actions form,.run-actions button{cursor:pointer}
+  .recording-row:hover{background:rgba(51,65,85,.35)}
+  .recording-row.selected{background:rgba(14,165,233,.12);outline:1px solid rgba(14,165,233,.45)}
+  .recording-row:last-child{border-bottom:none}
+  .recording-info{min-width:0;flex:1 1 12rem}
+  .recording-name{color:var(--text);word-break:break-all}
+  .recording-meta{color:var(--muted);white-space:normal}
+  .recording-actions{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
+  .recording-actions a,.recording-actions form,.recording-actions button{cursor:pointer}
   .dl-btn,.del-btn,.view-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
           border-radius:6px;color:var(--accent);text-decoration:none;
           font-size:.75rem;white-space:nowrap;cursor:pointer;font-family:inherit}
@@ -176,14 +176,19 @@
   .data-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
                 margin-bottom:.85rem}
   .data-toolbar .btn{width:auto;margin:0;padding:.45rem .85rem;font-size:.8rem}
-  .run-check{width:auto;margin:0 .35rem 0 0;accent-color:var(--accent)}
+  .disk-meter{font-size:.78rem;color:var(--muted);margin:.15rem 0 .85rem;line-height:1.4}
+  .disk-meter.ok{color:var(--muted)}
+  .disk-meter.warn{color:var(--yellow)}
+  .disk-meter.critical{color:var(--red)}
+  .disk-meter.unknown{color:var(--muted)}
+  .recording-check{width:auto;margin:0 .35rem 0 0;accent-color:var(--accent)}
   .analyze-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
                    justify-content:space-between;margin-bottom:.75rem}
   .analyze-back{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;
                 background:var(--bg);border:1px solid var(--border);border-radius:8px;
                 color:var(--text);text-decoration:none;font-size:.82rem;font-weight:600}
   .analyze-back:hover{border-color:var(--accent);color:var(--accent)}
-  #run-overview{margin-top:0}
+  #recording-overview{margin-top:0}
   .overview-chart-note{font-size:.72rem;color:var(--muted);margin:0 0 .45rem}
   .overview-head{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:baseline;
                  justify-content:space-between;margin-bottom:.85rem}
@@ -272,9 +277,9 @@
                 padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem}
   .field-note{font-size:.7rem;color:var(--muted);margin-top:.35rem;line-height:1.45}
 
-  /* Run tab layout shells (stacked on mobile) */
-  .run-layout{display:flex;flex-direction:column;gap:0}
-  .run-layout > .card{margin-bottom:1rem}
+  /* Record tab layout shells (stacked on mobile) */
+  .record-layout{display:flex;flex-direction:column;gap:0}
+  .record-layout > .card{margin-bottom:1rem}
 
   @media(min-width:640px){
     body{max-width:960px;margin:0 auto;padding:1.5rem}
@@ -287,14 +292,14 @@
 
   @media(min-width:960px){
     body{max-width:1180px;padding:1.75rem 2rem}
-    .run-layout{
+    .record-layout{
       display:grid;
       grid-template-columns:minmax(0,1.6fr) minmax(300px,.85fr);
       gap:1rem;
       align-items:start;
       margin-bottom:1rem;
     }
-    .run-layout > .card{margin-bottom:0}
+    .record-layout > .card{margin-bottom:0}
     #status-card{grid-column:1;grid-row:1}
     #control-card{grid-column:2;grid-row:1;position:sticky;top:1rem}
     .live-chart-canvas-box{height:320px}
@@ -308,14 +313,14 @@
 
   @media(min-width:1280px){
     body{max-width:1360px;padding:2rem 2.5rem}
-    .run-layout{grid-template-columns:minmax(0,1.75fr) minmax(320px,.8fr);gap:1.25rem}
+    .record-layout{grid-template-columns:minmax(0,1.75fr) minmax(320px,.8fr);gap:1.25rem}
     .live-chart-canvas-box{height:380px}
     #log-box{height:340px}
     header h1{font-size:1.35rem}
   }
 </style>
 </head>
-<body{% if analyze_run %} class="analyze-mode"{% elif report_runs %} class="report-mode"{% endif %}>
+<body{% if analyze_recording %} class="analyze-mode"{% elif report_recordings %} class="report-mode"{% endif %}>
 
 <header>
   <div>
@@ -336,39 +341,39 @@
   </div>
 </header>
 
-<nav class="tab-bar" role="tablist"{% if analyze_run or report_runs %} hidden{% endif %}>
-  <button type="button" class="tab-btn active" data-tab="run" role="tab" aria-selected="true">Record</button>
+<nav class="tab-bar" role="tablist"{% if analyze_recording or report_recordings %} hidden{% endif %}>
+  <button type="button" class="tab-btn active" data-tab="record" role="tab" aria-selected="true">Record</button>
   <button type="button" class="tab-btn" data-tab="data" role="tab" aria-selected="false">Data</button>
   <button type="button" class="tab-btn" data-tab="prompts" role="tab" aria-selected="false">Prompts</button>
   <button type="button" class="tab-btn" data-tab="triggers" role="tab" aria-selected="false">Triggers</button>
 </nav>
 
-{% if error == 'already_running' %}
-<div class="error-banner">A run is already active. Stop it before starting a new one.</div>
-{% elif error == 'run_in_use' %}
-<div class="error-banner">That run is still active. Stop it before deleting.</div>
+{% if error == 'already_recording' %}
+<div class="error-banner">A recording is already active. Stop it before starting a new one.</div>
+{% elif error == 'recording_in_use' %}
+<div class="error-banner">That recording is still active. Stop it before deleting.</div>
 {% elif error == 'not_found' %}
-<div class="error-banner">Run file not found.</div>
+<div class="error-banner">Recording file not found.</div>
 {% elif error == 'bad_request' %}
 <div class="error-banner">Could not delete that file.</div>
 {% endif %}
 
 <!-- ── RECORD TAB ── -->
-<div class="tab-panel{% if not analyze_run and not report_runs %} active{% endif %}" id="panel-run" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
+<div class="tab-panel{% if not analyze_recording and not report_recordings %} active{% endif %}" id="panel-record" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
 
-<div class="run-layout">
+<div class="record-layout">
 <!-- ── STATUS ── -->
 <div class="card" id="status-card">
   <h2>Status</h2>
 
   <div class="status-row">
-    {% if status.running %}
-    <span class="badge running"><span class="dot"></span>Recording</span>
+    {% if status.recording %}
+    <span class="badge recording"><span class="dot"></span>Recording</span>
     {% else %}
     <span class="badge idle"><span class="dot"></span>Idle</span>
     {% endif %}
-    {% if status.run_id %}
-    <span style="color:var(--muted);font-size:.75rem">{{ status.run_id }}</span>
+    {% if status.recording_id %}
+    <span style="color:var(--muted);font-size:.75rem">{{ status.recording_id }}</span>
     {% endif %}
   </div>
 
@@ -417,7 +422,7 @@
       </div>
     </div>
     <div class="live-chart-canvas-box">
-      <div class="live-chart-empty" id="live-chart-empty">Start a run to see live loudness</div>
+      <div class="live-chart-empty" id="live-chart-empty">Start a recording to see live loudness</div>
       <canvas id="live-loudness-chart" aria-label="Live loudness chart"></canvas>
     </div>
   </div>
@@ -427,17 +432,17 @@
 <div class="card" id="control-card">
   <h2>Control</h2>
 
-  {% if not status.running %}
+  {% if not status.recording %}
   <form method="post" action="/api/start">
     <label>Duration (hours)</label>
     <input type="number" name="hours" value="8" min="0.25" max="336" step="0.25">
 
     <label>Output file name</label>
-    <input type="text" name="run_name" value="{{ default_run_name }}"
-           placeholder="run" pattern="[A-Za-z0-9_-]+"
+    <input type="text" name="recording_name" value="{{ default_recording_name }}"
+           placeholder="recording" pattern="[A-Za-z0-9_-]+"
            title="Letters, numbers, hyphens and underscores only">
     <div class="field-note">
-      Saved as <code style="color:var(--accent)">runs/&lt;name&gt;-YYYY-MM-DDTHH-MMZ.jsonl</code>
+      Saved as <code style="color:var(--accent)">recordings/&lt;name&gt;-YYYY-MM-DDTHH-MMZ.jsonl</code>
       (UTC start time appended automatically)
     </div>
 
@@ -461,7 +466,7 @@
       <input type="checkbox" name="enable_clap" value="on">
       <div>
         Enable CLAP
-        <span>Runs CLAP on trigger labels. Requires rebuilt embeddings (Prompts tab).</span>
+        <span>Uses CLAP on trigger labels. Requires rebuilt embeddings (Prompts tab).</span>
       </div>
     </label>
 
@@ -473,15 +478,15 @@
       </div>
     </label>
 
-    <button class="btn btn-start" type="submit">▶ Start run</button>
+    <button class="btn btn-start" type="submit">▶ Start recording</button>
   </form>
   {% else %}
   <form method="post" action="/api/stop">
-    <button class="btn btn-stop" type="submit">■ Stop run</button>
+    <button class="btn btn-stop" type="submit">■ Stop recording</button>
   </form>
   {% endif %}
 </div>
-</div><!-- /run-layout -->
+</div><!-- /record-layout -->
 
 <!-- ── LIVE LOG ── -->
 <div class="card">
@@ -502,16 +507,23 @@
   </div>
 </div>
 
-</div><!-- /panel-run -->
+</div><!-- /panel-record -->
 
 <!-- ── DATA TAB ── -->
-<div class="tab-panel" id="panel-data" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
+<div class="tab-panel" id="panel-data" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
 <div class="card">
-  <h2>Past runs</h2>
-  {% if runs %}
+  <h2>Past recordings</h2>
+  {% if disk %}
+  <div class="disk-meter {{ disk.level }}" title="Filesystem that stores recordings/">
+    Disk: {{ disk.line }}
+    {% if disk.level == 'warn' %} · getting low{% endif %}
+    {% if disk.level == 'critical' %} · free space critically low{% endif %}
+  </div>
+  {% endif %}
+  {% if recordings %}
   <div class="data-toolbar">
     <label class="check-row" style="margin:0;cursor:pointer">
-      <input type="checkbox" id="runs-select-all" class="run-check">
+      <input type="checkbox" id="recordings-select-all" class="recording-check">
       <div>Select all</div>
     </label>
     <button type="button" class="btn" id="generate-report-btn" disabled>Generate report</button>
@@ -533,48 +545,50 @@
       </div>
     </label>
   </div>
-    {% for run in runs %}
-    <div class="run-row" data-run-name="{{ run.name }}" data-has-wav="{{ '1' if run.has_wav else '0' }}">
-      <div class="run-info" style="display:flex;gap:.5rem;align-items:flex-start">
-        <input type="checkbox" class="run-check run-select" value="{{ run.name }}" aria-label="Select {{ run.name }}">
+    {% for recording in recordings %}
+    <div class="recording-row" data-recording-name="{{ recording.name }}" data-has-wav="{{ '1' if recording.has_wav else '0' }}">
+      <div class="recording-info" style="display:flex;gap:.5rem;align-items:flex-start">
+        <input type="checkbox" class="recording-check recording-select" value="{{ recording.name }}" aria-label="Select {{ recording.name }}">
         <div>
-          <div class="run-name">{{ run.name }}</div>
-          <div class="run-meta">
-            {{ run.mtime }} · {{ run.lines }} events · {{ run.size_kb }} KB
-            {% if run.has_wav %} · audio {{ run.wav_size_kb }} KB{% endif %}
+          <div class="recording-name">{{ recording.name }}</div>
+          <div class="recording-meta">
+            {{ recording.started_display }}
+            {% if recording.duration_label %} · {{ recording.duration_label }}{% endif %}
+            · {{ recording.lines }} events · {{ recording.size_label }}
+            {% if recording.has_wav %} · audio {{ recording.wav_size_label }}{% endif %}
           </div>
         </div>
       </div>
-      <div class="run-actions">
-        <a class="view-btn" href="/analyze/{{ run.name }}">View</a>
-        <a class="dl-btn" href="/runs/{{ run.name }}"
-           data-filename="{{ run.name }}" download>↓ JSONL</a>
-        {% if run.has_wav %}
-        <a class="dl-btn" href="/runs/{{ run.wav_name }}?download=1" download>↓ Audio</a>
+      <div class="recording-actions">
+        <a class="view-btn" href="/analyze/{{ recording.name }}">View</a>
+        <a class="dl-btn" href="/recordings/{{ recording.name }}"
+           data-filename="{{ recording.name }}" download>↓ JSONL</a>
+        {% if recording.has_wav %}
+        <a class="dl-btn" href="/recordings/{{ recording.wav_name }}?download=1" download>↓ Audio</a>
         {% endif %}
-        <form method="post" action="/api/runs/delete" style="display:inline;margin:0"
-              onsubmit="return confirm('Delete {{ run.name }}{% if run.has_wav %} and its WAV{% endif %}? This cannot be undone.');">
-          <input type="hidden" name="filename" value="{{ run.name }}">
+        <form method="post" action="/api/recordings/delete" style="display:inline;margin:0"
+              onsubmit="return confirm('Delete {{ recording.name }}{% if recording.has_wav %} and its WAV{% endif %}? This cannot be undone.');">
+          <input type="hidden" name="filename" value="{{ recording.name }}">
           <button class="del-btn" type="submit">Delete</button>
         </form>
       </div>
     </div>
     {% endfor %}
   {% else %}
-  <div class="empty">No runs yet.</div>
+  <div class="empty">No recordings yet.</div>
   {% endif %}
 </div>
 </div><!-- /panel-data -->
 
 <!-- ── ANALYZE (dedicated screen / openable in new tab) ── -->
-<div id="panel-analyze"{% if analyze_run %} class="active"{% endif %}{% if not analyze_run %} hidden{% endif %}>
+<div id="panel-analyze"{% if analyze_recording %} class="active"{% endif %}{% if not analyze_recording %} hidden{% endif %}>
   <div class="analyze-toolbar">
     <a class="analyze-back" href="/?tab=data">← Back to Data</a>
   </div>
-  <div class="card" id="run-overview">
+  <div class="card" id="recording-overview">
     <div class="overview-head">
       <div>
-        <div class="overview-title" id="ov-title">Run analysis</div>
+        <div class="overview-title" id="ov-title">Recording analysis</div>
         <div class="overview-sub" id="ov-sub"></div>
       </div>
       <div class="loud-threshold-row">
@@ -594,7 +608,7 @@
       <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
     </div>
     <div class="overview-chart-box">
-      <canvas id="overview-loudness-chart" aria-label="Run loudness overview"></canvas>
+      <canvas id="overview-loudness-chart" aria-label="Recording loudness overview"></canvas>
     </div>
     <input type="range" class="overview-scrub" id="ov-scrub" min="0" max="0" value="0" step="1">
     <div class="overview-detail" id="ov-detail">Select a point on the timeline.</div>
@@ -602,14 +616,14 @@
       <div class="overview-sub">Listen (synced to scrubber)</div>
       <audio id="ov-audio" controls preload="metadata"></audio>
       <div class="overview-audio-note" id="ov-audio-note" hidden>
-        Playback disabled while this run is still recording (WAV may be incomplete).
+        Playback disabled while this recording is still active (WAV may be incomplete).
       </div>
     </div>
   </div>
 </div>
 
 <!-- ── MULTI-RUN REPORT (three-zone dashboard) ── -->
-<div id="panel-report"{% if report_runs %} class="active"{% endif %}{% if not report_runs %} hidden{% endif %}>
+<div id="panel-report"{% if report_recordings %} class="active"{% endif %}{% if not report_recordings %} hidden{% endif %}>
   <div class="report-toolbar">
     <a class="analyze-back" href="/?tab=data">← Back to Data</a>
   </div>
@@ -640,7 +654,7 @@
 </div>
 
 <!-- ── PROMPTS TAB ── -->
-<div class="tab-panel" id="panel-prompts" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
+<div class="tab-panel" id="panel-prompts" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
   <div class="card">
     <h2>CLAP prompts</h2>
     <div class="status-row" id="prompts-sync-row">
@@ -651,7 +665,7 @@
     <div class="field-note" style="margin-bottom:.75rem">
       Each row is a label + text prompt used for CLAP embeddings. Install ONNX models
       (<code>python scripts/download_clap_models.py</code>), save prompts, then rebuild
-      embeddings before enabling CLAP on a run.
+      embeddings before enabling CLAP on a recording.
     </div>
     <table class="prompt-table">
       <thead>
@@ -676,7 +690,7 @@
 </div>
 
 <!-- ── TRIGGERS TAB ── -->
-<div class="tab-panel" id="panel-triggers" role="tabpanel"{% if analyze_run or report_runs %} hidden{% endif %}>
+<div class="tab-panel" id="panel-triggers" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
   <div class="card">
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
@@ -715,7 +729,7 @@
 // ── Tabs ──────────────────────────────────────────────────────────
 const tabBtns = document.querySelectorAll('.tab-btn');
 const tabPanels = {
-  run: document.getElementById('panel-run'),
+  record: document.getElementById('panel-record'),
   data: document.getElementById('panel-data'),
   prompts: document.getElementById('panel-prompts'),
   triggers: document.getElementById('panel-triggers'),
@@ -742,7 +756,8 @@ tabBtns.forEach((btn) => {
 
 (function initTabFromQuery() {
   const params = new URLSearchParams(window.location.search);
-  const tab = params.get('tab');
+  let tab = params.get('tab');
+  if (tab === 'run') tab = 'record'; // legacy alias
   if (tab && tabPanels[tab]) switchTab(tab);
 })();
 
@@ -846,13 +861,13 @@ function normalizeTriggersPayload(raw) {
 }
 
 // ── Live log via SSE ──────────────────────────────────────────────
-const ANALYZE_RUN = {{ analyze_run | tojson }};
-const REPORT_RUNS = {{ report_runs | tojson }};
+const ANALYZE_RECORDING = {{ analyze_recording | tojson }};
+const REPORT_RECORDINGS = {{ report_recordings | tojson }};
 const box = document.getElementById('log-box');
 const placeholder = document.getElementById('log-placeholder');
 let seenFirst = false;
 
-if (!ANALYZE_RUN && !REPORT_RUNS.length && box) {
+if (!ANALYZE_RECORDING && !REPORT_RECORDINGS.length && box) {
   const es = new EventSource('/api/log-stream');
   es.onmessage = (e) => {
     if (!seenFirst) { placeholder.remove(); seenFirst = true; }
@@ -1055,7 +1070,7 @@ function clearLoudnessChart() {
 function updateLoudnessChart(payload) {
   const empty = document.getElementById('live-chart-empty');
   const points = (payload && payload.points) || [];
-  if (!payload || !payload.running || !points.length) {
+  if (!payload || !payload.recording || !points.length) {
     clearLoudnessChart();
     return;
   }
@@ -1126,7 +1141,7 @@ async function pollStatus() {
       document.getElementById('stat-elapsed').textContent = fmtElapsed(d.elapsed_s);
       document.getElementById('stat-label').textContent = d.last_label || '—';
       document.getElementById('stat-dba').textContent = d.last_dba || '—';
-      if (!d.running) clearLoudnessChart();
+      if (!d.recording) clearLoudnessChart();
     }
     if (seriesRes.ok) {
       const series = await seriesRes.json();
@@ -1138,7 +1153,7 @@ async function pollStatus() {
   }
 }
 
-if (!ANALYZE_RUN && !REPORT_RUNS.length) {
+if (!ANALYZE_RECORDING && !REPORT_RECORDINGS.length) {
   ensureLoudnessChart();
   setInterval(pollStatus, 1000);
   pollStatus();
@@ -1154,7 +1169,7 @@ function updateDownloadLinks() {
   const preprocess = preprocessToggle.checked ? '1' : '0';
   document.querySelectorAll('.dl-btn[data-filename]').forEach((link) => {
     const name = link.getAttribute('data-filename');
-    link.href = `/runs/${encodeURIComponent(name)}?spectrum=${spectrum}&yamnet_preprocess=${preprocess}`;
+    link.href = `/recordings/${encodeURIComponent(name)}?spectrum=${spectrum}&yamnet_preprocess=${preprocess}`;
   });
 }
 
@@ -1164,8 +1179,8 @@ if (spectrumToggle && preprocessToggle) {
   updateDownloadLinks();
 }
 
-// ── Data tab run overview (scrub + optional audio) ────────────────
-const runOverviewEl = document.getElementById('run-overview');
+// ── Data tab recording overview (scrub + optional audio) ────────────────
+const recordingOverviewEl = document.getElementById('recording-overview');
 const ovStatus = document.getElementById('ov-status');
 const ovImpact = document.getElementById('ov-impact');
 const ovLabels = document.getElementById('ov-labels');
@@ -1459,10 +1474,10 @@ function renderOverviewSummary(data) {
   const dist = s.disturbances || {};
   const yam = s.yamnet || {};
   const clap = s.clap || {};
-  ovTitle.textContent = data.name || 'Run analysis';
+  ovTitle.textContent = data.name || 'Recording analysis';
   ovSub.textContent = [
     s.device_id || '',
-    s.run_id || '',
+    s.recording_id || '',
     fmtElapsed(s.duration_s),
     `${s.chunks || 0} chunks`,
   ].filter(Boolean).join(' · ');
@@ -1532,7 +1547,7 @@ function setupOverviewAudio(data) {
   }
   ovAudioNote.hidden = true;
   ovAudio.controls = true;
-  ovAudio.src = `/runs/${encodeURIComponent(data.wav_name)}`;
+  ovAudio.src = `/recordings/${encodeURIComponent(data.wav_name)}`;
   ovAudio.load();
 }
 
@@ -1554,15 +1569,15 @@ function tickOverviewAudioSync() {
   overviewRaf = requestAnimationFrame(tickOverviewAudioSync);
 }
 
-async function loadRunOverview(name, { loudThreshold } = {}) {
-  if (!runOverviewEl) return;
+async function loadRecordingOverview(name, { loudThreshold } = {}) {
+  if (!recordingOverviewEl) return;
   overviewSelectedName = name;
   setInlineStatus(ovStatus, 'Loading overview…');
   const thr = loudThreshold != null
     ? loudThreshold
     : (parseFloat(ovLoudThr && ovLoudThr.value) || 65);
   const { ok, data } = await apiFetch(
-    `/api/runs/${encodeURIComponent(name)}/overview?loud_threshold=${encodeURIComponent(thr)}`
+    `/api/recordings/${encodeURIComponent(name)}/overview?loud_threshold=${encodeURIComponent(thr)}`
   );
   if (!ok || !data || !data.ok) {
     setInlineStatus(ovStatus, (data && data.error) || 'Failed to load overview', 'err');
@@ -1594,15 +1609,15 @@ async function loadRunOverview(name, { loudThreshold } = {}) {
   }
   setInlineStatus(
     ovStatus,
-    data.points_full ? '' : 'Long run: series may be reduced for scrubbing; stats use all chunks.',
+    data.points_full ? '' : 'Long recording: series may be reduced for scrubbing; stats use all chunks.',
     data.points_full ? '' : 'ok'
   );
 }
 
-document.querySelectorAll('.run-row[data-run-name]').forEach((row) => {
+document.querySelectorAll('.recording-row[data-recording-name]').forEach((row) => {
   row.addEventListener('click', (e) => {
     if (e.target.closest('a, button, form, input')) return;
-    window.location.href = `/analyze/${encodeURIComponent(row.dataset.runName)}`;
+    window.location.href = `/analyze/${encodeURIComponent(row.dataset.recordingName)}`;
   });
 });
 
@@ -1621,7 +1636,7 @@ if (ovLoudThr) {
     if (!overviewSelectedName) return;
     clearTimeout(thrTimer);
     thrTimer = setTimeout(() => {
-      loadRunOverview(overviewSelectedName, { loudThreshold: parseFloat(ovLoudThr.value) || 65 });
+      loadRecordingOverview(overviewSelectedName, { loudThreshold: parseFloat(ovLoudThr.value) || 65 });
     }, 150);
   });
 }
@@ -1638,45 +1653,45 @@ if (ovAudio) {
   });
 }
 
-document.querySelectorAll('.run-actions').forEach((el) => {
+document.querySelectorAll('.recording-actions').forEach((el) => {
   el.addEventListener('click', (e) => e.stopPropagation());
 });
 
-if (ANALYZE_RUN) {
-  loadRunOverview(ANALYZE_RUN);
+if (ANALYZE_RECORDING) {
+  loadRecordingOverview(ANALYZE_RECORDING);
 }
 
-// ── Multi-run report dashboard ────────────────────────────────────
+// ── Multi-recording report dashboard ────────────────────────────────────
 const generateReportBtn = document.getElementById('generate-report-btn');
-const runsSelectAll = document.getElementById('runs-select-all');
+const recordingsSelectAll = document.getElementById('recordings-select-all');
 let reportHourlyChart = null;
 
-function selectedRunNames() {
-  return Array.from(document.querySelectorAll('.run-select:checked')).map((el) => el.value);
+function selectedRecordingNames() {
+  return Array.from(document.querySelectorAll('.recording-select:checked')).map((el) => el.value);
 }
 
 function syncReportButton() {
   if (!generateReportBtn) return;
-  generateReportBtn.disabled = selectedRunNames().length === 0;
+  generateReportBtn.disabled = selectedRecordingNames().length === 0;
 }
 
-document.querySelectorAll('.run-select').forEach((el) => {
+document.querySelectorAll('.recording-select').forEach((el) => {
   el.addEventListener('click', (e) => e.stopPropagation());
   el.addEventListener('change', syncReportButton);
 });
-if (runsSelectAll) {
-  runsSelectAll.addEventListener('change', () => {
-    document.querySelectorAll('.run-select').forEach((el) => {
-      el.checked = runsSelectAll.checked;
+if (recordingsSelectAll) {
+  recordingsSelectAll.addEventListener('change', () => {
+    document.querySelectorAll('.recording-select').forEach((el) => {
+      el.checked = recordingsSelectAll.checked;
     });
     syncReportButton();
   });
 }
 if (generateReportBtn) {
   generateReportBtn.addEventListener('click', () => {
-    const names = selectedRunNames();
+    const names = selectedRecordingNames();
     if (!names.length) return;
-    window.location.href = `/report?runs=${encodeURIComponent(names.join(','))}`;
+    window.location.href = `/report?recordings=${encodeURIComponent(names.join(','))}`;
   });
 }
 syncReportButton();
@@ -1687,7 +1702,7 @@ function renderReportImpact(zoneA) {
   el.innerHTML = [
     impactCard('Ambient L<sub>eq</sub>', zoneA.leq_db != null ? `${Number(zoneA.leq_db).toFixed(1)} dBA` : '—', zoneA.leq_context || ''),
     impactCard('Peak LAFmax', zoneA.peak_lafmax_db != null ? `${Number(zoneA.peak_lafmax_db).toFixed(1)} dBA` : '—', zoneA.peak_lafmax_at_local || ''),
-    impactCard('Chunks', String(zoneA.chunk_count || 0), `${(zoneA.runs || []).length} run(s)`),
+    impactCard('Chunks', String(zoneA.chunk_count || 0), `${(zoneA.recordings || []).length} recording(s)`),
     impactCard('Timezone', zoneA.timezone || '—', 'Local civil time'),
   ].join('');
 }
@@ -1806,7 +1821,7 @@ function renderReportHourly(zoneB) {
 async function loadDashboardReport(files) {
   const status = document.getElementById('rpt-status');
   setInlineStatus(status, 'Building report…');
-  const { ok, data } = await apiFetch('/api/runs/report', {
+  const { ok, data } = await apiFetch('/api/recordings/report', {
     method: 'POST',
     body: JSON.stringify({ files }),
   });
@@ -1832,8 +1847,8 @@ async function loadDashboardReport(files) {
   setInlineStatus(status, '');
 }
 
-if (REPORT_RUNS && REPORT_RUNS.length) {
-  loadDashboardReport(REPORT_RUNS);
+if (REPORT_RECORDINGS && REPORT_RECORDINGS.length) {
+  loadDashboardReport(REPORT_RECORDINGS);
 }
 
 // ── Shutdown ──────────────────────────────────────────────────────

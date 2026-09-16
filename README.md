@@ -43,6 +43,8 @@ INMP441 (I2S) → ALSA S32_LE @ 48 kHz
         ▼
   int32 → PCM align → float32 [-1, 1]
         │
+        │  (first ~2 s discarded: mic/ALSA startup pop)
+        │
         ├─ Branch A (48 kHz) ──────────────────────────────┐
         │   A-weighting IIR (pre-warped, stateful)         │
         │   rms_*, dBA_spl (LAeq,1s), LAFmax_dB            │
@@ -117,7 +119,7 @@ urban-sound-collector/
 ├── models/
 │   ├── yamnet.tflite           # Bundled classifier (~4 MB)
 │   └── yamnet_class_map.csv
-├── runs/                       # Local JSONL output (gitignored)
+├── recordings/                 # Local JSONL output (gitignored)
 └── logs/                       # Collector + web server logs (gitignored)
 ```
 
@@ -146,7 +148,7 @@ One JSON object per line (~1 Hz):
   "device_id": "pi-test-01",
   "created_at": "2026-08-12T14:14:34.317Z",
   "chunk_index": 0,
-  "run_id": "2026-08-12T14-14-27Z",
+  "recording_id": "2026-08-12T14-14-27Z",
   "rms_unweighted": 0.00851457,
   "rms_a_weighted": 0.0045808,
   "dBA_spl": 73.2,
@@ -215,7 +217,8 @@ One JSON object per line (~1 Hz):
 ```
 
 - **`created_at`**: UTC timestamp for time-series use
-- **`chunk_index`**: per-run counter (resets on restart)
+- **`chunk_index`**: per-recording counter (resets on restart)
+- **`recording_id`**: UTC start stamp for this recording (legacy files may still have `run_id`; readers accept either)
 - **`dBA_spl`**: relative LAeq,1s-style level over the ~0.975 s chunk (A-weighted RMS + calib; not absolute SPL)
 - **`LAFmax_dB`**: Fast (τ=125 ms) maximum A-weighted level in the chunk (same calib offset)
 - **`yamnet_preprocess`**: Branch B diagnostics (dynamic gain, L90 silence gate)
@@ -273,11 +276,11 @@ JSONL is **append + flush + fsync** after every chunk (~1 Hz), so completed
 events survive a process crash or power cut. At most the in-progress chunk is
 lost.
 
-Status/errors go to a **new file per run** under `logs/` (not `/tmp`, never
+Status/errors go to a **new file per recording** under `logs/` (not `/tmp`, never
 overwritten):
 
 ```text
-logs/<device_id>_<run_id>.log
+logs/<device_id>_<recording_id>.log
 ```
 
 Heartbeat lines are written about once per minute so you can confirm progress
@@ -291,13 +294,13 @@ reboot and overwrites itself if reused.
 ## Run
 
 ```bash
-mkdir -p runs logs
+mkdir -p recordings logs
 nohup timeout 3h python main.py \
   --device-id pi-test-01 \
   --alsa-device plughw:3,0 \
   --backend arecord \
   --quiet \
-  -o "runs/evening-$(date -u +%Y-%m-%dT%H-%MZ).jsonl" \
+  -o "recordings/evening-$(date -u +%Y-%m-%dT%H-%MZ).jsonl" \
   >/dev/null 2>&1 &
 ```
 
@@ -305,7 +308,7 @@ Collector logs still land in `logs/` (stderr is duplicated there). Check later:
 
 ```bash
 pgrep -af "main.py"
-ls -lh runs/ logs/
+ls -lh recordings/ logs/
 tail -n 20 logs/*.log
 ```
 
@@ -331,14 +334,14 @@ tail -n 20 logs/*.log
 | `--yamnet-gain-smooth-chunks` | `5` | Gain smoothing window (chunks) |
 | `--calib-offset` | `120.0` | Relative dBA offset |
 | `--quiet` | off | Suppress JSON on stdout |
-| `-o` | `runs/<device>_<run_id>.jsonl` | JSONL output (append + fsync) |
+| `-o` | `recordings/<device>_<recording_id>.jsonl` | JSONL output (append + fsync) |
 | `--no-spectrum` | off | Disable Branch C spectral analysis |
 | `--enable-clap` | off | Event-driven CLAP zero-shot; hybrid window gets same HPF as YAMNet + peak-norm (requires ONNX + rebuilt embeddings) |
 | `--record-wav` | off | Write ungained mono 16-bit WAV @ 48 kHz (sibling of `-o` by default) |
 | `--wav-path` | (from `-o`) | Explicit WAV path (implies recording) |
-| `--log-dir` | `logs` | Per-run log directory |
+| `--log-dir` | `logs` | Per-recording log directory |
 
-Stop with **Ctrl+C**, or let `timeout` end the run.
+Stop with **Ctrl+C**, or let `timeout` end the recording.
 
 ### CLAP (optional, event-driven)
 
@@ -359,7 +362,7 @@ python scripts/rebuild_clap_embeddings.py
 ```
 
 Or use the web UI: **Prompts** → confirm **ONNX ready** → **Rebuild embeddings**,
-then **Run** with Enable CLAP. Text ONNX loads only during rebuild (then freed);
+then **Start recording** with Enable CLAP. Text ONNX loads only during rebuild (then freed);
 audio ONNX stays resident while CLAP is enabled. Default cooldown is 5 s between
 **arms** (new hybrid captures).
 
@@ -373,13 +376,13 @@ python -m unittest discover -s tests -v
 
 ## Web UI (remote control + monitoring)
 
-A FastAPI web interface lets you start/stop runs and monitor status from any
+A FastAPI web interface lets you start/stop recordings and monitor status from any
 device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 (free, no port forwarding, automatic HTTPS).
 
 ### Features
 
-- Start a run from the **Record** tab with:
+- Start a recording from the **Record** tab with:
   - **Hours** input (e.g. `8`, or `168` for a week)
   - **Output file name** prefix (prefilled from time of day: `morning` /
     `day` / `evening` / `night`); UTC start stamp is always appended
@@ -391,15 +394,15 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
     absolute floor) and 200 ms peak sub-windows catch short impulses; gate closes
     after 2 chunks below open or too cold
   - Optional **Record audio** — ungained mic WAV next to the JSONL (~330 MB/hour)
-- Stop a running run
+- Stop an active recording
 - Live status: chunk count, elapsed time, last label, dBA, last CLAP (polls every 1 s)
 - Live **5‑minute loudness chart** (dBA + Gate L90 relative, YAMNet label-change markers, CLAP triggers)
 - Live log tail via Server-Sent Events (no page refresh needed)
 - **Data** tab: download past JSONL (optional omit `spectrum` /
-  `yamnet_preprocess`), download sibling WAV, delete a run (JSONL + WAV; blocked
-  while that run is active). **View** opens a per-run analysis screen
-  (`/analyze/<run>.jsonl`) with scrubbable loudness + optional synced WAV.
-  Multi-select runs → **Generate report** opens `/report` with a three-zone
+  `yamnet_preprocess`), download sibling WAV, delete a recording (JSONL + WAV; blocked
+  while that recording is active). **View** opens a per-recording analysis screen
+  (`/analyze/<name>.jsonl`) with scrubbable loudness + optional synced WAV.
+  Multi-select recordings → **Generate report** opens `/report` with a three-zone
   dashboard: ambient L<sub>eq</sub> + peak LAFmax, 24-hour hourly L<sub>eq</sub>
   (local time via `SITE_TIMEZONE`, default `Europe/Amsterdam`), and a
   **duration-weighted** sound diet from energy-envelope acoustic events
@@ -509,7 +512,7 @@ After reboot you should have:
 |---|---|
 | `cloudflared` | Auto-starts (named tunnel) |
 | `urban-sound-web` | Auto-starts (uvicorn on :8080) |
-| Collector run | Manual via web UI when you want |
+| Collector recording | Manual via web UI when you want |
 
 **Shut down from the web UI:** the **Power** section has a **Shut down Pi** button. It stops any active recording, waits one minute (configurable), then powers off. One-time setup so the web user can power off without a password:
 
@@ -530,7 +533,7 @@ Keep the page open until the countdown finishes and you see **Safe to unplug pow
 | `PORT` | `8080` | Web server port |
 | `DEVICE_ID` | *(hostname)* | Logical id in JSONL; empty = Pi hostname |
 | `SITE_LABEL` | *(empty)* | Human label shown in web UI (set per Pi) |
-| `SITE_TIMEZONE` | `Europe/Amsterdam` | IANA zone for multi-run report hours / night shading |
+| `SITE_TIMEZONE` | `Europe/Amsterdam` | IANA zone for multi-recording report hours / night shading |
 | `PUBLIC_URL` | *(empty)* | This Pi's public URL (set per Pi) |
 | `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device in UI |
 | `SHUTDOWN_GRACE_SEC` | `60` | Countdown before poweroff from web UI |
@@ -559,11 +562,11 @@ JSONL output uses **append + flush + `fsync`** after every chunk (~1 Hz), so
 completed events survive a process crash or power cut. At most the current
 ~1 s chunk in progress is lost.
 
-Logs go to `logs/<device>_<run_id>.log` — one file per run, never overwritten,
+Logs go to `logs/<device>_<recording_id>.log` — one file per recording, never overwritten,
 not in `/tmp`. A heartbeat line is written every ~60 chunks (~1 min) so you
 can confirm progress after a crash.
 
-Use `nohup ... & disown` when starting long runs so that closing SSH does not
+Use `nohup ... & disown` when starting long recordings so that closing SSH does not
 kill the collector.
 
 ---

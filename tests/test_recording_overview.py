@@ -1,11 +1,11 @@
-"""Tests for past-run overview loudness helpers."""
+"""Tests for past-recording overview loudness helpers."""
 
 from __future__ import annotations
 
 import unittest
 
-from core.run_overview import (
-    build_run_overview,
+from core.recording_overview import (
+    build_recording_overview,
     loud_disturbance_stats,
     percentile_nearest,
 )
@@ -45,7 +45,7 @@ class LoudDisturbanceStatsTests(unittest.TestCase):
         self.assertEqual(pct, 25.0)
 
 
-class BuildRunOverviewTests(unittest.TestCase):
+class BuildRecordingOverviewTests(unittest.TestCase):
     def test_summary_loud_and_percentiles(self) -> None:
         events = []
         for i, (dba, laf) in enumerate(
@@ -59,6 +59,7 @@ class BuildRunOverviewTests(unittest.TestCase):
             events.append(
                 {
                     "created_at": f"2026-09-11T12:00:{i:02d}.000Z",
+                    "recording_id": "2026-09-11T12-00-00Z",
                     "dBA_spl": dba,
                     "LAFmax_dB": laf,
                     "top_label": "Silence" if i % 2 == 0 else "Vehicle",
@@ -69,7 +70,7 @@ class BuildRunOverviewTests(unittest.TestCase):
                     },
                 }
             )
-        payload = build_run_overview(
+        payload = build_recording_overview(
             events,
             name="sample.jsonl",
             has_wav=False,
@@ -79,11 +80,31 @@ class BuildRunOverviewTests(unittest.TestCase):
         )
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["summary"]["chunks"], 4)
+        self.assertEqual(payload["summary"]["recording_id"], "2026-09-11T12-00-00Z")
         self.assertEqual(payload["summary"]["disturbances"]["loud_chunks"], 2)
         self.assertEqual(payload["summary"]["disturbances"]["loud_pct"], 50.0)
         self.assertEqual(payload["summary"]["loudness"]["dba_l50"], 55.0)
         self.assertEqual(len(payload["points"]), 4)
         self.assertTrue(payload["points_full"])
+
+    def test_dual_read_legacy_run_id(self) -> None:
+        events = [
+            {
+                "created_at": "2026-09-11T12:00:00.000Z",
+                "run_id": "legacy-id",
+                "dBA_spl": 50.0,
+                "LAFmax_dB": 55.0,
+                "top_label": "Silence",
+            }
+        ]
+        payload = build_recording_overview(
+            events,
+            name="legacy.jsonl",
+            has_wav=False,
+            wav_name=None,
+            recording_active=False,
+        )
+        self.assertEqual(payload["summary"]["recording_id"], "legacy-id")
 
 
 if __name__ == "__main__":

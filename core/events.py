@@ -17,16 +17,27 @@ def utc_now_iso() -> str:
     )
 
 
-def new_run_id() -> str:
-    """Create a per-process run identifier from the UTC start time."""
+def new_recording_id() -> str:
+    """Create a per-process recording identifier from the UTC start time."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+
+
+def event_recording_id(event: dict[str, Any] | None) -> str | None:
+    """Read ``recording_id``, falling back to legacy ``run_id``."""
+    if not isinstance(event, dict):
+        return None
+    for key in ("recording_id", "run_id"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
 
 
 def build_noise_event(
     *,
     device_id: str,
     chunk_index: int,
-    run_id: str,
+    recording_id: str,
     rms_unweighted: float,
     rms_a_weighted: float,
     dba_spl: float,
@@ -43,6 +54,7 @@ def build_noise_event(
 
     ``dBA_spl`` is the LAeq,1s-style A-weighted equivalent level for the chunk.
     ``LAFmax_dB`` is Fast (125 ms) maximum A-weighted level when provided.
+    New files write ``recording_id`` (legacy files may still have ``run_id``).
     """
     top_label = predictions[0]["label"] if predictions else "n/a"
     top_confidence = float(predictions[0]["confidence"]) if predictions else 0.0
@@ -51,7 +63,7 @@ def build_noise_event(
         "device_id": device_id,
         "created_at": created_at or utc_now_iso(),
         "chunk_index": chunk_index,
-        "run_id": run_id,
+        "recording_id": recording_id,
         "rms_unweighted": round(float(rms_unweighted), 8),
         "rms_a_weighted": round(float(rms_a_weighted), 8),
         "dBA_spl": round(float(dba_spl), 1),

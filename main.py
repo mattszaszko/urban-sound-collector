@@ -16,7 +16,11 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_SAMPLE_RATE
+from core.audio_constants import (
+    CAPTURE_CHUNK_SAMPLES,
+    CAPTURE_SAMPLE_RATE,
+    CAPTURE_STARTUP_DISCARD_SECONDS,
+)
 from core.audio_ring_buffer import AudioRingBuffer
 from core.capture_alsa import AlsAudioCapture
 from core.classifier_clap import ClapClassifier
@@ -36,7 +40,7 @@ from core.clap_trigger import (
     evaluate_arm,
     load_trigger_config,
 )
-from core.events import build_noise_event, new_run_id, utc_now_iso
+from core.events import build_noise_event, new_recording_id, utc_now_iso
 from core.host_identity import default_device_id
 from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
 from core.pcm import int32_frames_to_float32
@@ -280,20 +284,20 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def default_output_path(device_id: str, run_id: str) -> Path:
-    """Build a default JSONL path under runs/."""
+def default_output_path(device_id: str, recording_id: str) -> Path:
+    """Build a default JSONL path under recordings/."""
     safe_device = device_id.replace("/", "-").replace(" ", "_")
-    return Path("runs") / f"{safe_device}_{run_id}.jsonl"
+    return Path("recordings") / f"{safe_device}_{recording_id}.jsonl"
 
 
-def default_log_path(log_dir: Path, device_id: str, run_id: str) -> Path:
-    """Build a unique per-run log path (never overwrite previous runs)."""
+def default_log_path(log_dir: Path, device_id: str, recording_id: str) -> Path:
+    """Build a unique per-recording log path (never overwrite previous files)."""
     safe_device = device_id.replace("/", "-").replace(" ", "_")
-    return log_dir / f"{safe_device}_{run_id}.log"
+    return log_dir / f"{safe_device}_{recording_id}.log"
 
 
 def setup_logging(log_path: Path) -> None:
-    """Log to stderr and a durable per-run file under logs/."""
+    """Log to stderr and a durable per-recording file under logs/."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     root = logging.getLogger()
@@ -363,7 +367,7 @@ def stream_live(
     *,
     classifier: YamnetTFLiteClassifier,
     device_id: str,
-    run_id: str,
+    recording_id: str,
     alsa_device: str,
     backend: str,
     calib_offset: float,
@@ -383,6 +387,8 @@ def stream_live(
     Optional CLAP: hybrid 7 s pre-roll + 3 s post-roll after YAMNet wake
     (same HPF as Branch B, then peak-norm; no RMS AGC).
     Optional WAV: ungained mono 16-bit PCM @ capture rate.
+    Startup: discard the first ~2 s of PCM (mic/ALSA settle pop) before
+    any branch, WAV, or JSONL processing.
 
     Returns:
         Number of events written.
@@ -392,6 +398,9 @@ def stream_live(
     gated_chunks = 0
     clap_triggers = 0
     clap_skips = 0
+    startup_discard_samples_left = int(
+        round(CAPTURE_SAMPLE_RATE * CAPTURE_STARTUP_DISCARD_SECONDS)
+    )
     capture: AlsAudioCapture | None = None
     writer: JsonlWriter | None = None
     wav_writer: WavWriter | None = None
@@ -434,7 +443,7 @@ def stream_live(
         )
 
     logger.info(
-        "Opening INMP441 stream: device_id=%s, run_id=%s, alsa=%s, backend=%s, "
+        "Opening INMP441 stream: device_id=%s, recording_id=%s, alsa=%s, backend=%s, "
         "rate=%s Hz, format=S32_LE, chunk_samples=%s, calib_offset=%s, "
         "yamnet_hpf_hz=%s, yamnet_hpf_order=%s, yamnet_target_dbfs=%s, "
         "yamnet_ambient_gain_margin_db=%s, yamnet_effective_slack_db=%s, "
@@ -444,9 +453,9 @@ def stream_live(
         "yamnet_gate_ambient_chunks=%s, yamnet_gate_percentile=%s, "
         "yamnet_gate_delta_db=%s, yamnet_gate_delta_min_dbfs=%s, "
         "yamnet_gate_subwindow_ms=%s, yamnet_gain_smooth_chunks=%s, "
-        "model=%s, spectrum=%s",
+        "startup_discard_s=%s, model=%s, spectrum=%s",
         device_id,
-        run_id,
+        recording_id,
         alsa_device,
         backend,
         CAPTURE_SAMPLE_RATE,
@@ -467,6 +476,7 @@ def stream_live(
         yamnet_preprocessor.gate_delta_min_dbfs,
         yamnet_preprocessor.gate_subwindow_ms,
         yamnet_preprocessor.gain_smooth_chunks,
+        CAPTURE_STARTUP_DISCARD_SECONDS,
         MODEL_VERSION,
         enable_spectrum,
     )
@@ -489,6 +499,22 @@ def stream_live(
         )
 
         for raw_chunk in capture.iter_chunks():
+            # Discard leading PCM so the mic/ALSA power-on pop never reaches
+            # loudness, WAV, HPF state, CLAP ring, or JSONL.
+            if startup_discard_samples_left > 0:
+                take = min(int(raw_chunk.size), startup_discard_samples_left)
+                startup_discard_samples_left -= take
+                if startup_discard_samples_left > 0:
+                    continue
+                logger.info(
+                    "Discarded first %.1fs of capture (mic startup settle).",
+                    CAPTURE_STARTUP_DISCARD_SECONDS,
+                )
+                # If this chunk still has samples after the discard window,
+                # drop the whole chunk anyway so branches always see full
+                # ~0.975 s frames.
+                continue
+
             if events_written == 0:
                 logger.info("First audio chunk received; pipeline is live.")
             pcm = int32_frames_to_float32(raw_chunk)
@@ -666,7 +692,7 @@ def stream_live(
             result = build_noise_event(
                 device_id=device_id,
                 chunk_index=chunk_index,
-                run_id=run_id,
+                recording_id=recording_id,
                 rms_unweighted=metrics["rms_unweighted"],
                 rms_a_weighted=metrics["rms_a_weighted"],
                 dba_spl=metrics["dBA_spl"],
@@ -729,9 +755,9 @@ def main(argv: List[str] | None = None) -> int:
         Process exit code (0 on success, non-zero on failure).
     """
     args = parse_args(argv)
-    run_id = new_run_id()
-    output_path = args.output or default_output_path(args.device_id, run_id)
-    log_path = default_log_path(args.log_dir, args.device_id, run_id)
+    recording_id = new_recording_id()
+    output_path = args.output or default_output_path(args.device_id, recording_id)
+    log_path = default_log_path(args.log_dir, args.device_id, recording_id)
     print_stdout = not args.quiet
 
     setup_logging(log_path)
@@ -779,7 +805,7 @@ def main(argv: List[str] | None = None) -> int:
         events_written = stream_live(
             classifier=classifier,
             device_id=args.device_id,
-            run_id=run_id,
+            recording_id=recording_id,
             alsa_device=args.alsa_device,
             backend=args.backend,
             calib_offset=args.calib_offset,

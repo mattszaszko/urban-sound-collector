@@ -6,8 +6,9 @@ __pycache__/
 venv/
 .env
 
-# Local run output
-runs/
+# Local recording output
+recordings/
+runs/   # legacy path; prefer recordings/
 logs/
 *.jsonl
 *.log
