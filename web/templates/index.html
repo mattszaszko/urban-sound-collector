@@ -265,8 +265,56 @@
             align-items:center;margin-bottom:.45rem;font-size:.8rem}
   .diet-bar{height:.55rem;background:var(--border);border-radius:999px;overflow:hidden}
   .diet-bar > i{display:block;height:100%;background:var(--accent);border-radius:999px}
+  .report-options{display:flex;flex-direction:column;gap:.75rem;margin-bottom:1rem;
+                  padding:.85rem;background:var(--bg);border:1px solid var(--border);
+                  border-radius:8px}
+  .report-options .export-title{margin-bottom:0}
+  .report-options-grid{display:grid;grid-template-columns:1fr;gap:.75rem 1rem}
+  .report-options-grid label{display:block;font-size:.78rem;font-weight:600;margin:0 0 .3rem}
+  .report-options-grid input[type="number"]{width:100%;max-width:11rem;margin:0}
+  .report-options .field-note{margin-top:.25rem}
+  .report-threshold-fields{display:none;margin-top:.55rem}
+  .report-threshold-fields.active{display:block}
+  .report-pie-wrap{display:grid;grid-template-columns:1fr;gap:.75rem;margin:.35rem 0 .65rem}
+  .report-pie-panel{background:var(--bg);border:1px solid var(--border);border-radius:8px;
+                    padding:.55rem .65rem .75rem}
+  .report-pie-panel h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
+                       color:var(--muted);margin:0 0 .35rem;font-weight:600}
+  .report-pie-box{position:relative;height:220px}
+  .report-stack-box{position:relative;height:280px;background:var(--bg);
+                    border:1px solid var(--border);border-radius:8px;padding:.35rem;
+                    margin:.35rem 0 .65rem}
+  .report-budget-meta{font-size:.72rem;color:var(--muted);margin:0 0 .55rem;line-height:1.4}
+  .report-budget-legend{display:flex;flex-wrap:wrap;gap:.4rem .75rem;margin:.15rem 0 .55rem;
+                        font-size:.72rem;color:var(--muted)}
+  .report-budget-legend span{display:inline-flex;align-items:center;gap:.35rem}
+  .report-budget-legend i{width:10px;height:10px;border-radius:2px;display:inline-block;
+                          border:1px solid var(--border)}
+  #rpt-budget-total,#rpt-budget-daynight,#rpt-budget-hourly{display:none}
+  #rpt-budget-total.active,#rpt-budget-daynight.active,#rpt-budget-hourly.active{display:block}
+  @media(min-width:640px){
+    .report-options-grid{grid-template-columns:1fr 1fr}
+    .report-pie-wrap.dual{grid-template-columns:1fr 1fr}
+    .report-pie-box{height:240px}
+  }
   .takeaway-box{margin-top:.85rem;padding:.85rem;border:1px solid var(--border);
                 border-radius:8px;background:var(--bg);font-size:.88rem;line-height:1.45}
+  .report-methodology{margin-top:1rem;border:1px solid var(--border);border-radius:8px;
+                      background:var(--bg)}
+  .report-methodology > summary{cursor:pointer;list-style:none;padding:.7rem .85rem;
+                                font-size:.78rem;font-weight:600;color:var(--muted);
+                                user-select:none}
+  .report-methodology > summary::-webkit-details-marker{display:none}
+  .report-methodology > summary::before{content:'▸';display:inline-block;width:1rem;
+                                        color:var(--accent)}
+  .report-methodology[open] > summary::before{content:'▾'}
+  .report-methodology[open] > summary{border-bottom:1px solid var(--border);color:var(--text)}
+  .report-methodology-body{padding:.75rem .85rem .9rem;font-size:.78rem;color:var(--muted);
+                           line-height:1.5}
+  .report-methodology-body p{margin:0 0 .65rem}
+  .report-methodology-body p:last-child{margin-bottom:0}
+  .report-methodology-body strong{color:var(--text);font-weight:600}
+  .report-methodology-body em{font-style:normal;color:var(--text)}
   .settings-section-title{font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;
                           color:var(--muted);margin:1.5rem 0 .85rem;font-weight:600}
   .data-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
@@ -635,6 +683,41 @@
     </label>
     <button type="button" class="btn" id="generate-report-btn" disabled>Generate report</button>
   </div>
+  <div class="report-options" id="report-options">
+    <div class="export-title">Report options</div>
+    <div class="field-note" style="margin:0 0 .15rem">
+      Applied when you generate a report. Chunk ≈ 1&nbsp;s.
+    </div>
+    <div class="report-options-grid">
+      <div>
+        <label for="rpt-opt-min-event">Min event length (chunks / ≈seconds)</label>
+        <input type="number" id="rpt-opt-min-event" min="0" step="1" value="2">
+        <div class="field-note">Shorter elevated episodes are ignored in “What is making the noise”.</div>
+      </div>
+      <div>
+        <label for="rpt-opt-max-gap">Quiet-chunk bridge (max_gap_chunks)</label>
+        <input type="number" id="rpt-opt-max-gap" min="0" step="1" value="2">
+        <div class="field-note">Max consecutive below-threshold chunks kept inside one event.</div>
+      </div>
+      <div style="grid-column:1 / -1">
+        <div style="font-size:.78rem;font-weight:600;margin-bottom:.35rem">Active threshold</div>
+        <div class="radio-group" id="rpt-opt-threshold-mode">
+          <label><input type="radio" name="rpt-threshold-mode" value="absolute" checked> Absolute dBA</label>
+          <label><input type="radio" name="rpt-threshold-mode" value="l90_offset"> L90 + offset</label>
+        </div>
+        <div class="report-threshold-fields active" id="rpt-opt-abs-fields">
+          <label for="rpt-opt-threshold-db">Absolute threshold (dBA)</label>
+          <input type="number" id="rpt-opt-threshold-db" step="0.5" value="45">
+          <div class="field-note">Chunk counts as elevated when dBA ≥ this value.</div>
+        </div>
+        <div class="report-threshold-fields" id="rpt-opt-l90-fields">
+          <label for="rpt-opt-l90-offset">Offset above selection L90 (dBA)</label>
+          <input type="number" id="rpt-opt-l90-offset" step="0.5" value="5">
+          <div class="field-note">Threshold = L90 of selected recordings + this offset (negative allowed).</div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="export-options" id="export-options">
     <div class="export-title">Download options</div>
     <label class="check-row">
@@ -765,14 +848,79 @@
     <div class="report-band-legend" id="rpt-band-legend" aria-label="Sound level bands"></div>
   </div>
   <div class="card report-zone" id="report-zone-c">
-    <h2>What is making the noise?</h2>
-    <div class="overview-chart-note">Sound diet by event duration (not event count)</div>
-    <div id="rpt-diet"></div>
-    <div class="takeaway-box" id="rpt-takeaway"></div>
-    <div style="margin-top:.85rem">
-      <div class="overview-chart-note">Top acoustic events</div>
-      <div id="rpt-events" class="overview-detail"></div>
+    <div class="report-zone-head">
+      <h2>What is making the noise?</h2>
+      <div class="report-view-toggle" role="group" aria-label="Time budget view">
+        <button type="button" class="report-view-btn active" data-budget-view="total" id="rpt-budget-view-total">Total</button>
+        <button type="button" class="report-view-btn" data-budget-view="daynight" id="rpt-budget-view-daynight">Day &amp; night</button>
+        <button type="button" class="report-view-btn" data-budget-view="hourly" id="rpt-budget-view-hourly">By hour</button>
+      </div>
     </div>
+    <div class="report-budget-meta" id="rpt-budget-meta"></div>
+    <div class="report-budget-legend" id="rpt-budget-legend" aria-label="Time budget categories"></div>
+    <div id="rpt-budget-total" class="active">
+      <div class="overview-chart-note">Time budget for the whole selection (includes Relative silence)</div>
+      <div class="report-pie-wrap">
+        <div class="report-pie-panel">
+          <div class="report-pie-box">
+            <canvas id="report-budget-total-chart" aria-label="Total time budget pie"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="rpt-budget-daynight">
+      <div class="overview-chart-note">Day (07:00–21:59) vs night (22:00–06:59) local time</div>
+      <div class="report-pie-wrap dual">
+        <div class="report-pie-panel">
+          <h3>Day</h3>
+          <div class="report-pie-box">
+            <canvas id="report-budget-day-chart" aria-label="Day time budget pie"></canvas>
+          </div>
+        </div>
+        <div class="report-pie-panel">
+          <h3>Night</h3>
+          <div class="report-pie-box">
+            <canvas id="report-budget-night-chart" aria-label="Night time budget pie"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="rpt-budget-hourly">
+      <div class="overview-chart-note">100% stacked composition for each local hour of the recording span</div>
+      <div class="report-stack-box">
+        <canvas id="report-budget-hourly-chart" aria-label="Hourly time budget stacked bars"></canvas>
+      </div>
+    </div>
+    <div class="takeaway-box" id="rpt-takeaway"></div>
+    <details class="report-methodology">
+      <summary>How this report is built</summary>
+      <div class="report-methodology-body">
+        <p>
+          Each recording is a stream of ~1&nbsp;s chunks with an A-weighted level (dBA)
+          and optional YAMNet / gate metadata.
+        </p>
+        <p>
+          <strong>Time budget charts</strong> classify every chunk: gated chunks count as
+          <em>Relative silence</em>; otherwise the chunk’s eligible YAMNet label is mapped
+          to a macro category (Traffic &amp; Transit, Human &amp; Community, and so on).
+          Shares are duration-weighted (chunk count × ~1&nbsp;s), including silence.
+          Day is 07:00–21:59 local time; night is 22:00–06:59.
+        </p>
+        <p>
+          <strong>Acoustic events</strong> (used for the takeaway’s “driven primarily by…”
+          line) are separate: continuous runs of chunks at or above the active dBA
+          threshold, with up to <em>max gap</em> quieter chunks bridged inside one event.
+          Events shorter than the minimum length are dropped. The active threshold is
+          either a fixed dBA value or selection L90 plus an offset — set on the Data tab
+          before you generate the report.
+        </p>
+        <p>
+          Noise-profile hourly levels use energetic L<sub>eq</sub>; soft bands show
+          within-hour L90–L10; bars show the share of gated (“noisy moment”) chunks in
+          that hour.
+        </p>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -940,6 +1088,12 @@ function refreshChartsForColorMode() {
     applyChartScaleColors(reportHourlyChart);
     reportHourlyChart.update('none');
   }
+  [reportBudgetTotalChart, reportBudgetDayChart, reportBudgetNightChart, reportBudgetHourlyChart]
+    .filter(Boolean)
+    .forEach((chart) => {
+      applyChartScaleColors(chart);
+      chart.update('none');
+    });
 }
 
 function applyReportHourlyDatasetColors(chart) {
@@ -977,6 +1131,12 @@ function setColorMode(mode) {
 let loudnessChart = null;
 let overviewChart = null;
 let reportHourlyChart = null;
+let reportBudgetTotalChart = null;
+let reportBudgetDayChart = null;
+let reportBudgetNightChart = null;
+let reportBudgetHourlyChart = null;
+let reportZoneC = null;
+let reportBudgetView = 'total';
 
 (function initColorModeToggle() {
   syncColorModeToggle();
@@ -2143,6 +2303,22 @@ if (ANALYZE_RECORDING) {
 // ── Multi-recording report dashboard ────────────────────────────────────
 const generateReportBtn = document.getElementById('generate-report-btn');
 const recordingsSelectAll = document.getElementById('recordings-select-all');
+const REPORT_OPTIONS_KEY = 'usc-report-options';
+
+const TIME_BUDGET_COLORS = {
+  'Relative silence': '#94a3b8',
+  'Traffic & Transit': '#0ea5e9',
+  'Human & Community': '#f59e0b',
+  'Environmental & Weather': '#22c55e',
+  'Infrastructure & Mechanical': '#a855f7',
+  'Unclassified / Ambient': '#64748b',
+};
+
+function budgetColor(category, index) {
+  if (TIME_BUDGET_COLORS[category]) return TIME_BUDGET_COLORS[category];
+  const fallback = ['#14b8a6', '#e11d48', '#6366f1', '#84cc16', '#f97316'];
+  return fallback[index % fallback.length];
+}
 
 function selectedRecordingNames() {
   return Array.from(document.querySelectorAll('.recording-select:checked')).map((el) => el.value);
@@ -2152,6 +2328,105 @@ function syncReportButton() {
   if (!generateReportBtn) return;
   generateReportBtn.disabled = selectedRecordingNames().length === 0;
 }
+
+function syncThresholdModeFields() {
+  const mode = (document.querySelector('input[name="rpt-threshold-mode"]:checked') || {}).value || 'absolute';
+  const abs = document.getElementById('rpt-opt-abs-fields');
+  const l90 = document.getElementById('rpt-opt-l90-fields');
+  if (abs) abs.classList.toggle('active', mode === 'absolute');
+  if (l90) l90.classList.toggle('active', mode === 'l90_offset');
+}
+
+function readReportOptionsFromForm() {
+  const minEl = document.getElementById('rpt-opt-min-event');
+  const gapEl = document.getElementById('rpt-opt-max-gap');
+  const thrEl = document.getElementById('rpt-opt-threshold-db');
+  const offEl = document.getElementById('rpt-opt-l90-offset');
+  const mode = (document.querySelector('input[name="rpt-threshold-mode"]:checked') || {}).value || 'absolute';
+  const minEvent = Math.max(0, parseInt(minEl && minEl.value, 10));
+  const maxGap = Math.max(0, parseInt(gapEl && gapEl.value, 10));
+  const thresholdDb = Number(thrEl && thrEl.value);
+  const l90Offset = Number(offEl && offEl.value);
+  return {
+    min_event_chunks: Number.isFinite(minEvent) ? minEvent : 2,
+    max_gap_chunks: Number.isFinite(maxGap) ? maxGap : 2,
+    threshold_mode: mode === 'l90_offset' ? 'l90_offset' : 'absolute',
+    threshold_db: Number.isFinite(thresholdDb) ? thresholdDb : 45,
+    l90_offset_db: Number.isFinite(l90Offset) ? l90Offset : 5,
+  };
+}
+
+function applyReportOptionsToForm(opts) {
+  if (!opts) return;
+  const minEl = document.getElementById('rpt-opt-min-event');
+  const gapEl = document.getElementById('rpt-opt-max-gap');
+  const thrEl = document.getElementById('rpt-opt-threshold-db');
+  const offEl = document.getElementById('rpt-opt-l90-offset');
+  if (minEl && opts.min_event_chunks != null) minEl.value = String(opts.min_event_chunks);
+  if (gapEl && opts.max_gap_chunks != null) gapEl.value = String(opts.max_gap_chunks);
+  if (thrEl && opts.threshold_db != null) thrEl.value = String(opts.threshold_db);
+  if (offEl && opts.l90_offset_db != null) offEl.value = String(opts.l90_offset_db);
+  const mode = opts.threshold_mode === 'l90_offset' ? 'l90_offset' : 'absolute';
+  document.querySelectorAll('input[name="rpt-threshold-mode"]').forEach((el) => {
+    el.checked = el.value === mode;
+  });
+  syncThresholdModeFields();
+}
+
+function persistReportOptions(opts) {
+  try { localStorage.setItem(REPORT_OPTIONS_KEY, JSON.stringify(opts)); } catch (e) { /* ignore */ }
+}
+
+function loadPersistedReportOptions() {
+  try {
+    const raw = localStorage.getItem(REPORT_OPTIONS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function reportOptionsFromQuery() {
+  const q = new URLSearchParams(window.location.search);
+  if (!q.has('min_event_chunks') && !q.has('threshold_mode') && !q.has('max_gap_chunks')) {
+    return null;
+  }
+  const minEvent = Math.max(0, parseInt(q.get('min_event_chunks') || '2', 10));
+  const maxGap = Math.max(0, parseInt(q.get('max_gap_chunks') || '2', 10));
+  const mode = q.get('threshold_mode') === 'l90_offset' ? 'l90_offset' : 'absolute';
+  const thresholdDb = Number(q.get('threshold_db') || '45');
+  const l90Offset = Number(q.get('l90_offset_db') || '5');
+  return {
+    min_event_chunks: Number.isFinite(minEvent) ? minEvent : 2,
+    max_gap_chunks: Number.isFinite(maxGap) ? maxGap : 2,
+    threshold_mode: mode,
+    threshold_db: Number.isFinite(thresholdDb) ? thresholdDb : 45,
+    l90_offset_db: Number.isFinite(l90Offset) ? l90Offset : 5,
+  };
+}
+
+function currentReportOptions() {
+  return reportOptionsFromQuery()
+    || readReportOptionsFromForm()
+    || { min_event_chunks: 2, max_gap_chunks: 2, threshold_mode: 'absolute', threshold_db: 45, l90_offset_db: 5 };
+}
+
+(function initReportOptionsUi() {
+  applyReportOptionsToForm(loadPersistedReportOptions());
+  syncThresholdModeFields();
+  document.querySelectorAll('input[name="rpt-threshold-mode"]').forEach((el) => {
+    el.addEventListener('change', () => {
+      syncThresholdModeFields();
+      persistReportOptions(readReportOptionsFromForm());
+    });
+  });
+  ['rpt-opt-min-event', 'rpt-opt-max-gap', 'rpt-opt-threshold-db', 'rpt-opt-l90-offset'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => persistReportOptions(readReportOptionsFromForm()));
+  });
+})();
 
 document.querySelectorAll('.recording-select').forEach((el) => {
   el.addEventListener('click', (e) => e.stopPropagation());
@@ -2169,7 +2444,16 @@ if (generateReportBtn) {
   generateReportBtn.addEventListener('click', () => {
     const names = selectedRecordingNames();
     if (!names.length) return;
-    window.location.href = `/report?recordings=${encodeURIComponent(names.join(','))}`;
+    const opts = readReportOptionsFromForm();
+    persistReportOptions(opts);
+    const params = new URLSearchParams();
+    params.set('recordings', names.join(','));
+    params.set('min_event_chunks', String(opts.min_event_chunks));
+    params.set('max_gap_chunks', String(opts.max_gap_chunks));
+    params.set('threshold_mode', opts.threshold_mode);
+    params.set('threshold_db', String(opts.threshold_db));
+    params.set('l90_offset_db', String(opts.l90_offset_db));
+    window.location.href = `/report?${params.toString()}`;
   });
 }
 syncReportButton();
@@ -2196,36 +2480,181 @@ function renderReportImpact(zoneA) {
   ].join('');
 }
 
-function renderReportDiet(zoneC) {
-  const el = document.getElementById('rpt-diet');
-  if (!el) return;
-  const diet = zoneC.sound_diet || [];
-  if (!diet.length) {
-    el.innerHTML = '<div class="empty">No elevated acoustic events in this selection.</div>';
-    return;
+function destroyChart(chart) {
+  if (chart) {
+    try { chart.destroy(); } catch (e) { /* ignore */ }
   }
-  el.innerHTML = diet.map((row) => {
-    const pct = Number(row.pct) || 0;
-    return `<div class="diet-row">
-      <div>${row.macro}</div>
-      <div class="diet-bar"><i style="width:${Math.min(100, pct)}%"></i></div>
-      <div style="text-align:right">${pct.toFixed(1)}%</div>
-    </div>`;
-  }).join('');
+  return null;
 }
 
-function renderReportEvents(zoneC) {
-  const el = document.getElementById('rpt-events');
+function setReportBudgetView(view) {
+  const next = (view === 'daynight' || view === 'hourly') ? view : 'total';
+  reportBudgetView = next;
+  document.querySelectorAll('[data-budget-view]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-budget-view') === next);
+  });
+  ['total', 'daynight', 'hourly'].forEach((name) => {
+    const panel = document.getElementById(`rpt-budget-${name}`);
+    if (panel) panel.classList.toggle('active', name === next);
+  });
+}
+
+document.querySelectorAll('[data-budget-view]').forEach((btn) => {
+  btn.addEventListener('click', () => setReportBudgetView(btn.getAttribute('data-budget-view')));
+});
+
+function upsertPieChart(existing, canvasId, rows) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return destroyChart(existing);
+  const labels = (rows || []).map((r) => r.category);
+  const values = (rows || []).map((r) => Number(r.pct) || 0);
+  const colors = labels.map((lab, i) => budgetColor(lab, i));
+  const tooltipCb = {
+    label(ctx) {
+      const host = ctx.chart;
+      const row = ((host && host.$budgetRows) || [])[ctx.dataIndex] || {};
+      const pct = Number(ctx.parsed) || 0;
+      const secs = row.seconds != null ? ` · ${Number(row.seconds).toFixed(0)}s` : '';
+      return ` ${ctx.label}: ${pct.toFixed(1)}%${secs}`;
+    },
+  };
+  if (existing) {
+    existing.data.labels = labels;
+    existing.data.datasets[0].data = values;
+    existing.data.datasets[0].backgroundColor = colors;
+    existing.data.datasets[0].borderColor = cssVar('--surface') || '#0f172a';
+    existing.$budgetRows = rows || [];
+    existing.update('none');
+    return existing;
+  }
+  const chart = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderWidth: 1,
+        borderColor: cssVar('--surface') || '#0f172a',
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: tooltipCb },
+      },
+    },
+  });
+  chart.$budgetRows = rows || [];
+  return chart;
+}
+
+function renderBudgetLegend(categories) {
+  const el = document.getElementById('rpt-budget-legend');
   if (!el) return;
-  const rows = zoneC.acoustic_events_top || [];
-  if (!rows.length) {
-    el.textContent = 'No events.';
+  el.innerHTML = (categories || []).map((cat, i) =>
+    `<span><i style="background:${budgetColor(cat, i)}"></i>${cat}</span>`
+  ).join('');
+}
+
+function renderBudgetMeta(meta, budget) {
+  const el = document.getElementById('rpt-budget-meta');
+  if (!el) return;
+  const seg = (meta && meta.segmentation) || {};
+  const opts = (meta && meta.report_options) || {};
+  const mode = opts.threshold_mode || seg.threshold_mode || 'absolute';
+  let thrLine;
+  if (mode === 'l90_offset') {
+    const l90 = opts.l90_db_used != null ? opts.l90_db_used : seg.l90_db_used;
+    const off = opts.l90_offset_db != null ? opts.l90_offset_db : seg.l90_offset_db;
+    thrLine = `Active threshold L90${l90 != null ? ` ${Number(l90).toFixed(1)}` : ''} + ${Number(off).toFixed(1)} = ${Number(opts.active_dba_threshold ?? seg.active_dba_threshold).toFixed(1)} dBA`;
+  } else {
+    thrLine = `Active threshold ${Number(opts.active_dba_threshold ?? seg.active_dba_threshold ?? 45).toFixed(1)} dBA (absolute)`;
+  }
+  const bits = [
+    thrLine,
+    `min event ${opts.min_event_chunks ?? seg.min_event_chunks ?? 2} chunk(s)`,
+    `bridge ${opts.max_gap_chunks ?? seg.max_gap_chunks ?? 2}`,
+    budget && budget.seconds_total != null ? `${Number(budget.seconds_total).toFixed(0)}s classified` : null,
+  ].filter(Boolean);
+  el.textContent = bits.join(' · ');
+}
+
+function renderTimeBudget(zoneC, meta) {
+  const budget = (zoneC && zoneC.time_budget) || {};
+  renderBudgetMeta(meta, budget);
+  renderBudgetLegend(budget.categories || []);
+  reportBudgetTotalChart = upsertPieChart(
+    reportBudgetTotalChart, 'report-budget-total-chart', budget.total || []
+  );
+  reportBudgetDayChart = upsertPieChart(
+    reportBudgetDayChart, 'report-budget-day-chart', budget.day || []
+  );
+  reportBudgetNightChart = upsertPieChart(
+    reportBudgetNightChart, 'report-budget-night-chart', budget.night || []
+  );
+  renderHourlyBudgetStack(budget);
+}
+
+function renderHourlyBudgetStack(budget) {
+  const canvas = document.getElementById('report-budget-hourly-chart');
+  if (!canvas || typeof Chart === 'undefined') {
+    reportBudgetHourlyChart = destroyChart(reportBudgetHourlyChart);
     return;
   }
-  el.innerHTML = rows.map((e) =>
-    `<div style="margin-bottom:.35rem"><strong>${e.resolved_label}</strong> · ${e.macro}` +
-    ` · ${Number(e.duration_s).toFixed(1)}s · max ${e.max_dba} dBA · ${e.start_local}</div>`
-  ).join('');
+  const hours = budget.hourly || [];
+  const categories = budget.categories || [];
+  const labels = hours.map((h) => h.label || `${h.hour}:00`);
+  const datasets = categories.map((cat, idx) => ({
+    label: cat,
+    data: hours.map((h) => {
+      const row = (h.shares || []).find((s) => s.category === cat);
+      return row ? Number(row.pct) || 0 : 0;
+    }),
+    backgroundColor: budgetColor(cat, idx),
+    borderWidth: 0,
+    stack: 'budget',
+  }));
+  if (reportBudgetHourlyChart) {
+    reportBudgetHourlyChart.data.labels = labels;
+    reportBudgetHourlyChart.data.datasets = datasets;
+    applyChartScaleColors(reportBudgetHourlyChart);
+    reportBudgetHourlyChart.update('none');
+    return;
+  }
+  reportBudgetHourlyChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          stacked: true,
+          ticks: { maxRotation: 45, minRotation: 0, autoSkip: true, maxTicksLimit: 16 },
+        },
+        y: {
+          stacked: true,
+          min: 0,
+          max: 100,
+          title: { display: true, text: '% of hour' },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              return ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(1)}%`;
+            },
+          },
+        },
+      },
+    },
+  });
+  applyChartScaleColors(reportBudgetHourlyChart);
 }
 
 function ensureReportHourlyChart() {
@@ -2677,6 +3106,7 @@ function applyReportPayload(payload) {
   const b = (payload && payload.zone_b) || {};
   const c = (payload && payload.zone_c) || {};
   reportZoneB = b;
+  reportZoneC = c;
   document.getElementById('rpt-header').textContent = a.header_line || 'Report';
   const nRec = (a.recordings || []).length;
   document.getElementById('rpt-sub').textContent = [
@@ -2686,8 +3116,8 @@ function applyReportPayload(payload) {
   ].filter(Boolean).join(' · ');
   renderReportImpact(a);
   setReportProfileView(b.default_view || 'timeline');
-  renderReportDiet(c);
-  renderReportEvents(c);
+  setReportBudgetView(reportBudgetView || 'total');
+  renderTimeBudget(c, payload.meta || {});
   document.getElementById('rpt-takeaway').textContent = c.takeaway || '';
 }
 
@@ -2702,13 +3132,21 @@ async function loadDashboardReport(files) {
   document.getElementById('rpt-header').textContent = 'Building report…';
   document.getElementById('rpt-sub').textContent = '';
 
+  const opts = currentReportOptions();
   let response;
   try {
     response = await fetch('/api/recordings/report', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files }),
+      body: JSON.stringify({
+        files,
+        min_event_chunks: opts.min_event_chunks,
+        max_gap_chunks: opts.max_gap_chunks,
+        threshold_mode: opts.threshold_mode,
+        threshold_db: opts.threshold_db,
+        l90_offset_db: opts.l90_offset_db,
+      }),
     });
   } catch (err) {
     setReportProgress({

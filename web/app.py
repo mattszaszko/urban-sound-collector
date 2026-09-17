@@ -12,7 +12,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import AsyncIterator, Iterator
+from typing import Any, AsyncIterator, Iterator
 
 import psutil
 import uvicorn
@@ -622,6 +622,11 @@ def _build_report_ndjson(
     files: list[str],
     *,
     min_confidence: float | None,
+    min_event_chunks: int | None = None,
+    max_gap_chunks: int | None = None,
+    threshold_mode: str | None = None,
+    threshold_db: float | None = None,
+    l90_offset_db: float | None = None,
 ) -> Iterator[str]:
     """Yield NDJSON progress lines, then a final done/error object."""
 
@@ -720,6 +725,11 @@ def _build_report_ndjson(
                 timezone_name=SITE_TIMEZONE,
                 site_label=SITE_LABEL or None,
                 min_confidence=min_confidence,
+                min_event_chunks=min_event_chunks,
+                max_gap_chunks=max_gap_chunks,
+                threshold_mode=threshold_mode,
+                threshold_db=threshold_db,
+                l90_offset_db=l90_offset_db,
             )
         except MemoryError:
             yield _line(
@@ -1232,8 +1242,45 @@ async def api_recordings_report(request: Request):
     except (TypeError, ValueError):
         min_confidence = None
 
+    def _opt_nonneg_int(raw: Any) -> int | None:
+        if raw is None or raw == "":
+            return None
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return None
+
+    def _opt_float(raw: Any) -> float | None:
+        if raw is None or raw == "":
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    min_event_chunks = _opt_nonneg_int(body.get("min_event_chunks"))
+    max_gap_chunks = _opt_nonneg_int(body.get("max_gap_chunks"))
+    threshold_mode_raw = body.get("threshold_mode")
+    threshold_mode = (
+        str(threshold_mode_raw).strip().lower()
+        if isinstance(threshold_mode_raw, str) and threshold_mode_raw.strip()
+        else None
+    )
+    if threshold_mode not in {None, "absolute", "l90_offset"}:
+        threshold_mode = None
+    threshold_db = _opt_float(body.get("threshold_db"))
+    l90_offset_db = _opt_float(body.get("l90_offset_db"))
+
     return StreamingResponse(
-        _build_report_ndjson(files, min_confidence=min_confidence),
+        _build_report_ndjson(
+            files,
+            min_confidence=min_confidence,
+            min_event_chunks=min_event_chunks,
+            max_gap_chunks=max_gap_chunks,
+            threshold_mode=threshold_mode,
+            threshold_db=threshold_db,
+            l90_offset_db=l90_offset_db,
+        ),
         media_type="application/x-ndjson",
         headers={
             "Cache-Control": "no-cache",

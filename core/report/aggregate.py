@@ -6,8 +6,10 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any
 
+from core.audio_constants import YAMNET_CHUNK_DURATION_SECONDS
 from core.recording_overview import percentile_nearest
 from core.report.copy import build_takeaway
+from core.report.macros import label_to_macro
 from core.report.segment import (
     AcousticChunk,
     AcousticEvent,
@@ -21,10 +23,13 @@ from core.report.timeutil import (
     format_local_date,
     resolve_zone,
 )
-from core.report.votes import load_display_theme_map, load_label_map
+from core.report.votes import MACRO_UNCLASSIFIED, load_display_theme_map, load_label_map
 
 NIGHT_HOURS = {22, 23, 0, 1, 2, 3, 4, 5, 6}
 DAY_HOURS = set(range(7, 22))
+RELATIVE_SILENCE = "Relative silence"
+DEFAULT_ACTIVE_DBA_THRESHOLD = 45.0
+DEFAULT_L90_OFFSET_DB = 5.0
 
 
 def leq_context(leq_db: float | None) -> str:
@@ -94,6 +99,206 @@ def sound_diet_from_events(events: list[AcousticEvent]) -> list[dict[str, Any]]:
         )
     return rows
 
+
+def _clamp_nonneg_int(value: Any, default: int) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, n)
+
+
+def _as_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def apply_report_segmentation_overrides(
+    label_map: dict[str, Any],
+    *,
+    min_event_chunks: int | None = None,
+    max_gap_chunks: int | None = None,
+    threshold_mode: str | None = None,
+    threshold_db: float | None = None,
+    l90_offset_db: float | None = None,
+    chunk_dbas: list[float] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    Copy label_map with report-time segmentation overrides.
+
+    Threshold modes:
+    - absolute: use ``threshold_db`` (default 45)
+    - l90_offset: use selection L90 + ``l90_offset_db`` (default +5; may be negative)
+    """
+    seg = dict(label_map.get("segmentation") or {})
+    cfg_min = _clamp_nonneg_int(seg.get("min_event_chunks", 2), 2)
+    cfg_gap = _clamp_nonneg_int(seg.get("max_gap_chunks", 2), 2)
+    cfg_thr = _as_float(seg.get("active_dba_threshold", DEFAULT_ACTIVE_DBA_THRESHOLD), DEFAULT_ACTIVE_DBA_THRESHOLD)
+
+    min_chunks = cfg_min if min_event_chunks is None else _clamp_nonneg_int(min_event_chunks, cfg_min)
+    max_gap = cfg_gap if max_gap_chunks is None else _clamp_nonneg_int(max_gap_chunks, cfg_gap)
+
+    mode = str(threshold_mode or "absolute").strip().lower()
+    if mode not in {"absolute", "l90_offset"}:
+        mode = "absolute"
+
+    l90_used: float | None = None
+    offset_used: float | None = None
+    if mode == "l90_offset":
+        offset_used = (
+            DEFAULT_L90_OFFSET_DB
+            if l90_offset_db is None
+            else _as_float(l90_offset_db, DEFAULT_L90_OFFSET_DB)
+        )
+        percentiles = _level_percentiles(list(chunk_dbas or []))
+        l90_used = percentiles["l90_db"]
+        if l90_used is not None:
+            resolved = float(l90_used) + float(offset_used)
+        else:
+            resolved = cfg_thr if threshold_db is None else _as_float(threshold_db, cfg_thr)
+    else:
+        resolved = cfg_thr if threshold_db is None else _as_float(threshold_db, cfg_thr)
+
+    seg.update(
+        {
+            "min_event_chunks": min_chunks,
+            "max_gap_chunks": max_gap,
+            "active_dba_threshold": round(float(resolved), 2),
+            "threshold_mode": mode,
+        }
+    )
+    if offset_used is not None:
+        seg["l90_offset_db"] = round(float(offset_used), 2)
+    if l90_used is not None:
+        seg["l90_db_used"] = round(float(l90_used), 1)
+
+    out_map = {**label_map, "segmentation": seg}
+    meta = {
+        "min_event_chunks": min_chunks,
+        "max_gap_chunks": max_gap,
+        "threshold_mode": mode,
+        "active_dba_threshold": seg["active_dba_threshold"],
+        "l90_offset_db": seg.get("l90_offset_db"),
+        "l90_db_used": seg.get("l90_db_used"),
+    }
+    return out_map, meta
+
+
+def chunk_time_budget_category(
+    chunk: AcousticChunk,
+    *,
+    label_map: dict[str, Any] | None = None,
+    theme_by_label: dict[str, str] | None = None,
+) -> str:
+    """Map one chunk to a time-budget category (silence or macro)."""
+    if chunk.gated:
+        return RELATIVE_SILENCE
+    if chunk.vote_label:
+        return label_to_macro(
+            chunk.vote_label,
+            label_map=label_map,
+            theme_by_label=theme_by_label,
+        )
+    return MACRO_UNCLASSIFIED
+
+
+def _category_order(label_map: dict[str, Any], present: set[str]) -> list[str]:
+    preferred = [RELATIVE_SILENCE]
+    preferred.extend(str(m) for m in (label_map.get("macros") or []) if str(m) != RELATIVE_SILENCE)
+    if MACRO_UNCLASSIFIED not in preferred:
+        preferred.append(MACRO_UNCLASSIFIED)
+    ordered = [c for c in preferred if c in present]
+    extras = sorted(c for c in present if c not in ordered)
+    return ordered + extras
+
+
+def _budget_rows(seconds: Counter[str], *, label_map: dict[str, Any]) -> list[dict[str, Any]]:
+    total = float(sum(seconds.values()))
+    rows: list[dict[str, Any]] = []
+    for cat in _category_order(label_map, set(seconds.keys())):
+        secs = float(seconds[cat])
+        pct = round(100.0 * secs / total, 1) if total > 0 else 0.0
+        rows.append(
+            {
+                "category": cat,
+                "pct": pct,
+                "seconds": round(secs, 1),
+            }
+        )
+    return rows
+
+
+def build_time_budget(
+    chunks: list[AcousticChunk],
+    *,
+    label_map: dict[str, Any] | None = None,
+    theme_by_label: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Whole-selection time budget including Relative silence (gated chunks)."""
+    cfg = label_map or load_label_map()
+    themes = theme_by_label if theme_by_label is not None else load_display_theme_map()
+    chunk_dur = float(YAMNET_CHUNK_DURATION_SECONDS)
+
+    total_s: Counter[str] = Counter()
+    day_s: Counter[str] = Counter()
+    night_s: Counter[str] = Counter()
+    hour_counters: dict[datetime, Counter[str]] = {}
+
+    def _hour_floor(dt: datetime) -> datetime:
+        return dt.replace(minute=0, second=0, microsecond=0)
+
+    for chunk in chunks:
+        cat = chunk_time_budget_category(
+            chunk, label_map=cfg, theme_by_label=themes
+        )
+        total_s[cat] += chunk_dur
+        if chunk.dt_local.hour in NIGHT_HOURS:
+            night_s[cat] += chunk_dur
+        else:
+            day_s[cat] += chunk_dur
+        key = _hour_floor(chunk.dt_local)
+        hour_counters.setdefault(key, Counter())[cat] += chunk_dur
+
+    hourly: list[dict[str, Any]] = []
+    if chunks:
+        start = _hour_floor(chunks[0].dt_local)
+        end = _hour_floor(chunks[-1].dt_local)
+        cur = start
+        while cur <= end:
+            counter = hour_counters.get(cur, Counter())
+            hour = int(cur.hour)
+            rows = _budget_rows(counter, label_map=cfg)
+            hour_total = float(sum(counter.values()))
+            hourly.append(
+                {
+                    "t_local": cur.isoformat(timespec="seconds"),
+                    "label": cur.strftime("%d %b %H:%M"),
+                    "date_short": cur.strftime("%d %b"),
+                    "hour": hour,
+                    "period": "night" if hour in NIGHT_HOURS else "day",
+                    "seconds_total": round(hour_total, 1),
+                    "shares": rows,
+                }
+            )
+            cur = cur + timedelta(hours=1)
+
+    categories = _category_order(
+        cfg,
+        set(total_s.keys()) | set(day_s.keys()) | set(night_s.keys()),
+    )
+    return {
+        "chunk_duration_s": chunk_dur,
+        "categories": categories,
+        "total": _budget_rows(total_s, label_map=cfg),
+        "day": _budget_rows(day_s, label_map=cfg),
+        "night": _budget_rows(night_s, label_map=cfg),
+        "hourly": hourly,
+        "seconds_total": round(float(sum(total_s.values())), 1),
+        "seconds_day": round(float(sum(day_s.values())), 1),
+        "seconds_night": round(float(sum(night_s.values())), 1),
+    }
 
 def build_hourly_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
     """Clock-hour (typical day) profile: all chunks bucketed by local hour 0–23."""
@@ -185,6 +390,11 @@ def build_dashboard_report(
     site_label: str | None = None,
     label_map_path: str | None = None,
     min_confidence: float | None = None,
+    min_event_chunks: int | None = None,
+    max_gap_chunks: int | None = None,
+    threshold_mode: str | None = None,
+    threshold_db: float | None = None,
+    l90_offset_db: float | None = None,
 ) -> dict[str, Any]:
     """
     Build Zone A/B/C payload.
@@ -211,6 +421,17 @@ def build_dashboard_report(
         recording_summaries.append({"name": name, "chunks": len(prepared)})
 
     all_chunks.sort(key=lambda c: c.dt_utc)
+
+    label_map, seg_meta = apply_report_segmentation_overrides(
+        label_map,
+        min_event_chunks=min_event_chunks,
+        max_gap_chunks=max_gap_chunks,
+        threshold_mode=threshold_mode,
+        threshold_db=threshold_db,
+        l90_offset_db=l90_offset_db,
+        chunk_dbas=[c.dba for c in all_chunks],
+    )
+
     acoustic_events = segment_acoustic_events(
         all_chunks, label_map=label_map, theme_by_label=themes
     )
@@ -277,11 +498,15 @@ def build_dashboard_report(
     }
 
     diet = sound_diet_from_events(acoustic_events)
+    time_budget = build_time_budget(
+        all_chunks, label_map=label_map, theme_by_label=themes
+    )
     top_events = sorted(
         acoustic_events,
         key=lambda e: (-e.duration_s, -(e.max_dba or 0)),
     )[:12]
     zone_c = {
+        "time_budget": time_budget,
         "sound_diet": diet,
         "diet_basis": "duration_seconds",
         "acoustic_events_top": [
@@ -306,6 +531,7 @@ def build_dashboard_report(
         "timezone": tz_name,
         "timezone_warning": tz_warning,
         "segmentation": dict(label_map.get("segmentation") or {}),
+        "report_options": seg_meta,
         "tire_hiss": dict(label_map.get("tire_hiss") or {}),
         "acoustic_event_count": len(acoustic_events),
     }

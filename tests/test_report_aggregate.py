@@ -197,6 +197,82 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(timeline_row["gated_pct"], 50.0)
         self.assertEqual(timeline_row["l90_db"], hour13["l90_db"])
 
+    def test_time_budget_includes_relative_silence(self) -> None:
+        base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        events = [
+            {
+                **_evt(0, dba=40.0, base=base),
+                "yamnet_preprocess": {"gated": True},
+                "top_label": "gated",
+            },
+            {
+                **_evt(1, dba=40.0, base=base),
+                "yamnet_preprocess": {"gated": True},
+                "top_label": "gated",
+            },
+            _evt(2, dba=55.0, label="Vehicle", base=base),
+            _evt(3, dba=56.0, label="Vehicle", base=base),
+        ]
+        report = build_dashboard_report(
+            [("budget.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+        )
+        budget = report["zone_c"]["time_budget"]
+        by_cat = {r["category"]: r for r in budget["total"]}
+        self.assertIn("Relative silence", by_cat)
+        self.assertAlmostEqual(by_cat["Relative silence"]["pct"], 50.0, places=0)
+        self.assertTrue(budget["day"] or budget["night"])
+        self.assertTrue(budget["hourly"])
+
+    def test_l90_offset_threshold_mode(self) -> None:
+        base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        # L90 ≈ 40; with +5 offset → threshold 45. Levels 42 stay inactive.
+        events = [_evt(i, dba=40.0 + (i % 3), label="Vehicle", base=base) for i in range(10)]
+        events.extend([_evt(20 + i, dba=60.0, label="Vehicle", base=base) for i in range(3)])
+        report = build_dashboard_report(
+            [("l90.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+            threshold_mode="l90_offset",
+            l90_offset_db=5.0,
+            min_event_chunks=2,
+        )
+        opts = report["meta"]["report_options"]
+        self.assertEqual(opts["threshold_mode"], "l90_offset")
+        self.assertIsNotNone(opts["l90_db_used"])
+        self.assertAlmostEqual(
+            opts["active_dba_threshold"],
+            float(opts["l90_db_used"]) + 5.0,
+            places=1,
+        )
+        self.assertGreaterEqual(report["meta"]["acoustic_event_count"], 1)
+
+    def test_min_event_chunks_override(self) -> None:
+        base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        events = [
+            _evt(0, dba=60.0, label="Vehicle", base=base),
+            _evt(1, dba=40.0, label="Silence", base=base),
+            _evt(2, dba=40.0, label="Silence", base=base),
+            _evt(3, dba=40.0, label="Silence", base=base),
+        ]
+        keep = build_dashboard_report(
+            [("one.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+            min_event_chunks=1,
+            max_gap_chunks=0,
+            threshold_mode="absolute",
+            threshold_db=45.0,
+        )
+        drop = build_dashboard_report(
+            [("one.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+            min_event_chunks=2,
+            max_gap_chunks=0,
+            threshold_mode="absolute",
+            threshold_db=45.0,
+        )
+        self.assertEqual(keep["meta"]["acoustic_event_count"], 1)
+        self.assertEqual(drop["meta"]["acoustic_event_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

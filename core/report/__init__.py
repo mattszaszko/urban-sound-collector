@@ -1,6 +1,12 @@
 """Multi-recording acoustic event report and three-zone dashboard aggregations."""
 
-from core.report.aggregate import build_dashboard_report, leq_context, sound_diet_from_events
+from core.report.aggregate import (
+    apply_report_segmentation_overrides,
+    build_dashboard_report,
+    build_time_budget,
+    leq_context,
+    sound_diet_from_events,
+)
 from core.report.segment import (
     AcousticEvent,
     energetic_leq,
@@ -14,7 +20,9 @@ from core.report.votes import vote_label_for_event
 __all__ = [
     "AcousticEvent",
     "DEFAULT_SITE_TIMEZONE",
+    "apply_report_segmentation_overrides",
     "build_dashboard_report",
+    "build_time_budget",
     "energetic_leq",
     "finalize_event",
     "leq_context",
