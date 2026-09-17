@@ -418,7 +418,16 @@ def build_dashboard_report(
             source_file=name,
         )
         all_chunks.extend(prepared)
-        recording_summaries.append({"name": name, "chunks": len(prepared)})
+        duration_s: float | None = None
+        if prepared:
+            span = (prepared[-1].dt_utc - prepared[0].dt_utc).total_seconds()
+            if span > 0:
+                duration_s = round(span + YAMNET_CHUNK_DURATION_SECONDS, 1)
+            else:
+                duration_s = round(len(prepared) * YAMNET_CHUNK_DURATION_SECONDS, 1)
+        recording_summaries.append(
+            {"name": name, "chunks": len(prepared), "duration_s": duration_s}
+        )
 
     all_chunks.sort(key=lambda c: c.dt_utc)
 
@@ -467,6 +476,11 @@ def build_dashboard_report(
 
     header_line = f"Site: {location_id} | {_header_date_span(date_start, date_end)}"
 
+    total_duration_s = round(
+        sum(float(r["duration_s"]) for r in recording_summaries if r.get("duration_s") is not None),
+        1,
+    )
+
     zone_a = {
         "location_id": location_id,
         "timezone": tz_name,
@@ -483,6 +497,7 @@ def build_dashboard_report(
         "peak_lafmax_at_utc": peak_at_utc,
         "recordings": recording_summaries,
         "chunk_count": len(all_chunks),
+        "duration_s": total_duration_s if recording_summaries else None,
     }
 
     typical_day = build_hourly_profile(all_chunks)

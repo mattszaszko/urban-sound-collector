@@ -164,6 +164,8 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(zone_a["l10_db"], 48.0)
         self.assertNotIn("chunk", zone_a["header_line"].lower())
         self.assertEqual(zone_a["leq_context"], leq_context(zone_a["leq_db"]))
+        self.assertIsNotNone(zone_a["duration_s"])
+        self.assertGreater(zone_a["duration_s"], 0)
 
     def test_hourly_gated_pct(self) -> None:
         base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)

@@ -20,7 +20,7 @@
     --accent-soft:rgba(14,165,233,.18);--overlay:rgba(15,23,42,.92);
     --log-text:#7dd3fc;--hairline:rgba(51,65,85,.5);
     --chart-tick:#94a3b8;--chart-grid:rgba(51,65,85,.7);
-    --chart-night:rgba(15,23,42,.32);--error-banner-bg:#7f1d1d;
+    --chart-night:rgba(148,163,184,.16);--error-banner-bg:#7f1d1d;
     --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
     --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
     --clap-label:#fcd34d;--playhead:#f472b6;
@@ -299,18 +299,17 @@
   }
   .takeaway-box{margin-top:.85rem;padding:.85rem;border:1px solid var(--border);
                 border-radius:8px;background:var(--bg);font-size:.88rem;line-height:1.45}
-  .report-methodology{margin-top:1rem;border:1px solid var(--border);border-radius:8px;
-                      background:var(--bg)}
-  .report-methodology > summary{cursor:pointer;list-style:none;padding:.7rem .85rem;
-                                font-size:.78rem;font-weight:600;color:var(--muted);
-                                user-select:none}
+  .report-methodology{margin:0;border:0;border-radius:0;background:transparent}
+  .report-methodology > summary{cursor:pointer;list-style:none;padding:0;
+                                font-size:.72rem;font-weight:600;text-transform:uppercase;
+                                letter-spacing:.06em;color:var(--muted);user-select:none;
+                                display:flex;align-items:center;gap:.35rem}
   .report-methodology > summary::-webkit-details-marker{display:none}
-  .report-methodology > summary::before{content:'▸';display:inline-block;width:1rem;
-                                        color:var(--accent)}
+  .report-methodology > summary::before{content:'▸';display:inline-block;width:.85rem;
+                                        color:var(--accent);text-transform:none;letter-spacing:0}
   .report-methodology[open] > summary::before{content:'▾'}
-  .report-methodology[open] > summary{border-bottom:1px solid var(--border);color:var(--text)}
-  .report-methodology-body{padding:.75rem .85rem .9rem;font-size:.78rem;color:var(--muted);
-                           line-height:1.5}
+  .report-methodology[open] > summary{color:var(--text);margin-bottom:.65rem}
+  .report-methodology-body{padding:0;font-size:.78rem;color:var(--muted);line-height:1.5}
   .report-methodology-body p{margin:0 0 .65rem}
   .report-methodology-body p:last-child{margin-bottom:0}
   .report-methodology-body strong{color:var(--text);font-weight:600}
@@ -892,6 +891,8 @@
       </div>
     </div>
     <div class="takeaway-box" id="rpt-takeaway"></div>
+  </div>
+  <div class="card report-zone" id="report-methodology-zone">
     <details class="report-methodology">
       <summary>How this report is built</summary>
       <div class="report-methodology-body">
@@ -1333,6 +1334,23 @@ function fmtElapsed(s) {
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+/** Layperson duration: "45 s", "8 min 12 s", "2 h 5 min" — never days. */
+function fmtHumanDuration(seconds) {
+  if (seconds == null || Number.isNaN(Number(seconds))) return null;
+  const total = Math.max(0, Math.round(Number(seconds)));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  if (h > 0) {
+    const parts = [`${h} h`];
+    if (m) parts.push(`${m} min`);
+    if (sec) parts.push(`${sec} s`);
+    return parts.join(' ');
+  }
+  if (m > 0) return sec ? `${m} min ${sec} s` : `${m} min`;
+  return `${sec} s`;
 }
 
 function truncateLabel(s, max) {
@@ -2514,7 +2532,7 @@ function upsertPieChart(existing, canvasId, rows) {
       const host = ctx.chart;
       const row = ((host && host.$budgetRows) || [])[ctx.dataIndex] || {};
       const pct = Number(ctx.parsed) || 0;
-      const secs = row.seconds != null ? ` · ${Number(row.seconds).toFixed(0)}s` : '';
+      const secs = row.seconds != null ? ` · ${fmtHumanDuration(row.seconds)}` : '';
       return ` ${ctx.label}: ${pct.toFixed(1)}%${secs}`;
     },
   };
@@ -2577,7 +2595,9 @@ function renderBudgetMeta(meta, budget) {
     thrLine,
     `min event ${opts.min_event_chunks ?? seg.min_event_chunks ?? 2} chunk(s)`,
     `bridge ${opts.max_gap_chunks ?? seg.max_gap_chunks ?? 2}`,
-    budget && budget.seconds_total != null ? `${Number(budget.seconds_total).toFixed(0)}s classified` : null,
+    budget && budget.seconds_total != null
+      ? `${fmtHumanDuration(budget.seconds_total)} classified`
+      : null,
   ].filter(Boolean);
   el.textContent = bits.join(' · ');
 }
@@ -3109,8 +3129,10 @@ function applyReportPayload(payload) {
   reportZoneC = c;
   document.getElementById('rpt-header').textContent = a.header_line || 'Report';
   const nRec = (a.recordings || []).length;
+  const durationLabel = fmtHumanDuration(a.duration_s);
   document.getElementById('rpt-sub').textContent = [
     nRec ? `${nRec} recording${nRec === 1 ? '' : 's'}` : '',
+    durationLabel || null,
     (payload.meta && payload.meta.acoustic_event_count != null)
       ? `${payload.meta.acoustic_event_count} acoustic events` : '',
   ].filter(Boolean).join(' · ');
