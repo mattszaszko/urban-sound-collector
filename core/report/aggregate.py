@@ -97,18 +97,19 @@ def sound_diet_from_events(events: list[AcousticEvent]) -> list[dict[str, Any]]:
 
 def build_hourly_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
     """Clock-hour (typical day) profile: all chunks bucketed by local hour 0–23."""
-    buckets: dict[int, list[float]] = {h: [] for h in range(24)}
+    buckets: dict[int, list[AcousticChunk]] = {h: [] for h in range(24)}
     for c in chunks:
-        buckets[c.dt_local.hour].append(c.dba)
+        buckets[c.dt_local.hour].append(c)
     out: list[dict[str, Any]] = []
     for hour in range(24):
-        levels = buckets[hour]
+        members = buckets[hour]
         period = "night" if hour in NIGHT_HOURS else "day"
+        stats = _bucket_loudness_stats(members)
         out.append(
             {
                 "hour": hour,
-                "leq_db": energetic_leq(levels) if levels else None,
                 "period": period,
+                **stats,
             }
         )
     return out
@@ -127,28 +128,48 @@ def build_timeline_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
     if end < start:
         return []
 
-    buckets: dict[datetime, list[float]] = {}
+    buckets: dict[datetime, list[AcousticChunk]] = {}
     for c in chunks:
         key = _hour_floor(c.dt_local)
-        buckets.setdefault(key, []).append(c.dba)
+        buckets.setdefault(key, []).append(c)
 
     out: list[dict[str, Any]] = []
     cur = start
     while cur <= end:
-        levels = buckets.get(cur, [])
+        members = buckets.get(cur, [])
         hour = int(cur.hour)
+        stats = _bucket_loudness_stats(members)
         out.append(
             {
                 "t_local": cur.isoformat(timespec="seconds"),
                 "label": cur.strftime("%d %b %H:%M"),
+                "date_short": cur.strftime("%d %b"),
                 "hour": hour,
-                "leq_db": energetic_leq(levels) if levels else None,
                 "period": "night" if hour in NIGHT_HOURS else "day",
-                "chunk_count": len(levels),
+                **stats,
             }
         )
         cur = cur + timedelta(hours=1)
     return out
+
+
+def _bucket_loudness_stats(members: list[AcousticChunk]) -> dict[str, Any]:
+    """Leq + gated quiet share for one hour bucket."""
+    if not members:
+        return {
+            "leq_db": None,
+            "gated_pct": None,
+            "chunk_count": 0,
+            "gated_count": 0,
+        }
+    gated_n = sum(1 for c in members if c.gated)
+    n = len(members)
+    return {
+        "leq_db": energetic_leq([c.dba for c in members]),
+        "gated_pct": round(100.0 * gated_n / n, 1),
+        "chunk_count": n,
+        "gated_count": gated_n,
+    }
 
 
 def build_dashboard_report(

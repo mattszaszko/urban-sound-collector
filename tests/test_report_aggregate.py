@@ -165,6 +165,34 @@ class AggregateTests(unittest.TestCase):
         self.assertNotIn("chunk", zone_a["header_line"].lower())
         self.assertEqual(zone_a["leq_context"], leq_context(zone_a["leq_db"]))
 
+    def test_hourly_gated_pct(self) -> None:
+        base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        events = [
+            _evt(0, dba=40.0, label="gated", base=base),
+            {
+                **_evt(1, dba=40.0, base=base),
+                "yamnet_preprocess": {"gated": True},
+                "top_label": "gated",
+            },
+            _evt(2, dba=55.0, label="Vehicle", base=base),
+            _evt(3, dba=56.0, label="Vehicle", base=base),
+        ]
+        # Force first event gated via top_label
+        events[0]["top_label"] = "gated"
+        events[0]["yamnet_preprocess"] = {"gated": True}
+        report = build_dashboard_report(
+            [("gated.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+        )
+        # 12:00 UTC = 13:00 Amsterdam in January
+        hour13 = next(h for h in report["zone_b"]["typical_day"] if h["hour"] == 13)
+        self.assertEqual(hour13["chunk_count"], 4)
+        self.assertEqual(hour13["gated_count"], 2)
+        self.assertEqual(hour13["gated_pct"], 50.0)
+        timeline_row = report["zone_b"]["timeline"][0]
+        self.assertIn("date_short", timeline_row)
+        self.assertEqual(timeline_row["gated_pct"], 50.0)
+
 
 if __name__ == "__main__":
     unittest.main()

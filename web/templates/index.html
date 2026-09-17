@@ -20,12 +20,13 @@
     --accent-soft:rgba(14,165,233,.18);--overlay:rgba(15,23,42,.92);
     --log-text:#7dd3fc;--hairline:rgba(51,65,85,.5);
     --chart-tick:#94a3b8;--chart-grid:rgba(51,65,85,.7);
-    --chart-night:rgba(148,163,184,.12);--error-banner-bg:#7f1d1d;
+    --chart-night:rgba(15,23,42,.32);--error-banner-bg:#7f1d1d;
     --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
     --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
     --clap-label:#fcd34d;--playhead:#f472b6;
     --band-quiet:rgba(34,197,94,.14);--band-converse:rgba(234,179,8,.14);
     --band-busy:rgba(249,115,22,.16);--band-loud:rgba(239,68,68,.18);
+    --gated-bar:rgba(148,163,184,.38);
   }
   html[data-theme="light"]{
     color-scheme: light;
@@ -41,12 +42,13 @@
     --accent-soft:rgba(2,132,199,.14);--overlay:rgba(15,23,42,.5);
     --log-text:#0369a1;--hairline:rgba(148,163,184,.55);
     --chart-tick:#64748b;--chart-grid:rgba(148,163,184,.45);
-    --chart-night:rgba(100,116,139,.12);--error-banner-bg:#fef2f2;
+    --chart-night:rgba(15,23,42,.08);--error-banner-bg:#fef2f2;
     --error-banner-text:#b91c1c;--yam-point:#16a34a;--yam-border:#166534;
     --yam-label:#15803d;--clap-point:#d97706;--clap-border:#92400e;
     --clap-label:#b45309;--playhead:#db2777;
     --band-quiet:rgba(22,163,74,.12);--band-converse:rgba(202,138,4,.12);
     --band-busy:rgba(234,88,12,.14);--band-loud:rgba(220,38,38,.16);
+    --gated-bar:rgba(100,116,139,.28);
   }
   body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
        min-height:100vh;padding:1rem}
@@ -246,6 +248,7 @@
   .band-swatch.converse{background:var(--band-converse)}
   .band-swatch.busy{background:var(--band-busy)}
   .band-swatch.loud{background:var(--band-loud)}
+  .band-swatch.gated{background:var(--gated-bar)}
   .diet-row{display:grid;grid-template-columns:9rem 1fr 3.5rem;gap:.5rem;
             align-items:center;margin-bottom:.45rem;font-size:.8rem}
   .diet-bar{height:.55rem;background:var(--border);border-radius:999px;overflow:hidden}
@@ -740,18 +743,12 @@
       </div>
     </div>
     <div class="overview-chart-note" id="rpt-chart-note">
-      Hourly sound level over time · coloured bands show how loud it feels in everyday terms
+      Hourly sound level · bars show % of each hour that was gated (relative quiet)
     </div>
     <div class="report-chart-box">
       <canvas id="report-hourly-chart" aria-label="Hourly sound level profile"></canvas>
     </div>
-    <div class="report-band-legend" id="rpt-band-legend" aria-label="Sound level bands">
-      <span class="report-band-legend-intro">Coloured bands are loudness analogies (how loud it feels), not detected sound types:</span>
-      <span><i class="band-swatch quiet" aria-hidden="true"></i>Under 40 — sounds like a quiet bedroom</span>
-      <span><i class="band-swatch converse" aria-hidden="true"></i>40–55 — sounds like a conversational backdrop</span>
-      <span><i class="band-swatch busy" aria-hidden="true"></i>55–70 — sounds like a busy street or TV</span>
-      <span><i class="band-swatch loud" aria-hidden="true"></i>Over 70 — sounds like a lawnmower or peak traffic</span>
-    </div>
+    <div class="report-band-legend" id="rpt-band-legend" aria-label="Sound level bands"></div>
   </div>
   <div class="card report-zone" id="report-zone-c">
     <h2>What is making the noise?</h2>
@@ -925,11 +922,14 @@ function refreshChartsForColorMode() {
     overviewChart.update('none');
   }
   if (reportHourlyChart) {
-    const ds = reportHourlyChart.data.datasets[0];
-    if (ds) {
-      ds.borderColor = cssVar('--accent');
-      ds.backgroundColor = cssVar('--accent-soft');
+    const lineDs = reportHourlyChart.data.datasets.find((d) => d.type !== 'bar')
+      || reportHourlyChart.data.datasets[0];
+    const barDs = reportHourlyChart.data.datasets.find((d) => d.type === 'bar');
+    if (lineDs) {
+      lineDs.borderColor = cssVar('--accent');
+      lineDs.backgroundColor = cssVar('--accent-soft');
     }
+    if (barDs) barDs.backgroundColor = cssVar('--gated-bar');
     applyChartScaleColors(reportHourlyChart);
     reportHourlyChart.update('none');
   }
@@ -2203,19 +2203,35 @@ function ensureReportHourlyChart() {
   const canvas = document.getElementById('report-hourly-chart');
   if (!canvas) return null;
   reportHourlyChart = new Chart(canvas.getContext('2d'), {
-    type: 'line',
+    type: 'bar',
     data: {
       labels: [],
-      datasets: [{
-        label: 'Hourly level',
-        data: [],
-        borderColor: cssVar('--accent'),
-        backgroundColor: cssVar('--accent-soft'),
-        borderWidth: 2,
-        pointRadius: 3,
-        spanGaps: false,
-        tension: 0.2,
-      }],
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Gated quiet %',
+          data: [],
+          yAxisID: 'yGated',
+          backgroundColor: cssVar('--gated-bar'),
+          borderWidth: 0,
+          barPercentage: 0.85,
+          categoryPercentage: 0.9,
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Hourly level',
+          data: [],
+          yAxisID: 'y',
+          borderColor: cssVar('--accent'),
+          backgroundColor: cssVar('--accent-soft'),
+          borderWidth: 2,
+          pointRadius: 3,
+          spanGaps: false,
+          tension: 0.2,
+          order: 1,
+        },
+      ],
     },
     options: {
       responsive: true,
@@ -2227,12 +2243,19 @@ function ensureReportHourlyChart() {
           callbacks: {
             title(items) {
               const i = items && items[0] ? items[0].dataIndex : -1;
-              const labels = (reportHourlyChart && reportHourlyChart.data.labels) || [];
-              return i >= 0 ? String(labels[i] || '') : '';
+              const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
+              const row = rows[i];
+              if (!row) return '';
+              if (row.label) return String(row.label);
+              return `${String(row.hour).padStart(2, '0')}:00`;
             },
             label(ctx) {
               const v = ctx.parsed.y;
-              return v == null ? 'No data' : `${Number(v).toFixed(1)} dBA`;
+              if (v == null) return 'No data';
+              if (ctx.dataset.yAxisID === 'yGated') {
+                return `Gated quiet ${Number(v).toFixed(0)}%`;
+              }
+              return `${Number(v).toFixed(1)} dBA`;
             },
           },
         },
@@ -2241,27 +2264,48 @@ function ensureReportHourlyChart() {
         x: {
           ticks: {
             color: cssVar('--chart-tick'),
-            maxRotation: 45,
+            maxRotation: 0,
             autoSkip: true,
-            maxTicksLimit: 14,
+            maxTicksLimit: 16,
+            callback(value, index) {
+              const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
+              const row = rows[index];
+              if (!row) return '';
+              const hh = `${String(row.hour).padStart(2, '0')}:00`;
+              if (reportProfileView === 'typical') return hh;
+              if (Number(row.hour) === 0 && row.date_short) return row.date_short;
+              return hh;
+            },
           },
           grid: { color: cssVar('--chart-grid') },
         },
         y: {
-          min: 30,
-          max: 80,
+          position: 'left',
           title: { display: true, text: 'Sound level (dBA)', color: cssVar('--chart-tick'), font: { size: 10 } },
           ticks: { color: cssVar('--chart-tick') },
           grid: { color: cssVar('--chart-grid') },
         },
+        yGated: {
+          position: 'right',
+          min: 0,
+          max: 100,
+          title: { display: true, text: 'Gated quiet %', color: cssVar('--chart-tick'), font: { size: 10 } },
+          ticks: {
+            color: cssVar('--chart-tick'),
+            callback(v) { return `${v}%`; },
+          },
+          grid: { drawOnChartArea: false },
+        },
       },
     },
     plugins: [{
-      id: 'comfortBands',
-      beforeDraw(chart) {
+      id: 'comfortAndNightBands',
+      beforeDatasetsDraw(chart) {
         const { ctx, chartArea, scales } = chart;
         if (!chartArea || !scales.y) return;
         const yScale = scales.y;
+        const yMin = yScale.min;
+        const yMax = yScale.max;
         const bands = [
           { lo: Number.NEGATIVE_INFINITY, hi: 40, color: cssVar('--band-quiet') },
           { lo: 40, hi: 55, color: cssVar('--band-converse') },
@@ -2269,14 +2313,29 @@ function ensureReportHourlyChart() {
           { lo: 70, hi: Number.POSITIVE_INFINITY, color: cssVar('--band-loud') },
         ];
         bands.forEach((band) => {
-          const yTop = yScale.getPixelForValue(band.hi);
-          const yBot = yScale.getPixelForValue(band.lo);
+          if (!(band.hi > yMin && band.lo < yMax)) return;
+          const yTop = yScale.getPixelForValue(Math.min(band.hi, yMax));
+          const yBot = yScale.getPixelForValue(Math.max(band.lo, yMin));
           const top = Math.max(chartArea.top, Math.min(yTop, yBot));
           const bottom = Math.min(chartArea.bottom, Math.max(yTop, yBot));
           if (!(bottom > top)) return;
           ctx.save();
           ctx.fillStyle = band.color || 'transparent';
           ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, bottom - top);
+          ctx.restore();
+        });
+
+        const nightFlags = chart.$nightFlags || [];
+        if (!nightFlags.length || !scales.x) return;
+        const xScale = scales.x;
+        nightFlags.forEach((isNight, i) => {
+          if (!isNight) return;
+          const x = xScale.getPixelForValue(i);
+          const half = (xScale.getPixelForValue(1) - xScale.getPixelForValue(0)) / 2;
+          if (!Number.isFinite(x) || !Number.isFinite(half)) return;
+          ctx.save();
+          ctx.fillStyle = cssVar('--chart-night');
+          ctx.fillRect(x - half, chartArea.top, half * 2, chartArea.bottom - chartArea.top);
           ctx.restore();
         });
       },
@@ -2288,6 +2347,29 @@ function ensureReportHourlyChart() {
 let reportZoneB = null;
 let reportProfileView = 'timeline';
 
+const REPORT_COMFORT_BANDS = [
+  { key: 'quiet', lo: Number.NEGATIVE_INFINITY, hi: 40, text: 'Under 40 — sounds like a quiet bedroom' },
+  { key: 'converse', lo: 40, hi: 55, text: '40–55 — sounds like a conversational backdrop' },
+  { key: 'busy', lo: 55, hi: 70, text: '55–70 — sounds like a busy street or TV' },
+  { key: 'loud', lo: 70, hi: Number.POSITIVE_INFINITY, text: 'Over 70 — sounds like a lawnmower or peak traffic' },
+];
+
+function updateReportBandLegend(yMin, yMax, hasGatedBars) {
+  const el = document.getElementById('rpt-band-legend');
+  if (!el) return;
+  const visible = REPORT_COMFORT_BANDS.filter((b) => b.hi > yMin && b.lo < yMax);
+  const parts = [
+    '<span class="report-band-legend-intro">Coloured bands are loudness analogies (how loud it feels), not detected sound types:</span>',
+  ];
+  visible.forEach((b) => {
+    parts.push(`<span><i class="band-swatch ${b.key}" aria-hidden="true"></i>${b.text}</span>`);
+  });
+  if (hasGatedBars) {
+    parts.push('<span><i class="band-swatch gated" aria-hidden="true"></i>Bars — % of hour gated (relative quiet)</span>');
+  }
+  el.innerHTML = parts.join('');
+}
+
 function setReportProfileView(view) {
   reportProfileView = view === 'typical' ? 'typical' : 'timeline';
   document.querySelectorAll('.report-view-btn').forEach((btn) => {
@@ -2296,8 +2378,8 @@ function setReportProfileView(view) {
   const note = document.getElementById('rpt-chart-note');
   if (note) {
     note.innerHTML = reportProfileView === 'typical'
-      ? 'Typical day · clock hours averaged across the selection · coloured bands show how loud it feels'
-      : 'Hourly sound level over time · coloured bands show how loud it feels in everyday terms';
+      ? 'Typical day · bars show % of each hour that was gated (relative quiet)'
+      : 'Hourly sound level · bars show % of each hour that was gated (relative quiet)';
   }
   if (reportZoneB) renderReportHourly(reportZoneB);
 }
@@ -2311,17 +2393,42 @@ function renderReportHourly(zoneB) {
     : (zoneB.timeline && zoneB.timeline.length
       ? zoneB.timeline
       : (zoneB.typical_day || zoneB.hourly || []));
-  chart.data.labels = rows.map((h) => (
-    useTypical
-      ? `${String(h.hour).padStart(2, '0')}:00`
-      : (h.label || `${String(h.hour).padStart(2, '0')}:00`)
-  ));
+  chart.$reportRows = rows;
+  chart.$nightFlags = rows.map((h) => h.period === 'night');
+  chart.data.labels = rows.map((_, i) => String(i));
   const values = rows.map((h) => (h.leq_db == null ? null : h.leq_db));
-  chart.data.datasets[0].data = values;
+  const gated = rows.map((h) => (
+    h.leq_db == null && !(h.chunk_count > 0) ? null : (h.gated_pct == null ? null : h.gated_pct)
+  ));
+  const barDs = chart.data.datasets.find((d) => d.type === 'bar');
+  const lineDs = chart.data.datasets.find((d) => d.type === 'line');
+  if (barDs) {
+    barDs.data = gated;
+    barDs.backgroundColor = cssVar('--gated-bar');
+  }
+  if (lineDs) {
+    lineDs.data = values;
+    lineDs.borderColor = cssVar('--accent');
+    lineDs.backgroundColor = cssVar('--accent-soft');
+  }
   const finite = values.filter((v) => v != null && Number.isFinite(v));
-  const dataMax = finite.length ? Math.max(...finite) : 70;
-  chart.options.scales.y.min = 30;
-  chart.options.scales.y.max = Math.max(80, Math.ceil((dataMax + 2) / 5) * 5);
+  let yMin = 35;
+  let yMax = 65;
+  if (finite.length) {
+    const dataMin = Math.min(...finite);
+    const dataMax = Math.max(...finite);
+    yMin = dataMin - 5;
+    yMax = dataMax + 5;
+    if (yMax - yMin < 10) {
+      const mid = (yMin + yMax) / 2;
+      yMin = mid - 5;
+      yMax = mid + 5;
+    }
+  }
+  chart.options.scales.y.min = yMin;
+  chart.options.scales.y.max = yMax;
+  const hasGated = gated.some((v) => v != null && Number(v) > 0);
+  updateReportBandLegend(yMin, yMax, hasGated || gated.some((v) => v != null));
   chart.update('none');
 }
 

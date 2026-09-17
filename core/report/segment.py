@@ -13,6 +13,7 @@ from core.report.macros import label_to_macro
 from core.report.timeutil import format_local, parse_created_at_utc, to_local
 from core.report.votes import (
     MACRO_UNCLASSIFIED,
+    is_yamnet_gated,
     load_display_theme_map,
     load_label_map,
     vote_label_for_event,
@@ -44,6 +45,7 @@ class AcousticChunk:
     dba: float
     lafmax: float | None
     vote_label: str | None
+    gated: bool = False
     device_id: str | None = None
     source_file: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
@@ -98,6 +100,7 @@ def prepare_chunks(
                 dba=dba,
                 lafmax=_f(event.get("LAFmax_dB")),
                 vote_label=vote,
+                gated=is_yamnet_gated(event),
                 device_id=device if isinstance(device, str) else None,
                 source_file=source_file,
                 raw={},
