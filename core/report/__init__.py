@@ -7,6 +7,7 @@ from core.report.aggregate import (
     leq_context,
     sound_diet_from_events,
 )
+from core.report.comfort import build_comfort_rating, grade_from_score
 from core.report.segment import (
     AcousticEvent,
     energetic_leq,
@@ -21,10 +22,12 @@ __all__ = [
     "AcousticEvent",
     "DEFAULT_SITE_TIMEZONE",
     "apply_report_segmentation_overrides",
+    "build_comfort_rating",
     "build_dashboard_report",
     "build_time_budget",
     "energetic_leq",
     "finalize_event",
+    "grade_from_score",
     "leq_context",
     "prepare_chunks",
     "resolve_zone",

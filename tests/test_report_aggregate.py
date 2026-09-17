@@ -166,6 +166,10 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(zone_a["leq_context"], leq_context(zone_a["l50_db"]))
         self.assertIsNotNone(zone_a["duration_s"])
         self.assertGreater(zone_a["duration_s"], 0)
+        comfort = zone_a["comfort_rating"]
+        self.assertIsNotNone(comfort)
+        self.assertIn(comfort["grade"], {"A", "B", "C", "D", "E"})
+        self.assertTrue(0 <= comfort["score"] <= 100)
 
     def test_hourly_gated_pct(self) -> None:
         base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
