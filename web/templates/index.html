@@ -26,7 +26,10 @@
     --clap-label:#fcd34d;--playhead:#f472b6;
     --band-quiet:rgba(34,197,94,.14);--band-converse:rgba(234,179,8,.14);
     --band-busy:rgba(249,115,22,.16);--band-loud:rgba(239,68,68,.18);
-    --gated-bar:rgba(148,163,184,.38);
+    --band-quiet-mark:#4ade80;--band-converse-mark:#eab308;
+    --band-busy-mark:#fb923c;--band-loud-mark:#f87171;
+    --gated-bar:rgba(148,163,184,.38);--range-fill:rgba(14,165,233,.18);
+    --range-edge:rgba(148,163,184,.55);
   }
   html[data-theme="light"]{
     color-scheme: light;
@@ -48,7 +51,10 @@
     --clap-label:#b45309;--playhead:#db2777;
     --band-quiet:rgba(22,163,74,.12);--band-converse:rgba(202,138,4,.12);
     --band-busy:rgba(234,88,12,.14);--band-loud:rgba(220,38,38,.16);
-    --gated-bar:rgba(100,116,139,.28);
+    --band-quiet-mark:#16a34a;--band-converse-mark:#ca8a04;
+    --band-busy-mark:#ea580c;--band-loud-mark:#dc2626;
+    --gated-bar:rgba(100,116,139,.28);--range-fill:rgba(2,132,199,.14);
+    --range-edge:rgba(100,116,139,.45);
   }
   body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
        min-height:100vh;padding:1rem}
@@ -244,11 +250,17 @@
   .report-band-legend span{display:inline-flex;align-items:center;gap:.35rem}
   .band-swatch{width:12px;height:12px;border-radius:3px;display:inline-block;
                border:1px solid var(--border);flex-shrink:0}
-  .band-swatch.quiet{background:var(--band-quiet)}
-  .band-swatch.converse{background:var(--band-converse)}
-  .band-swatch.busy{background:var(--band-busy)}
-  .band-swatch.loud{background:var(--band-loud)}
+  .band-swatch.quiet{background:var(--band-quiet-mark)}
+  .band-swatch.converse{background:var(--band-converse-mark)}
+  .band-swatch.busy{background:var(--band-busy-mark)}
+  .band-swatch.loud{background:var(--band-loud-mark)}
   .band-swatch.gated{background:var(--gated-bar)}
+  .report-line-legend{display:flex;flex-wrap:wrap;gap:.45rem .9rem;margin:.15rem 0 .55rem;
+                      font-size:.72rem;color:var(--muted);line-height:1.35}
+  .report-line-legend span{display:inline-flex;align-items:center;gap:.35rem}
+  .swatch.range{width:14px;height:10px;border-radius:2px;background:var(--range-fill);
+                border:1px solid var(--range-edge)}
+  .swatch.bar-mini{width:8px;height:12px;border-radius:1px;background:var(--gated-bar)}
   .diet-row{display:grid;grid-template-columns:9rem 1fr 3.5rem;gap:.5rem;
             align-items:center;margin-bottom:.45rem;font-size:.8rem}
   .diet-bar{height:.55rem;background:var(--border);border-radius:999px;overflow:hidden}
@@ -742,8 +754,10 @@
         <button type="button" class="report-view-btn" data-view="typical" id="rpt-view-typical">Typical day</button>
       </div>
     </div>
-    <div class="overview-chart-note" id="rpt-chart-note">
-      Hourly sound level · bars show % of each hour that was gated (relative quiet)
+    <div class="report-line-legend" id="rpt-line-legend" aria-label="Noise profile series">
+      <span><i class="swatch line" style="background:var(--accent)"></i>Blue line — overall level for the hour</span>
+      <span><i class="swatch range" aria-hidden="true"></i>Soft band — quieter moments to louder spikes within the hour</span>
+      <span><i class="swatch bar-mini" aria-hidden="true"></i>Bars — noisy moments %</span>
     </div>
     <div class="report-chart-box">
       <canvas id="report-hourly-chart" aria-label="Hourly sound level profile"></canvas>
@@ -922,17 +936,34 @@ function refreshChartsForColorMode() {
     overviewChart.update('none');
   }
   if (reportHourlyChart) {
-    const lineDs = reportHourlyChart.data.datasets.find((d) => d.type !== 'bar')
-      || reportHourlyChart.data.datasets[0];
-    const barDs = reportHourlyChart.data.datasets.find((d) => d.type === 'bar');
-    if (lineDs) {
-      lineDs.borderColor = cssVar('--accent');
-      lineDs.backgroundColor = cssVar('--accent-soft');
-    }
-    if (barDs) barDs.backgroundColor = cssVar('--gated-bar');
+    applyReportHourlyDatasetColors(reportHourlyChart);
     applyChartScaleColors(reportHourlyChart);
     reportHourlyChart.update('none');
   }
+}
+
+function applyReportHourlyDatasetColors(chart) {
+  if (!chart || !chart.data || !chart.data.datasets) return;
+  chart.data.datasets.forEach((ds) => {
+    if (ds.yAxisID === 'yGated' || ds.type === 'bar') {
+      ds.backgroundColor = cssVar('--gated-bar');
+      return;
+    }
+    if (ds.$role === 'l10') {
+      ds.borderColor = cssVar('--range-edge');
+      ds.backgroundColor = cssVar('--range-fill');
+      return;
+    }
+    if (ds.$role === 'l90') {
+      ds.borderColor = cssVar('--range-edge');
+      ds.backgroundColor = 'transparent';
+      return;
+    }
+    if (ds.$role === 'leq') {
+      ds.borderColor = cssVar('--accent');
+      ds.backgroundColor = cssVar('--accent-soft');
+    }
+  });
 }
 
 function setColorMode(mode) {
@@ -2209,18 +2240,50 @@ function ensureReportHourlyChart() {
       datasets: [
         {
           type: 'bar',
-          label: 'Gated quiet %',
+          $role: 'noisy',
+          label: 'Noisy moments %',
           data: [],
           yAxisID: 'yGated',
           backgroundColor: cssVar('--gated-bar'),
           borderWidth: 0,
           barPercentage: 0.85,
           categoryPercentage: 0.9,
+          order: 3,
+        },
+        {
+          type: 'line',
+          $role: 'l10',
+          label: 'Louder spikes',
+          data: [],
+          yAxisID: 'y',
+          borderColor: cssVar('--range-edge'),
+          backgroundColor: cssVar('--range-fill'),
+          borderWidth: 1,
+          pointRadius: 0,
+          spanGaps: false,
+          tension: 0.2,
+          fill: '+1',
           order: 2,
         },
         {
           type: 'line',
-          label: 'Hourly level',
+          $role: 'l90',
+          label: 'Quieter moments',
+          data: [],
+          yAxisID: 'y',
+          borderColor: cssVar('--range-edge'),
+          backgroundColor: 'transparent',
+          borderWidth: 1,
+          pointRadius: 0,
+          spanGaps: false,
+          tension: 0.2,
+          fill: false,
+          order: 2,
+        },
+        {
+          type: 'line',
+          $role: 'leq',
+          label: 'Overall level',
           data: [],
           yAxisID: 'y',
           borderColor: cssVar('--accent'),
@@ -2229,6 +2292,7 @@ function ensureReportHourlyChart() {
           pointRadius: 3,
           spanGaps: false,
           tension: 0.2,
+          fill: false,
           order: 1,
         },
       ],
@@ -2240,6 +2304,10 @@ function ensureReportHourlyChart() {
       plugins: {
         legend: { display: false },
         tooltip: {
+          filter(item) {
+            // Hide the upper band edge from tooltips; show quieter + overall + noisy.
+            return item.dataset.$role !== 'l10';
+          },
           callbacks: {
             title(items) {
               const i = items && items[0] ? items[0].dataIndex : -1;
@@ -2251,30 +2319,101 @@ function ensureReportHourlyChart() {
             },
             label(ctx) {
               const v = ctx.parsed.y;
-              if (v == null) return 'No data';
-              if (ctx.dataset.yAxisID === 'yGated') {
-                return `Gated quiet ${Number(v).toFixed(0)}%`;
+              if (v == null) return null;
+              const role = ctx.dataset.$role;
+              if (role === 'noisy' || ctx.dataset.yAxisID === 'yGated') {
+                return `Noisy moments ${Number(v).toFixed(0)}%`;
               }
+              if (role === 'l90') return `Quieter moments ${Number(v).toFixed(1)} dBA`;
+              if (role === 'leq') return `Overall level ${Number(v).toFixed(1)} dBA`;
               return `${Number(v).toFixed(1)} dBA`;
+            },
+            afterBody(items) {
+              if (!items.length) return [];
+              const i = items[0].dataIndex;
+              const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
+              const row = rows[i];
+              if (!row || row.l10_db == null) return [];
+              return [`Louder spikes ${Number(row.l10_db).toFixed(1)} dBA`];
             },
           },
         },
       },
       scales: {
         x: {
+          afterBuildTicks(axis) {
+            const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
+            const n = rows.length;
+            if (!n) return;
+            if (reportProfileView === 'typical') {
+              return;
+            }
+            const must = new Set([0, n - 1]);
+            for (let i = 0; i < n; i++) {
+              if (Number(rows[i].hour) === 0) must.add(i);
+              if (
+                i > 0
+                && rows[i].date_short
+                && rows[i].date_short !== rows[i - 1].date_short
+              ) {
+                must.add(i);
+              }
+            }
+            const maxTicks = 16;
+            const chosen = new Set(must);
+            const step = Math.max(1, Math.ceil(n / maxTicks));
+            for (let i = 0; i < n; i += step) chosen.add(i);
+            let indices = Array.from(chosen).sort((a, b) => a - b);
+            if (indices.length > maxTicks) {
+              const keepMust = Array.from(must).sort((a, b) => a - b);
+              const optional = indices.filter((i) => !must.has(i));
+              const slots = Math.max(0, maxTicks - keepMust.length);
+              const picked = [];
+              if (slots > 0 && optional.length) {
+                if (slots === 1) {
+                  picked.push(optional[Math.floor(optional.length / 2)]);
+                } else {
+                  for (let s = 0; s < slots; s++) {
+                    const idx = Math.round(s * (optional.length - 1) / (slots - 1));
+                    picked.push(optional[idx]);
+                  }
+                }
+              }
+              indices = Array.from(new Set([...keepMust, ...picked])).sort((a, b) => a - b);
+            }
+            axis.ticks = indices.map((i) => ({ value: i }));
+          },
           ticks: {
             color: cssVar('--chart-tick'),
             maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 16,
-            callback(value, index) {
+            autoSkip: false,
+            callback(value, index, ticks) {
               const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
-              const row = rows[index];
+              const dataIndex = typeof value === 'number' ? value : parseInt(String(value), 10);
+              const row = rows[Number.isFinite(dataIndex) ? dataIndex : index];
               if (!row) return '';
               const hh = `${String(row.hour).padStart(2, '0')}:00`;
               if (reportProfileView === 'typical') return hh;
-              if (Number(row.hour) === 0 && row.date_short) return row.date_short;
-              return hh;
+              if (!row.date_short) return hh;
+
+              let showDate = Number(row.hour) === 0;
+              if (!showDate && index > 0 && ticks && ticks[index - 1]) {
+                const prevVal = ticks[index - 1].value;
+                const prevIdx = typeof prevVal === 'number'
+                  ? prevVal
+                  : parseInt(String(prevVal), 10);
+                const prevRow = rows[prevIdx];
+                if (prevRow && prevRow.date_short && prevRow.date_short !== row.date_short) {
+                  showDate = true;
+                }
+              }
+              if (!showDate && Number.isFinite(dataIndex) && dataIndex > 0) {
+                const prevData = rows[dataIndex - 1];
+                if (prevData && prevData.date_short && prevData.date_short !== row.date_short) {
+                  showDate = true;
+                }
+              }
+              return showDate ? row.date_short : hh;
             },
           },
           grid: { color: cssVar('--chart-grid') },
@@ -2289,7 +2428,7 @@ function ensureReportHourlyChart() {
           position: 'right',
           min: 0,
           max: 100,
-          title: { display: true, text: 'Gated quiet %', color: cssVar('--chart-tick'), font: { size: 10 } },
+          title: { display: true, text: 'Noisy moments %', color: cssVar('--chart-tick'), font: { size: 10 } },
           ticks: {
             color: cssVar('--chart-tick'),
             callback(v) { return `${v}%`; },
@@ -2302,31 +2441,9 @@ function ensureReportHourlyChart() {
       id: 'comfortAndNightBands',
       beforeDatasetsDraw(chart) {
         const { ctx, chartArea, scales } = chart;
-        if (!chartArea || !scales.y) return;
-        const yScale = scales.y;
-        const yMin = yScale.min;
-        const yMax = yScale.max;
-        const bands = [
-          { lo: Number.NEGATIVE_INFINITY, hi: 40, color: cssVar('--band-quiet') },
-          { lo: 40, hi: 55, color: cssVar('--band-converse') },
-          { lo: 55, hi: 70, color: cssVar('--band-busy') },
-          { lo: 70, hi: Number.POSITIVE_INFINITY, color: cssVar('--band-loud') },
-        ];
-        bands.forEach((band) => {
-          if (!(band.hi > yMin && band.lo < yMax)) return;
-          const yTop = yScale.getPixelForValue(Math.min(band.hi, yMax));
-          const yBot = yScale.getPixelForValue(Math.max(band.lo, yMin));
-          const top = Math.max(chartArea.top, Math.min(yTop, yBot));
-          const bottom = Math.min(chartArea.bottom, Math.max(yTop, yBot));
-          if (!(bottom > top)) return;
-          ctx.save();
-          ctx.fillStyle = band.color || 'transparent';
-          ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, bottom - top);
-          ctx.restore();
-        });
-
+        if (!chartArea || !scales.x) return;
         const nightFlags = chart.$nightFlags || [];
-        if (!nightFlags.length || !scales.x) return;
+        if (!nightFlags.length) return;
         const xScale = scales.x;
         nightFlags.forEach((isNight, i) => {
           if (!isNight) return;
@@ -2336,6 +2453,84 @@ function ensureReportHourlyChart() {
           ctx.save();
           ctx.fillStyle = cssVar('--chart-night');
           ctx.fillRect(x - half, chartArea.top, half * 2, chartArea.bottom - chartArea.top);
+          ctx.restore();
+        });
+      },
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea || !scales.y) return;
+        const yScale = scales.y;
+        const yMin = yScale.min;
+        const yMax = yScale.max;
+        const zones = [
+          { lo: Number.NEGATIVE_INFINITY, hi: 40, color: cssVar('--band-quiet-mark'), short: '<40' },
+          { lo: 40, hi: 55, color: cssVar('--band-converse-mark'), short: '40–55' },
+          { lo: 55, hi: 70, color: cssVar('--band-busy-mark'), short: '55–70' },
+          { lo: 70, hi: Number.POSITIVE_INFINITY, color: cssVar('--band-loud-mark'), short: '>70' },
+        ];
+        const railX = chartArea.left + 1;
+        const railW = 4;
+        zones.forEach((zone) => {
+          if (!(zone.hi > yMin && zone.lo < yMax)) return;
+          const yTop = yScale.getPixelForValue(Math.min(zone.hi, yMax));
+          const yBot = yScale.getPixelForValue(Math.max(zone.lo, yMin));
+          const top = Math.max(chartArea.top, Math.min(yTop, yBot));
+          const bottom = Math.min(chartArea.bottom, Math.max(yTop, yBot));
+          const h = bottom - top;
+          if (!(h > 6)) return;
+          ctx.save();
+          // Slim vertical rail for the zone
+          ctx.fillStyle = zone.color;
+          ctx.globalAlpha = 0.9;
+          ctx.beginPath();
+          const rr = Math.min(2, h / 2);
+          ctx.moveTo(railX + railW - rr, top);
+          ctx.arcTo(railX + railW, top, railX + railW, top + rr, rr);
+          ctx.lineTo(railX + railW, bottom - rr);
+          ctx.arcTo(railX + railW, bottom, railX + railW - rr, bottom, rr);
+          ctx.lineTo(railX + rr, bottom);
+          ctx.arcTo(railX, bottom, railX, bottom - rr, rr);
+          ctx.lineTo(railX, top + rr);
+          ctx.arcTo(railX, top, railX + rr, top, rr);
+          ctx.closePath();
+          ctx.fill();
+          // Bracket ticks
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = zone.color;
+          ctx.lineWidth = 1.25;
+          ctx.beginPath();
+          ctx.moveTo(railX, top + 0.5);
+          ctx.lineTo(railX + railW + 6, top + 0.5);
+          ctx.moveTo(railX, bottom - 0.5);
+          ctx.lineTo(railX + railW + 6, bottom - 0.5);
+          ctx.stroke();
+          // Colour pill tag beside the rail when there's room
+          if (h >= 28) {
+            ctx.font = '600 9px system-ui,sans-serif';
+            const label = zone.short;
+            const padX = 5;
+            const padY = 2;
+            const tw = ctx.measureText(label).width;
+            const th = 12;
+            const tx = railX + railW + 8;
+            const ty = (top + bottom) / 2 - th / 2;
+            ctx.globalAlpha = 0.92;
+            ctx.fillStyle = zone.color;
+            const pr = 6;
+            ctx.beginPath();
+            ctx.moveTo(tx + pr, ty);
+            ctx.arcTo(tx + tw + padX * 2, ty, tx + tw + padX * 2, ty + th, pr);
+            ctx.arcTo(tx + tw + padX * 2, ty + th + padY * 2, tx, ty + th + padY * 2, pr);
+            ctx.arcTo(tx, ty + th + padY * 2, tx, ty, pr);
+            ctx.arcTo(tx, ty, tx + tw + padX * 2, ty, pr);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = '#0f172a';
+            ctx.globalAlpha = 0.9;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, tx + padX, ty + (th + padY * 2) / 2);
+          }
           ctx.restore();
         });
       },
@@ -2359,14 +2554,11 @@ function updateReportBandLegend(yMin, yMax, hasGatedBars) {
   if (!el) return;
   const visible = REPORT_COMFORT_BANDS.filter((b) => b.hi > yMin && b.lo < yMax);
   const parts = [
-    '<span class="report-band-legend-intro">Coloured bands are loudness analogies (how loud it feels), not detected sound types:</span>',
+    '<span class="report-band-legend-intro">Y-axis colour marks are loudness analogies (how loud it feels), not detected sound types:</span>',
   ];
   visible.forEach((b) => {
     parts.push(`<span><i class="band-swatch ${b.key}" aria-hidden="true"></i>${b.text}</span>`);
   });
-  if (hasGatedBars) {
-    parts.push('<span><i class="band-swatch gated" aria-hidden="true"></i>Bars — % of hour gated (relative quiet)</span>');
-  }
   el.innerHTML = parts.join('');
 }
 
@@ -2375,13 +2567,11 @@ function setReportProfileView(view) {
   document.querySelectorAll('.report-view-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.view === reportProfileView);
   });
-  const note = document.getElementById('rpt-chart-note');
-  if (note) {
-    note.innerHTML = reportProfileView === 'typical'
-      ? 'Typical day · bars show % of each hour that was gated (relative quiet)'
-      : 'Hourly sound level · bars show % of each hour that was gated (relative quiet)';
-  }
   if (reportZoneB) renderReportHourly(reportZoneB);
+}
+
+function reportDs(chart, role) {
+  return chart.data.datasets.find((d) => d.$role === role);
 }
 
 function renderReportHourly(zoneB) {
@@ -2396,22 +2586,27 @@ function renderReportHourly(zoneB) {
   chart.$reportRows = rows;
   chart.$nightFlags = rows.map((h) => h.period === 'night');
   chart.data.labels = rows.map((_, i) => String(i));
-  const values = rows.map((h) => (h.leq_db == null ? null : h.leq_db));
-  const gated = rows.map((h) => (
-    h.leq_db == null && !(h.chunk_count > 0) ? null : (h.gated_pct == null ? null : h.gated_pct)
-  ));
-  const barDs = chart.data.datasets.find((d) => d.type === 'bar');
-  const lineDs = chart.data.datasets.find((d) => d.type === 'line');
-  if (barDs) {
-    barDs.data = gated;
-    barDs.backgroundColor = cssVar('--gated-bar');
-  }
-  if (lineDs) {
-    lineDs.data = values;
-    lineDs.borderColor = cssVar('--accent');
-    lineDs.backgroundColor = cssVar('--accent-soft');
-  }
-  const finite = values.filter((v) => v != null && Number.isFinite(v));
+  const leq = rows.map((h) => (h.leq_db == null ? null : h.leq_db));
+  const l90 = rows.map((h) => (h.l90_db == null ? null : h.l90_db));
+  const l10 = rows.map((h) => (h.l10_db == null ? null : h.l10_db));
+  const noisy = rows.map((h) => {
+    if (h.leq_db == null && !(h.chunk_count > 0)) return null;
+    if (h.gated_pct == null) return null;
+    return Math.max(0, Math.min(100, Math.round((100 - Number(h.gated_pct)) * 10) / 10));
+  });
+  const noisyDs = reportDs(chart, 'noisy');
+  const l10Ds = reportDs(chart, 'l10');
+  const l90Ds = reportDs(chart, 'l90');
+  const leqDs = reportDs(chart, 'leq');
+  if (noisyDs) noisyDs.data = noisy;
+  if (l10Ds) l10Ds.data = l10;
+  if (l90Ds) l90Ds.data = l90;
+  if (leqDs) leqDs.data = leq;
+  applyReportHourlyDatasetColors(chart);
+
+  const finite = []
+    .concat(leq, l90, l10)
+    .filter((v) => v != null && Number.isFinite(v));
   let yMin = 35;
   let yMax = 65;
   if (finite.length) {
@@ -2427,8 +2622,7 @@ function renderReportHourly(zoneB) {
   }
   chart.options.scales.y.min = yMin;
   chart.options.scales.y.max = yMax;
-  const hasGated = gated.some((v) => v != null && Number(v) > 0);
-  updateReportBandLegend(yMin, yMax, hasGated || gated.some((v) => v != null));
+  updateReportBandLegend(yMin, yMax, noisy.some((v) => v != null));
   chart.update('none');
 }
 

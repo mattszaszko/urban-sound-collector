@@ -154,18 +154,24 @@ def build_timeline_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
 
 
 def _bucket_loudness_stats(members: list[AcousticChunk]) -> dict[str, Any]:
-    """Leq + gated quiet share for one hour bucket."""
+    """Leq, within-hour L90/L10 spread, and gated quiet share for one hour bucket."""
     if not members:
         return {
             "leq_db": None,
+            "l90_db": None,
+            "l10_db": None,
             "gated_pct": None,
             "chunk_count": 0,
             "gated_count": 0,
         }
+    dbas = [c.dba for c in members]
+    percentiles = _level_percentiles(dbas)
     gated_n = sum(1 for c in members if c.gated)
     n = len(members)
     return {
-        "leq_db": energetic_leq([c.dba for c in members]),
+        "leq_db": energetic_leq(dbas),
+        "l90_db": percentiles["l90_db"],
+        "l10_db": percentiles["l10_db"],
         "gated_pct": round(100.0 * gated_n / n, 1),
         "chunk_count": n,
         "gated_count": gated_n,

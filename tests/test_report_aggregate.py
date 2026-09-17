@@ -189,9 +189,13 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(hour13["chunk_count"], 4)
         self.assertEqual(hour13["gated_count"], 2)
         self.assertEqual(hour13["gated_pct"], 50.0)
+        self.assertIsNotNone(hour13["l90_db"])
+        self.assertIsNotNone(hour13["l10_db"])
+        self.assertLessEqual(hour13["l90_db"], hour13["l10_db"])
         timeline_row = report["zone_b"]["timeline"][0]
         self.assertIn("date_short", timeline_row)
         self.assertEqual(timeline_row["gated_pct"], 50.0)
+        self.assertEqual(timeline_row["l90_db"], hour13["l90_db"])
 
 
 if __name__ == "__main__":
