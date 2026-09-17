@@ -20,7 +20,8 @@
     --accent-soft:rgba(14,165,233,.18);--overlay:rgba(15,23,42,.92);
     --log-text:#7dd3fc;--hairline:rgba(51,65,85,.5);
     --chart-tick:#94a3b8;--chart-grid:rgba(51,65,85,.7);
-    --chart-night:rgba(148,163,184,.16);--error-banner-bg:#7f1d1d;
+    --chart-day:rgba(148,163,184,.16);--chart-night:transparent;
+    --error-banner-bg:#7f1d1d;
     --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
     --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
     --clap-label:#fcd34d;--playhead:#f472b6;
@@ -45,7 +46,8 @@
     --accent-soft:rgba(2,132,199,.14);--overlay:rgba(15,23,42,.5);
     --log-text:#0369a1;--hairline:rgba(148,163,184,.55);
     --chart-tick:#64748b;--chart-grid:rgba(148,163,184,.45);
-    --chart-night:rgba(15,23,42,.08);--error-banner-bg:#fef2f2;
+    --chart-day:transparent;--chart-night:rgba(15,23,42,.08);
+    --error-banner-bg:#fef2f2;
     --error-banner-text:#b91c1c;--yam-point:#16a34a;--yam-border:#166534;
     --yam-label:#15803d;--clap-point:#d97706;--clap-border:#92400e;
     --clap-label:#b45309;--playhead:#db2777;
@@ -364,7 +366,7 @@
   }
   @media(min-width:960px){
     .impact-grid{grid-template-columns:repeat(4,1fr)}
-    #rpt-impact{grid-template-columns:repeat(3,1fr)}
+    #rpt-impact{grid-template-columns:repeat(2,1fr)}
     .overview-chart-box{height:340px}
   }
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
@@ -2483,17 +2485,16 @@ function fmtReportDb(v) {
 function renderReportImpact(zoneA) {
   const el = document.getElementById('rpt-impact');
   if (!el) return;
-  const ambientHint = [
-    zoneA.l90_db != null ? `Quiet moments ${fmtReportDb(zoneA.l90_db)}` : null,
+  const typicalHint = [
+    zoneA.l90_db != null ? `Quiet moments around ${fmtReportDb(zoneA.l90_db)}` : null,
+    zoneA.l10_db != null ? `Louder spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
     zoneA.leq_context || null,
-  ].filter(Boolean).join(' · ') || 'Overall energy of the period';
+  ].filter(Boolean).join(' · ') || 'Most-of-the-time neighborhood level';
   const peakHint = [
-    zoneA.l10_db != null ? `Loud spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
     zoneA.peak_lafmax_at_local ? `Highest at ${zoneA.peak_lafmax_at_local}` : null,
   ].filter(Boolean).join(' · ') || 'Sudden loud moments';
   el.innerHTML = [
-    impactCard('Ambient level', fmtReportDb(zoneA.leq_db), ambientHint),
-    impactCard('Typical ambient', fmtReportDb(zoneA.l50_db), 'Everyday neighborhood baseline'),
+    impactCard('Typical level', fmtReportDb(zoneA.l50_db), typicalHint),
     impactCard('Peak disturbance', fmtReportDb(zoneA.peak_lafmax_db), peakHint),
   ].join('');
 }
@@ -2895,12 +2896,13 @@ function ensureReportHourlyChart() {
         if (!nightFlags.length) return;
         const xScale = scales.x;
         nightFlags.forEach((isNight, i) => {
-          if (!isNight) return;
+          const fill = (isNight ? cssVar('--chart-night') : cssVar('--chart-day')).trim();
+          if (!fill || fill === 'transparent') return;
           const x = xScale.getPixelForValue(i);
           const half = (xScale.getPixelForValue(1) - xScale.getPixelForValue(0)) / 2;
           if (!Number.isFinite(x) || !Number.isFinite(half)) return;
           ctx.save();
-          ctx.fillStyle = cssVar('--chart-night');
+          ctx.fillStyle = fill;
           ctx.fillRect(x - half, chartArea.top, half * 2, chartArea.bottom - chartArea.top);
           ctx.restore();
         });
@@ -3013,7 +3015,7 @@ function updateReportBandLegend(yMin, yMax, hasGatedBars) {
 
 function setReportProfileView(view) {
   reportProfileView = view === 'typical' ? 'typical' : 'timeline';
-  document.querySelectorAll('.report-view-btn').forEach((btn) => {
+  document.querySelectorAll('[data-view]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.view === reportProfileView);
   });
   if (reportZoneB) renderReportHourly(reportZoneB);
@@ -3075,7 +3077,7 @@ function renderReportHourly(zoneB) {
   chart.update('none');
 }
 
-document.querySelectorAll('.report-view-btn').forEach((btn) => {
+document.querySelectorAll('[data-view]').forEach((btn) => {
   btn.addEventListener('click', () => setReportProfileView(btn.dataset.view));
 });
 

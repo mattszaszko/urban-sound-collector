@@ -33,7 +33,7 @@ DEFAULT_L90_OFFSET_DB = 5.0
 
 
 def leq_context(leq_db: float | None) -> str:
-    """Map A-weighted level to a layperson anchor (WHO-style bands)."""
+    """Map an A-weighted level (typically L50) to a layperson anchor band."""
     if leq_db is None:
         return "—"
     if leq_db < 40:
@@ -488,7 +488,9 @@ def build_dashboard_report(
         "date_end": date_end,
         "header_line": header_line,
         "leq_db": leq,
-        "leq_context": leq_context(leq),
+        "leq_context": leq_context(
+            percentiles["l50_db"] if percentiles["l50_db"] is not None else leq
+        ),
         "l10_db": percentiles["l10_db"],
         "l50_db": percentiles["l50_db"],
         "l90_db": percentiles["l90_db"],

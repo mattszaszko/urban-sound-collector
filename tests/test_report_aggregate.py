@@ -163,7 +163,7 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(zone_a["l50_db"], 44.0)
         self.assertEqual(zone_a["l10_db"], 48.0)
         self.assertNotIn("chunk", zone_a["header_line"].lower())
-        self.assertEqual(zone_a["leq_context"], leq_context(zone_a["leq_db"]))
+        self.assertEqual(zone_a["leq_context"], leq_context(zone_a["l50_db"]))
         self.assertIsNotNone(zone_a["duration_s"])
         self.assertGreater(zone_a["duration_s"], 0)
 
