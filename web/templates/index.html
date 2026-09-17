@@ -254,8 +254,8 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .report-header-line{font-size:1.05rem;font-weight:700;margin-bottom:.35rem}
   .report-sub{font-size:.78rem;color:var(--muted);margin-bottom:.75rem}
-  .report-chart-box{position:relative;height:260px;background:var(--bg);
-                    border:1px solid var(--border);border-radius:8px;padding:.35rem}
+  .report-chart-box{position:relative;height:280px;background:var(--bg);
+                    border:1px solid var(--border);border-radius:8px;padding:.35rem .35rem .55rem}
   .report-band-legend{display:flex;flex-wrap:wrap;gap:.45rem .85rem;margin-top:.65rem;
                       font-size:.72rem;color:var(--muted);line-height:1.35}
   .report-band-legend-intro{flex:1 1 100%;margin-bottom:.1rem}
@@ -376,43 +376,75 @@
   }
   @media(min-width:960px){
     .impact-grid{grid-template-columns:repeat(4,1fr)}
-    #rpt-impact{grid-template-columns:repeat(2,1fr)}
     .overview-chart-box{height:340px}
   }
-  .report-exec-layout{display:flex;flex-direction:column;gap:1rem;margin-top:.35rem}
-  .report-exec-main{flex:1 1 auto;min-width:0}
-  .report-exec-comfort{flex:0 0 auto}
-  @media(min-width:720px){
-    .report-exec-layout{flex-direction:row;align-items:stretch;gap:1.25rem}
-    .report-exec-main{flex:1 1 0}
-    .report-exec-comfort{flex:0 0 15.5rem}
+  .report-top-row{display:flex;flex-direction:column;gap:.85rem;margin-bottom:1.1rem}
+  #report-zone-a{display:flex;flex-direction:column}
+  #report-zone-a #rpt-impact{margin-bottom:0}
+  @media(min-width:860px){
+    .report-top-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(18rem,1fr);
+                    align-items:stretch;gap:1rem}
+    .report-top-row #report-zone-a,
+    .report-top-row #report-zone-comfort{margin-bottom:0;min-width:0;height:100%;align-self:stretch}
+    #report-zone-a #rpt-impact{
+      width:100%;
+      flex:1;
+      grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important;
+      gap:.65rem;
+      align-content:stretch;
+    }
+    #report-zone-a #rpt-impact .impact-card{height:100%;display:flex;flex-direction:column;
+                                           justify-content:center}
   }
-  .comfort-title{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;
-                 color:var(--muted);margin:0 0 .45rem;font-weight:600}
-  .comfort-scale{display:flex;flex-direction:column;gap:.28rem;margin:0}
-  .comfort-row{display:grid;grid-template-columns:1.1rem 1.6rem 1fr;gap:.4rem;
-               align-items:center;padding:.28rem .4rem;border-radius:6px;
-               border:1px solid transparent;font-size:.78rem;line-height:1.2;
-               color:var(--muted)}
-  .comfort-row .pointer{visibility:hidden;color:var(--text);font-weight:700;
-                        text-align:center}
-  .comfort-row .letter{font-weight:800;font-size:.92rem;text-align:center}
-  .comfort-row .name{font-weight:500}
-  .comfort-row.active{border-color:var(--border);color:var(--text);font-weight:600}
-  .comfort-row.active .pointer{visibility:visible}
-  .comfort-row[data-grade="A"] .letter{color:var(--grade-a)}
-  .comfort-row[data-grade="B"] .letter{color:var(--grade-b)}
-  .comfort-row[data-grade="C"] .letter{color:var(--grade-c)}
-  .comfort-row[data-grade="D"] .letter{color:var(--grade-d)}
-  .comfort-row[data-grade="E"] .letter{color:var(--grade-e)}
-  .comfort-row[data-grade="A"].active{background:var(--grade-a-bg)}
-  .comfort-row[data-grade="B"].active{background:var(--grade-b-bg)}
-  .comfort-row[data-grade="C"].active{background:var(--grade-c-bg)}
-  .comfort-row[data-grade="D"].active{background:var(--grade-d-bg)}
-  .comfort-row[data-grade="E"].active{background:var(--grade-e-bg)}
-  .comfort-score{margin-top:.55rem;font-size:.88rem;font-weight:700}
-  .comfort-score span{color:var(--muted);font-weight:500;font-size:.78rem}
-  .comfort-warning{margin-top:.4rem;font-size:.72rem;color:var(--muted);line-height:1.4}
+  #report-zone-comfort{display:flex;flex-direction:column}
+  #rpt-comfort{display:flex;flex-direction:column;flex:1}
+  .comfort-scale{display:flex;flex-direction:column;gap:.38rem;margin:0}
+  .comfort-wave-row{position:relative;display:flex;align-items:center;min-height:1.95rem;
+                    padding:.28rem 0 .28rem .15rem;opacity:.55;transition:opacity .15s;
+                    overflow:hidden}
+  .comfort-wave-row .wave{position:absolute;inset:0 auto 0 0;margin:auto 0;height:34px;
+                          pointer-events:none;z-index:0;overflow:visible;
+                          -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.25) 10%,
+                            rgba(0,0,0,.7) 22%,#000 38%);
+                          mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.25) 10%,
+                            rgba(0,0,0,.7) 22%,#000 38%)}
+  .comfort-wave-row .wave .wave-fill{stroke:none;opacity:.07}
+  .comfort-wave-row .wave .wave-line{fill:none;stroke-linecap:round;stroke-linejoin:round;
+                                    stroke-width:1;opacity:.26}
+  .comfort-wave-row .comfort-wave-label{position:relative;z-index:1;display:inline-flex;
+                                       align-items:baseline;gap:.5rem;padding:.08rem .4rem .08rem 0}
+  .comfort-wave-row .letter{font-weight:800;font-size:.82rem;line-height:1;
+                            text-shadow:0 0 6px var(--surface)}
+  .comfort-wave-row .name{font-size:.74rem;font-weight:600;color:var(--text);line-height:1.2;
+                          text-shadow:0 0 6px var(--surface)}
+  .comfort-wave-row.active{opacity:1}
+  .comfort-wave-row.active::before{content:'▸';position:absolute;left:-.7rem;top:50%;
+                                   transform:translateY(-50%);color:var(--text);z-index:2;
+                                   font-weight:700;font-size:.8rem}
+  .comfort-wave-row[data-grade="A"] .letter,
+  .comfort-wave-row[data-grade="A"] .wave .wave-fill,
+  .comfort-wave-row[data-grade="A"] .wave .wave-line{color:var(--grade-a);fill:var(--grade-a);stroke:var(--grade-a)}
+  .comfort-wave-row[data-grade="B"] .letter,
+  .comfort-wave-row[data-grade="B"] .wave .wave-fill,
+  .comfort-wave-row[data-grade="B"] .wave .wave-line{color:var(--grade-b);fill:var(--grade-b);stroke:var(--grade-b)}
+  .comfort-wave-row[data-grade="C"] .letter,
+  .comfort-wave-row[data-grade="C"] .wave .wave-fill,
+  .comfort-wave-row[data-grade="C"] .wave .wave-line{color:var(--grade-c);fill:var(--grade-c);stroke:var(--grade-c)}
+  .comfort-wave-row[data-grade="D"] .letter,
+  .comfort-wave-row[data-grade="D"] .wave .wave-fill,
+  .comfort-wave-row[data-grade="D"] .wave .wave-line{color:var(--grade-d);fill:var(--grade-d);stroke:var(--grade-d)}
+  .comfort-wave-row[data-grade="E"] .letter,
+  .comfort-wave-row[data-grade="E"] .wave .wave-fill,
+  .comfort-wave-row[data-grade="E"] .wave .wave-line{color:var(--grade-e);fill:var(--grade-e);stroke:var(--grade-e)}
+  .comfort-wave-row.active .wave .wave-fill{opacity:.12}
+  .comfort-wave-row.active .wave .wave-line{opacity:.36;stroke-width:1.1}
+  .comfort-wave-row[data-grade="A"] .wave{width:52%}
+  .comfort-wave-row[data-grade="B"] .wave{width:64%}
+  .comfort-wave-row[data-grade="C"] .wave{width:76%}
+  .comfort-wave-row[data-grade="D"] .wave{width:88%}
+  .comfort-wave-row[data-grade="E"] .wave{width:100%}
+  .comfort-warning{margin-top:auto;padding-top:.55rem;font-size:.72rem;color:var(--muted);
+                   line-height:1.4;border-top:1px solid var(--border)}
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
                   padding:.85rem;background:var(--bg);border:1px solid var(--border);
                   border-radius:8px}
@@ -862,6 +894,7 @@
   <div class="report-toolbar">
     <a class="analyze-back" href="/?tab=data">← Back to Data</a>
   </div>
+  <div class="report-top-row">
   <div class="card report-zone" id="report-zone-a">
     <h2>Executive summary</h2>
     <div class="report-header-line" id="rpt-header">Loading…</div>
@@ -872,12 +905,12 @@
       <div class="report-progress-msg" id="rpt-progress-msg">Starting…</div>
       <div class="report-progress-code" id="rpt-progress-code" hidden></div>
     </div>
-    <div class="report-exec-layout">
-      <div class="report-exec-main">
-        <div class="impact-grid" id="rpt-impact"></div>
-      </div>
-      <div class="report-exec-comfort" id="rpt-comfort" aria-label="Acoustic comfort rating"></div>
-    </div>
+    <div class="impact-grid" id="rpt-impact"></div>
+  </div>
+  <div class="card report-zone" id="report-zone-comfort" aria-label="Acoustic comfort rating">
+    <h2>Acoustic Comfort Rating</h2>
+    <div id="rpt-comfort"></div>
+  </div>
   </div>
   <div class="card report-zone" id="report-zone-b">
     <div class="report-zone-head">
@@ -2585,32 +2618,88 @@ const COMFORT_GRADES = [
   { grade: 'E', name: 'Intense' },
 ];
 
+/** Soft background waveforms; noisier grades = denser / more agitated. */
+function comfortWavePaths(grade) {
+  const profiles = {
+    A: { cycles: 2.4, amp: 4.2, harm: 0.14, noise: 0.18, spikes: 0.05, seed: 11 },
+    B: { cycles: 3.2, amp: 5.0, harm: 0.26, noise: 0.34, spikes: 0.14, seed: 23 },
+    C: { cycles: 4.6, amp: 6.0, harm: 0.4, noise: 0.58, spikes: 0.38, seed: 37 },
+    D: { cycles: 6.4, amp: 7.0, harm: 0.56, noise: 0.88, spikes: 0.72, seed: 53 },
+    E: { cycles: 9.0, amp: 8.0, harm: 0.74, noise: 1.15, spikes: 1.15, seed: 71 },
+  };
+  const p = profiles[grade] || profiles.C;
+  const mid = 17;
+  const n = 64;
+  let s = p.seed * 9973;
+  const rnd = () => {
+    s = (s * 16807) % 2147483647;
+    return (s % 10000) / 10000;
+  };
+  const amps = [];
+  for (let i = 0; i <= n; i += 1) {
+    const t = i / n;
+    const env = 0.55 + 0.45 * Math.sin(Math.PI * t);
+    const base = Math.abs(Math.sin(t * Math.PI * 2 * p.cycles));
+    const harm = Math.abs(Math.sin(t * Math.PI * 2 * p.cycles * 2.35 + 0.4)) * p.harm;
+    const flutter = Math.abs(Math.sin(t * Math.PI * 2 * p.cycles * 5.1 + 1.1)) * p.spikes * 0.35;
+    const noise = rnd() * p.noise;
+    const burst = (rnd() < p.spikes * 0.18 ? rnd() * p.spikes * 0.85 : 0);
+    const amp = Math.max(0.35, ((base + harm + flutter) * p.amp + noise * p.amp + burst * p.amp) * env);
+    amps.push({ x: 100 * t, amp: Math.min(mid - 1.2, amp) });
+  }
+  const curve = (pts) => {
+    let d = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+    for (let i = 1; i < pts.length; i += 1) {
+      const [x0, y0] = pts[i - 1];
+      const [x1, y1] = pts[i];
+      const cx = ((x0 + x1) / 2).toFixed(2);
+      d += ` Q${cx} ${y0.toFixed(2)} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+    }
+    return d;
+  };
+  const top = amps.map((pt) => [pt.x, mid - pt.amp]);
+  const bot = amps.map((pt) => [pt.x, mid + pt.amp]);
+  const centerPts = amps.map((pt, i) => {
+    const sign = (i % 2 === 0) ? 1 : -1;
+    const wobble = (i % 4 < 2) ? 1 : 0.72;
+    return [pt.x, mid - sign * pt.amp * wobble];
+  });
+  let fill = curve(top);
+  for (let i = bot.length - 1; i >= 0; i -= 1) {
+    fill += ` L${bot[i][0].toFixed(2)} ${bot[i][1].toFixed(2)}`;
+  }
+  fill += ' Z';
+  return { fill, stroke: curve(centerPts) };
+}
+
 function renderComfortRating(zoneA) {
   const el = document.getElementById('rpt-comfort');
   if (!el) return;
   const rating = zoneA && zoneA.comfort_rating;
   if (!rating || !rating.grade) {
-    el.innerHTML = '';
+    el.innerHTML = '<div class="empty">Not enough data to rate.</div>';
     return;
   }
   const rows = COMFORT_GRADES.map((g) => {
     const active = g.grade === rating.grade ? ' active' : '';
-    return `<div class="comfort-row${active}" data-grade="${g.grade}">
-      <span class="pointer" aria-hidden="true">▸</span>
-      <span class="letter">${g.grade}</span>
-      <span class="name">${g.name}</span>
+    const paths = comfortWavePaths(g.grade);
+    return `<div class="comfort-wave-row${active}" data-grade="${g.grade}">
+      <svg class="wave" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">
+        <path class="wave-fill" d="${paths.fill}"></path>
+        <path class="wave-line" d="${paths.stroke}"></path>
+      </svg>
+      <div class="comfort-wave-label">
+        <span class="letter">${g.grade}</span>
+        <span class="name">${g.name}</span>
+      </div>
     </div>`;
   }).join('');
   const warn = rating.insufficient_data && rating.warning
     ? `<div class="comfort-warning">${rating.warning}</div>`
     : '';
   el.innerHTML = `
-    <div class="comfort-title">Acoustic comfort</div>
     <div class="comfort-scale" role="img" aria-label="Grade ${rating.grade}, ${rating.label}">
       ${rows}
-    </div>
-    <div class="comfort-score">${rating.grade} · ${rating.label}
-      <span>(${rating.score}/100)</span>
     </div>
     ${warn}`;
 }
@@ -2735,6 +2824,84 @@ function renderTimeBudget(zoneC, meta) {
   renderHourlyBudgetStack(budget);
 }
 
+function reportHourTickLabel(rows, value, index, ticks, { forceHoursOnly = false } = {}) {
+  const dataIndex = typeof value === 'number' ? value : parseInt(String(value), 10);
+  const row = rows[Number.isFinite(dataIndex) ? dataIndex : index];
+  if (!row) return '';
+  const hh = `${String(row.hour).padStart(2, '0')}:00`;
+  if (forceHoursOnly || !row.date_short) return hh;
+
+  let showDate = Number(row.hour) === 0;
+  if (!showDate && index > 0 && ticks && ticks[index - 1]) {
+    const prevVal = ticks[index - 1].value;
+    const prevIdx = typeof prevVal === 'number' ? prevVal : parseInt(String(prevVal), 10);
+    const prevRow = rows[prevIdx];
+    if (prevRow && prevRow.date_short && prevRow.date_short !== row.date_short) {
+      showDate = true;
+    }
+  }
+  if (!showDate && Number.isFinite(dataIndex) && dataIndex > 0) {
+    const prevData = rows[dataIndex - 1];
+    if (prevData && prevData.date_short && prevData.date_short !== row.date_short) {
+      showDate = true;
+    }
+  }
+  // Two-line tick keeps the date above the hour so wide date text doesn't
+  // collide with neighbouring hour labels on the same baseline.
+  return showDate ? [row.date_short, hh] : hh;
+}
+
+function selectTimelineHourTicks(rows, maxTicks = 16) {
+  const n = rows.length;
+  if (!n) return [];
+  const must = new Set([0, n - 1]);
+  const dateBoundaries = new Set();
+  for (let i = 0; i < n; i++) {
+    if (Number(rows[i].hour) === 0) {
+      must.add(i);
+      dateBoundaries.add(i);
+    }
+    if (
+      i > 0
+      && rows[i].date_short
+      && rows[i].date_short !== rows[i - 1].date_short
+    ) {
+      must.add(i);
+      dateBoundaries.add(i);
+    }
+  }
+  const chosen = new Set(must);
+  const step = Math.max(1, Math.ceil(n / maxTicks));
+  for (let i = 0; i < n; i += step) chosen.add(i);
+  let indices = Array.from(chosen).sort((a, b) => a - b);
+  // Drop optional ticks that sit right next to a date-boundary tick.
+  indices = indices.filter((i) => {
+    if (must.has(i)) return true;
+    for (const b of dateBoundaries) {
+      if (Math.abs(i - b) <= 1) return false;
+    }
+    return true;
+  });
+  if (indices.length > maxTicks) {
+    const keepMust = Array.from(must).sort((a, b) => a - b);
+    const optional = indices.filter((i) => !must.has(i));
+    const slots = Math.max(0, maxTicks - keepMust.length);
+    const picked = [];
+    if (slots > 0 && optional.length) {
+      if (slots === 1) {
+        picked.push(optional[Math.floor(optional.length / 2)]);
+      } else {
+        for (let s = 0; s < slots; s++) {
+          const idx = Math.round(s * (optional.length - 1) / (slots - 1));
+          picked.push(optional[idx]);
+        }
+      }
+    }
+    indices = Array.from(new Set([...keepMust, ...picked])).sort((a, b) => a - b);
+  }
+  return indices;
+}
+
 function renderHourlyBudgetStack(budget) {
   const canvas = document.getElementById('report-budget-hourly-chart');
   if (!canvas || typeof Chart === 'undefined') {
@@ -2743,7 +2910,7 @@ function renderHourlyBudgetStack(budget) {
   }
   const hours = budget.hourly || [];
   const categories = budget.categories || [];
-  const labels = hours.map((h) => h.label || `${h.hour}:00`);
+  const labels = hours.map((_, i) => String(i));
   const datasets = categories.map((cat, idx) => ({
     label: cat,
     data: hours.map((h) => {
@@ -2755,6 +2922,7 @@ function renderHourlyBudgetStack(budget) {
     stack: 'budget',
   }));
   if (reportBudgetHourlyChart) {
+    reportBudgetHourlyChart.$reportRows = hours;
     reportBudgetHourlyChart.data.labels = labels;
     reportBudgetHourlyChart.data.datasets = datasets;
     applyChartScaleColors(reportBudgetHourlyChart);
@@ -2770,7 +2938,23 @@ function renderHourlyBudgetStack(budget) {
       scales: {
         x: {
           stacked: true,
-          ticks: { maxRotation: 45, minRotation: 0, autoSkip: true, maxTicksLimit: 16 },
+          afterBuildTicks(axis) {
+            const rows = (reportBudgetHourlyChart && reportBudgetHourlyChart.$reportRows) || [];
+            if (!rows.length) return;
+            const indices = selectTimelineHourTicks(rows, 16);
+            axis.ticks = indices.map((i) => ({ value: i }));
+          },
+          ticks: {
+            color: cssVar('--chart-tick'),
+            maxRotation: 0,
+            autoSkip: false,
+            padding: 4,
+            font: { size: 10 },
+            callback(value, index, ticks) {
+              const rows = (reportBudgetHourlyChart && reportBudgetHourlyChart.$reportRows) || [];
+              return reportHourTickLabel(rows, value, index, ticks);
+            },
+          },
         },
         y: {
           stacked: true,
@@ -2783,6 +2967,14 @@ function renderHourlyBudgetStack(budget) {
         legend: { display: false },
         tooltip: {
           callbacks: {
+            title(items) {
+              const i = items && items[0] ? items[0].dataIndex : -1;
+              const rows = (reportBudgetHourlyChart && reportBudgetHourlyChart.$reportRows) || [];
+              const row = rows[i];
+              if (!row) return '';
+              const hh = `${String(row.hour).padStart(2, '0')}:00`;
+              return row.date_short ? `${row.date_short} ${hh}` : hh;
+            },
             label(ctx) {
               return ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(1)}%`;
             },
@@ -2791,6 +2983,7 @@ function renderHourlyBudgetStack(budget) {
       },
     },
   });
+  reportBudgetHourlyChart.$reportRows = hours;
   applyChartScaleColors(reportBudgetHourlyChart);
 }
 
@@ -2909,77 +3102,22 @@ function ensureReportHourlyChart() {
         x: {
           afterBuildTicks(axis) {
             const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
-            const n = rows.length;
-            if (!n) return;
-            if (reportProfileView === 'typical') {
-              return;
-            }
-            const must = new Set([0, n - 1]);
-            for (let i = 0; i < n; i++) {
-              if (Number(rows[i].hour) === 0) must.add(i);
-              if (
-                i > 0
-                && rows[i].date_short
-                && rows[i].date_short !== rows[i - 1].date_short
-              ) {
-                must.add(i);
-              }
-            }
-            const maxTicks = 16;
-            const chosen = new Set(must);
-            const step = Math.max(1, Math.ceil(n / maxTicks));
-            for (let i = 0; i < n; i += step) chosen.add(i);
-            let indices = Array.from(chosen).sort((a, b) => a - b);
-            if (indices.length > maxTicks) {
-              const keepMust = Array.from(must).sort((a, b) => a - b);
-              const optional = indices.filter((i) => !must.has(i));
-              const slots = Math.max(0, maxTicks - keepMust.length);
-              const picked = [];
-              if (slots > 0 && optional.length) {
-                if (slots === 1) {
-                  picked.push(optional[Math.floor(optional.length / 2)]);
-                } else {
-                  for (let s = 0; s < slots; s++) {
-                    const idx = Math.round(s * (optional.length - 1) / (slots - 1));
-                    picked.push(optional[idx]);
-                  }
-                }
-              }
-              indices = Array.from(new Set([...keepMust, ...picked])).sort((a, b) => a - b);
-            }
+            if (!rows.length) return;
+            if (reportProfileView === 'typical') return;
+            const indices = selectTimelineHourTicks(rows, 16);
             axis.ticks = indices.map((i) => ({ value: i }));
           },
           ticks: {
             color: cssVar('--chart-tick'),
             maxRotation: 0,
             autoSkip: false,
+            padding: 4,
+            font: { size: 10 },
             callback(value, index, ticks) {
               const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
-              const dataIndex = typeof value === 'number' ? value : parseInt(String(value), 10);
-              const row = rows[Number.isFinite(dataIndex) ? dataIndex : index];
-              if (!row) return '';
-              const hh = `${String(row.hour).padStart(2, '0')}:00`;
-              if (reportProfileView === 'typical') return hh;
-              if (!row.date_short) return hh;
-
-              let showDate = Number(row.hour) === 0;
-              if (!showDate && index > 0 && ticks && ticks[index - 1]) {
-                const prevVal = ticks[index - 1].value;
-                const prevIdx = typeof prevVal === 'number'
-                  ? prevVal
-                  : parseInt(String(prevVal), 10);
-                const prevRow = rows[prevIdx];
-                if (prevRow && prevRow.date_short && prevRow.date_short !== row.date_short) {
-                  showDate = true;
-                }
-              }
-              if (!showDate && Number.isFinite(dataIndex) && dataIndex > 0) {
-                const prevData = rows[dataIndex - 1];
-                if (prevData && prevData.date_short && prevData.date_short !== row.date_short) {
-                  showDate = true;
-                }
-              }
-              return showDate ? row.date_short : hh;
+              return reportHourTickLabel(rows, value, index, ticks, {
+                forceHoursOnly: reportProfileView === 'typical',
+              });
             },
           },
           grid: { color: cssVar('--chart-grid') },
