@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,14 +7,47 @@
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
+    color-scheme: dark;
     --bg:#0f172a;--surface:#1e293b;--border:#334155;
-    --text:#f1f5f9;--muted:#94a3b8;--accent:#0ea5e9;
+    --text:#f1f5f9;--muted:#94a3b8;--accent:#0ea5e9;--accent-hover:#38bdf8;
     --green:#22c55e;--red:#ef4444;--yellow:#f59e0b;
+    --danger-bg:#450a0a;--danger-bg-hover:#7f1d1d;--danger-text:#fecaca;
+    --danger-border:#b91c1c;--danger-soft:#fca5a5;
+    --stop-bg:#7f1d1d;--stop-bg-hover:#991b1b;
+    --badge-ok-bg:#14532d;--badge-warn-bg:#713f12;--badge-idle-bg:#1e293b;
+    --hover-row:rgba(51,65,85,.35);--hover-tab:rgba(30,41,59,.6);
+    --selected-row:rgba(14,165,233,.12);--selected-outline:rgba(14,165,233,.45);
+    --accent-soft:rgba(14,165,233,.18);--overlay:rgba(15,23,42,.92);
+    --log-text:#7dd3fc;--hairline:rgba(51,65,85,.5);
+    --chart-tick:#94a3b8;--chart-grid:rgba(51,65,85,.7);
+    --chart-night:rgba(148,163,184,.12);--error-banner-bg:#7f1d1d;
+    --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
+    --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
+    --clap-label:#fcd34d;--playhead:#f472b6;
+  }
+  html[data-theme="light"]{
+    color-scheme: light;
+    --bg:#f1f5f9;--surface:#ffffff;--border:#cbd5e1;
+    --text:#0f172a;--muted:#64748b;--accent:#0284c7;--accent-hover:#0369a1;
+    --green:#16a34a;--red:#dc2626;--yellow:#d97706;
+    --danger-bg:#fef2f2;--danger-bg-hover:#fee2e2;--danger-text:#b91c1c;
+    --danger-border:#fca5a5;--danger-soft:#b91c1c;
+    --stop-bg:#dc2626;--stop-bg-hover:#b91c1c;
+    --badge-ok-bg:#dcfce7;--badge-warn-bg:#fef3c7;--badge-idle-bg:#f8fafc;
+    --hover-row:rgba(15,23,42,.06);--hover-tab:rgba(15,23,42,.06);
+    --selected-row:rgba(2,132,199,.1);--selected-outline:rgba(2,132,199,.35);
+    --accent-soft:rgba(2,132,199,.14);--overlay:rgba(15,23,42,.5);
+    --log-text:#0369a1;--hairline:rgba(148,163,184,.55);
+    --chart-tick:#64748b;--chart-grid:rgba(148,163,184,.45);
+    --chart-night:rgba(100,116,139,.12);--error-banner-bg:#fef2f2;
+    --error-banner-text:#b91c1c;--yam-point:#16a34a;--yam-border:#166534;
+    --yam-label:#15803d;--clap-point:#d97706;--clap-border:#92400e;
+    --clap-label:#b45309;--playhead:#db2777;
   }
   body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
        min-height:100vh;padding:1rem}
   header{display:flex;align-items:center;justify-content:space-between;
-         margin-bottom:1rem}
+         margin-bottom:1rem;gap:.75rem}
   header h1{font-size:1.1rem;font-weight:700;color:var(--accent)}
   .device-meta{font-size:.72rem;color:var(--muted);margin-top:.25rem;line-height:1.4}
   .device-meta a{color:var(--accent);text-decoration:none}
@@ -22,11 +55,19 @@
   header a{color:var(--muted);font-size:.85rem;text-decoration:none}
   header a:hover{color:var(--text)}
   .header-actions{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
+  .btn-color-mode{width:auto;margin:0;padding:.35rem .55rem;border-radius:6px;
+                  font-size:.75rem;font-weight:600;background:var(--bg);color:var(--muted);
+                  border:1px solid var(--border);cursor:pointer;white-space:nowrap;
+                  display:inline-flex;align-items:center;gap:.3rem;line-height:1}
+  .btn-color-mode:hover{color:var(--text);border-color:var(--accent)}
+  .btn-color-mode .icon-sun{display:none}
+  html[data-theme="light"] .btn-color-mode .icon-moon{display:none}
+  html[data-theme="light"] .btn-color-mode .icon-sun{display:inline}
   .btn-shutdown-sm{width:auto;margin:0;padding:.35rem .65rem;border-radius:6px;
-                   font-size:.75rem;font-weight:600;background:#450a0a;color:#fecaca;
-                   border:1px solid #b91c1c;cursor:pointer;white-space:nowrap;
+                   font-size:.75rem;font-weight:600;background:var(--danger-bg);color:var(--danger-text);
+                   border:1px solid var(--danger-border);cursor:pointer;white-space:nowrap;
                    display:inline-flex;align-items:center;gap:.3rem}
-  .btn-shutdown-sm:hover{background:#7f1d1d}
+  .btn-shutdown-sm:hover{background:var(--danger-bg-hover)}
   .btn-shutdown-sm:disabled,.btn-shutdown-sm.btn-disabled{
     background:var(--border);color:var(--muted);border-color:var(--border);
     cursor:not-allowed;opacity:.7}
@@ -37,7 +78,7 @@
   .tab-btn{background:transparent;border:1px solid transparent;color:var(--muted);
            padding:.5rem .9rem;border-radius:8px 8px 0 0;font-size:.85rem;font-weight:600;
            cursor:pointer}
-  .tab-btn:hover{color:var(--text);background:rgba(30,41,59,.6)}
+  .tab-btn:hover{color:var(--text);background:var(--hover-tab)}
   .tab-btn.active{color:var(--text);border-color:var(--border);border-bottom-color:var(--surface);
                   background:var(--surface)}
   .tab-panel{display:none}
@@ -52,10 +93,10 @@
   .status-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem}
   .badge{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .7rem;
          border-radius:999px;font-size:.8rem;font-weight:600}
-  .badge.recording{background:#14532d;color:var(--green)}
-  .badge.idle{background:#1e293b;border:1px solid var(--border);color:var(--muted)}
-  .badge.ok{background:#14532d;color:var(--green)}
-  .badge.warn{background:#713f12;color:var(--yellow)}
+  .badge.recording{background:var(--badge-ok-bg);color:var(--green)}
+  .badge.idle{background:var(--badge-idle-bg);border:1px solid var(--border);color:var(--muted)}
+  .badge.ok{background:var(--badge-ok-bg);color:var(--green)}
+  .badge.warn{background:var(--badge-warn-bg);color:var(--yellow)}
   .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
   .recording .dot{animation:pulse 1.4s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -90,26 +131,26 @@
        padding:.65rem 1.25rem;border:none;border-radius:8px;font-size:.95rem;
        font-weight:600;cursor:pointer;width:100%;margin-top:.75rem}
   .btn-start{background:var(--accent);color:#fff}
-  .btn-start:hover{background:#38bdf8}
-  .btn-stop{background:#7f1d1d;color:#fca5a5;border:1px solid var(--red)}
-  .btn-stop:hover{background:#991b1b}
+  .btn-start:hover{background:var(--accent-hover)}
+  .btn-stop{background:var(--stop-bg);color:var(--danger-soft);border:1px solid var(--red)}
+  .btn-stop:hover{background:var(--stop-bg-hover)}
   .btn-secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
   .btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
-  .btn-danger-sm{background:transparent;color:#fca5a5;border:1px solid #7f1d1d;
+  .btn-danger-sm{background:transparent;color:var(--danger-soft);border:1px solid var(--danger-border);
                  padding:.35rem .6rem;border-radius:6px;font-size:.75rem;font-weight:600;
                  cursor:pointer;width:auto;margin:0}
-  .btn-danger-sm:hover{background:#7f1d1d}
+  .btn-danger-sm:hover{background:var(--danger-bg-hover)}
   .btn-row{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.75rem}
   .btn-row .btn{width:auto;flex:1 1 auto;margin-top:0;min-width:8rem}
   .btn-disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
   .inline-status{font-size:.8rem;color:var(--muted);margin-top:.75rem;line-height:1.4;
                  min-height:1.2em}
   .inline-status.ok{color:var(--green)}
-  .inline-status.err{color:#fca5a5}
+  .inline-status.err{color:var(--danger-soft)}
 
   /* Shutdown overlay */
   #shutdown-overlay{display:none;position:fixed;inset:0;z-index:1000;
-    background:rgba(15,23,42,.92);align-items:center;justify-content:center;
+    background:var(--overlay);align-items:center;justify-content:center;
     padding:1.5rem}
   #shutdown-overlay.active{display:flex}
   .shutdown-panel{background:var(--surface);border:1px solid var(--border);
@@ -124,7 +165,7 @@
 
   /* Log */
   #log-box{background:var(--bg);border-radius:8px;padding:.75rem;
-           font-size:.72rem;font-family:monospace;color:#7dd3fc;
+           font-size:.72rem;font-family:monospace;color:var(--log-text);
            height:200px;overflow-y:auto;border:1px solid var(--border)}
   #log-box p{margin:0;line-height:1.6;white-space:pre-wrap;word-break:break-all}
 
@@ -132,8 +173,8 @@
   .recording-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
            justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);
            font-size:.8rem;border-radius:8px;padding-left:.35rem;padding-right:.35rem}
-  .recording-row:hover{background:rgba(51,65,85,.35)}
-  .recording-row.selected{background:rgba(14,165,233,.12);outline:1px solid rgba(14,165,233,.45)}
+  .recording-row:hover{background:var(--hover-row)}
+  .recording-row.selected{background:var(--selected-row);outline:1px solid var(--selected-outline)}
   .recording-row:last-child{border-bottom:none}
   .recording-info{min-width:0;flex:1 1 12rem}
   .recording-name{color:var(--text);word-break:break-all}
@@ -171,7 +212,7 @@
   .report-view-btn{appearance:none;border:0;background:transparent;color:var(--muted);
                    font-size:.72rem;font-weight:600;padding:.35rem .7rem;cursor:pointer}
   .report-view-btn:hover{color:var(--text)}
-  .report-view-btn.active{background:rgba(14,165,233,.18);color:var(--accent)}
+  .report-view-btn.active{background:var(--accent-soft);color:var(--accent)}
   .report-progress{margin:.35rem 0 .85rem;padding:.75rem .85rem;border:1px solid var(--border);
                    border-radius:8px;background:var(--bg)}
   .report-progress[hidden]{display:none !important}
@@ -179,8 +220,8 @@
   .report-progress-msg{font-size:.78rem;color:var(--muted);line-height:1.4}
   .report-progress-code{font-size:.72rem;color:var(--red);margin-top:.45rem;
                         font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  .report-progress.err{border-color:rgba(239,68,68,.45)}
-  .report-progress.err .report-progress-msg{color:#fca5a5}
+  .report-progress.err{border-color:var(--danger-border)}
+  .report-progress.err .report-progress-msg{color:var(--danger-soft)}
   .report-progress.busy .report-progress-title::after{
     content:'';display:inline-block;width:.55rem;height:.55rem;margin-left:.45rem;
     border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;
@@ -197,6 +238,8 @@
   .diet-bar > i{display:block;height:100%;background:var(--accent);border-radius:999px}
   .takeaway-box{margin-top:.85rem;padding:.85rem;border:1px solid var(--border);
                 border-radius:8px;background:var(--bg);font-size:.88rem;line-height:1.45}
+  .settings-section-title{font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;
+                          color:var(--muted);margin:1.5rem 0 .85rem;font-weight:600}
   .data-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
                 margin-bottom:.85rem}
   .data-toolbar .btn{width:auto;margin:0;padding:.45rem .85rem;font-size:.8rem}
@@ -272,7 +315,7 @@
                background:var(--bg);overflow:hidden}
   .theme-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
               gap:.5rem;padding:.65rem .75rem;cursor:pointer;user-select:none}
-  .theme-head:hover{background:rgba(51,65,85,.35)}
+  .theme-head:hover{background:var(--hover-row)}
   .theme-title{font-size:.85rem;font-weight:600}
   .theme-count{font-size:.72rem;color:var(--muted);font-weight:400;margin-left:.35rem}
   .theme-actions{display:flex;flex-wrap:wrap;gap:.35rem}
@@ -286,7 +329,7 @@
   .theme-chevron{display:inline-block;transition:transform .15s;color:var(--muted);
                  margin-right:.35rem;font-size:.7rem}
   .label-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
-             gap:.4rem;padding:.4rem .25rem;border-bottom:1px solid rgba(51,65,85,.5);
+             gap:.4rem;padding:.4rem .25rem;border-bottom:1px solid var(--hairline);
              font-size:.8rem}
   .label-row:last-child{border-bottom:none}
   .label-row.hidden{display:none}
@@ -297,8 +340,9 @@
   .radio-group input{width:auto;margin:0;accent-color:var(--accent)}
 
   .empty{color:var(--muted);font-size:.85rem;text-align:center;padding:1rem 0}
-  .error-banner{background:#7f1d1d;color:#fca5a5;border-radius:8px;
-                padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem}
+  .error-banner{background:var(--error-banner-bg);color:var(--error-banner-text);border-radius:8px;
+                padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem;
+                border:1px solid var(--danger-border)}
   .field-note{font-size:.7rem;color:var(--muted);margin-top:.35rem;line-height:1.45}
 
   /* Record tab layout shells (stacked on mobile) */
@@ -343,6 +387,16 @@
     header h1{font-size:1.35rem}
   }
 </style>
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('usc-color-mode');
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
 </head>
 <body{% if analyze_recording %} class="analyze-mode"{% elif report_recordings %} class="report-mode"{% endif %}>
 
@@ -358,6 +412,12 @@
     </div>
   </div>
   <div class="header-actions">
+    <button class="btn-color-mode" type="button" id="color-mode-toggle"
+            title="Toggle light/dark mode" aria-label="Toggle light/dark mode">
+      <span class="icon-moon" aria-hidden="true">☾</span>
+      <span class="icon-sun" aria-hidden="true">☀</span>
+      <span class="color-mode-label">Light</span>
+    </button>
     <button class="btn-shutdown-sm" type="button" id="shutdown-btn" title="Safely shut down this Pi">
       ⏻ Shut down
     </button>
@@ -368,8 +428,7 @@
 <nav class="tab-bar" role="tablist"{% if analyze_recording or report_recordings %} hidden{% endif %}>
   <button type="button" class="tab-btn active" data-tab="record" role="tab" aria-selected="true">Record</button>
   <button type="button" class="tab-btn" data-tab="data" role="tab" aria-selected="false">Data</button>
-  <button type="button" class="tab-btn" data-tab="prompts" role="tab" aria-selected="false">Prompts</button>
-  <button type="button" class="tab-btn" data-tab="triggers" role="tab" aria-selected="false">Triggers</button>
+  <button type="button" class="tab-btn" data-tab="settings" role="tab" aria-selected="false">Settings</button>
 </nav>
 
 {% if error == 'already_recording' %}
@@ -440,7 +499,7 @@
       </div>
       <div class="live-chart-legend">
         <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
-        <span><i class="swatch line" style="background:#94a3b8"></i>Gate L90</span>
+        <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
         <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
         <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
       </div>
@@ -470,27 +529,16 @@
       (UTC start time appended automatically)
     </div>
 
-    <label>Device ID</label>
-    <input type="text" name="device_id" value="{{ default_device_id }}">
-
-    <label>ALSA device</label>
-    <input type="text" name="alsa_device" value="{{ default_alsa_device }}">
-
-    <label>Gate sensitivity (dB above ambient)</label>
-    <input type="number" name="gate_sensitivity_db" step="0.5" min="1" max="30"
+    <input type="hidden" name="device_id" id="start-device-id" value="{{ default_device_id }}">
+    <input type="hidden" name="alsa_device" id="start-alsa-device" value="{{ default_alsa_device }}">
+    <input type="hidden" name="gate_sensitivity_db" id="start-gate-sensitivity"
            value="{{ default_gate_sensitivity_db }}">
-    <div class="field-note">
-      L90 dynamic gate: open = ambient floor (10th percentile over ~5 min) + this
-      offset (default 5 dB). Gate closes after 2 consecutive chunks below open
-      or when the signal is too cold. AGC tracks the L90 floor. Peak 200&nbsp;ms
-      sub-windows and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
-    </div>
 
     <label class="check-row" style="margin-top:1rem">
       <input type="checkbox" name="enable_clap" value="on">
       <div>
         Enable CLAP
-        <span>Uses CLAP on trigger labels. Requires rebuilt embeddings (Prompts tab).</span>
+        <span>Uses CLAP on trigger labels. Requires rebuilt embeddings (Settings → CLAP).</span>
       </div>
     </label>
 
@@ -632,7 +680,7 @@
     <div class="overview-chart-note">2&nbsp;min window · follows scrub / playback</div>
     <div class="live-chart-legend" style="margin-bottom:.45rem">
       <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
-      <span><i class="swatch line" style="background:#94a3b8"></i>Gate L90</span>
+      <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
       <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
       <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
     </div>
@@ -695,8 +743,33 @@
   </div>
 </div>
 
-<!-- ── PROMPTS TAB ── -->
-<div class="tab-panel" id="panel-prompts" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
+<!-- ── SETTINGS TAB ── -->
+<div class="tab-panel" id="panel-settings" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
+  <div class="card">
+    <h2>Recording</h2>
+    <div class="field-note" style="margin-bottom:.75rem">
+      These defaults are used when you start a recording from the Record tab.
+    </div>
+
+    <label for="settings-device-id">Device ID</label>
+    <input type="text" id="settings-device-id" value="{{ default_device_id }}">
+
+    <label for="settings-alsa-device">ALSA device</label>
+    <input type="text" id="settings-alsa-device" value="{{ default_alsa_device }}">
+
+    <label for="settings-gate-sensitivity">Gate sensitivity (dB above ambient)</label>
+    <input type="number" id="settings-gate-sensitivity" step="0.5" min="1" max="30"
+           value="{{ default_gate_sensitivity_db }}">
+    <div class="field-note">
+      L90 dynamic gate: open = ambient floor (10th percentile over ~5 min) + this
+      offset (default 5 dB). Gate closes after 2 consecutive chunks below open
+      or when the signal is too cold. AGC tracks the L90 floor. Peak 200&nbsp;ms
+      sub-windows and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
+    </div>
+  </div>
+
+  <h2 class="settings-section-title">CLAP settings</h2>
+
   <div class="card">
     <h2>CLAP prompts</h2>
     <div class="status-row" id="prompts-sync-row">
@@ -729,10 +802,7 @@
     </div>
     <div class="inline-status" id="prompts-status"></div>
   </div>
-</div>
 
-<!-- ── TRIGGERS TAB ── -->
-<div class="tab-panel" id="panel-triggers" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
   <div class="card">
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
@@ -768,13 +838,108 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 <script>
+// ── Color mode (light/dark) ───────────────────────────────────────
+const COLOR_MODE_KEY = 'usc-color-mode';
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function currentColorMode() {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
+function syncColorModeToggle() {
+  const btn = document.getElementById('color-mode-toggle');
+  if (!btn) return;
+  const light = currentColorMode() === 'light';
+  const label = btn.querySelector('.color-mode-label');
+  if (label) label.textContent = light ? 'Dark' : 'Light';
+  btn.setAttribute('aria-pressed', light ? 'true' : 'false');
+  btn.title = light ? 'Switch to dark mode' : 'Switch to light mode';
+}
+
+function applyChartScaleColors(chart) {
+  if (!chart || !chart.options || !chart.options.scales) return;
+  const tick = cssVar('--chart-tick');
+  const grid = cssVar('--chart-grid');
+  Object.values(chart.options.scales).forEach((scale) => {
+    if (!scale) return;
+    if (scale.ticks) scale.ticks.color = tick;
+    if (scale.grid) scale.grid.color = grid;
+    if (scale.title) scale.title.color = tick;
+  });
+}
+
+function applyLoudnessDatasetColors(chart) {
+  if (!chart || !chart.data || !chart.data.datasets) return;
+  const ds = chart.data.datasets;
+  if (ds[0]) {
+    ds[0].borderColor = cssVar('--accent');
+    if (ds[0].backgroundColor) ds[0].backgroundColor = cssVar('--accent-soft');
+  }
+  if (ds[1]) ds[1].borderColor = cssVar('--muted');
+  if (ds[2]) {
+    ds[2].backgroundColor = cssVar('--yam-point');
+    ds[2].borderColor = cssVar('--yam-border');
+    ds[2].pointLabelColor = cssVar('--yam-label');
+  }
+  if (ds[3]) {
+    ds[3].backgroundColor = cssVar('--clap-point');
+    ds[3].borderColor = cssVar('--clap-border');
+    ds[3].pointLabelColor = cssVar('--clap-label');
+  }
+}
+
+function refreshChartsForColorMode() {
+  if (loudnessChart) {
+    applyLoudnessDatasetColors(loudnessChart);
+    applyChartScaleColors(loudnessChart);
+    loudnessChart.update('none');
+  }
+  if (overviewChart) {
+    applyLoudnessDatasetColors(overviewChart);
+    applyChartScaleColors(overviewChart);
+    overviewChart.update('none');
+  }
+  if (reportHourlyChart) {
+    const ds = reportHourlyChart.data.datasets[0];
+    if (ds) {
+      ds.borderColor = cssVar('--accent');
+      ds.backgroundColor = cssVar('--accent-soft');
+    }
+    applyChartScaleColors(reportHourlyChart);
+    reportHourlyChart.update('none');
+  }
+}
+
+function setColorMode(mode) {
+  const next = mode === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem(COLOR_MODE_KEY, next); } catch (e) { /* ignore */ }
+  syncColorModeToggle();
+  refreshChartsForColorMode();
+}
+
+let loudnessChart = null;
+let overviewChart = null;
+let reportHourlyChart = null;
+
+(function initColorModeToggle() {
+  syncColorModeToggle();
+  const btn = document.getElementById('color-mode-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    setColorMode(currentColorMode() === 'light' ? 'dark' : 'light');
+  });
+})();
+
 // ── Tabs ──────────────────────────────────────────────────────────
 const tabBtns = document.querySelectorAll('.tab-btn');
 const tabPanels = {
   record: document.getElementById('panel-record'),
   data: document.getElementById('panel-data'),
-  prompts: document.getElementById('panel-prompts'),
-  triggers: document.getElementById('panel-triggers'),
+  settings: document.getElementById('panel-settings'),
 };
 let promptsLoaded = false;
 let triggersLoaded = false;
@@ -786,10 +951,13 @@ function switchTab(name) {
     btn.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   Object.entries(tabPanels).forEach(([key, panel]) => {
+    if (!panel) return;
     panel.classList.toggle('active', key === name);
   });
-  if (name === 'prompts') loadPrompts();
-  if (name === 'triggers') loadTriggersPanel();
+  if (name === 'settings') {
+    loadPrompts();
+    loadTriggersPanel();
+  }
 }
 
 tabBtns.forEach((btn) => {
@@ -800,8 +968,28 @@ tabBtns.forEach((btn) => {
   const params = new URLSearchParams(window.location.search);
   let tab = params.get('tab');
   if (tab === 'run') tab = 'record'; // legacy alias
+  if (tab === 'prompts' || tab === 'triggers') tab = 'settings'; // legacy aliases
   if (tab && tabPanels[tab]) switchTab(tab);
 })();
+
+function syncStartSettingsFromForm() {
+  const device = document.getElementById('settings-device-id');
+  const alsa = document.getElementById('settings-alsa-device');
+  const gate = document.getElementById('settings-gate-sensitivity');
+  const startDevice = document.getElementById('start-device-id');
+  const startAlsa = document.getElementById('start-alsa-device');
+  const startGate = document.getElementById('start-gate-sensitivity');
+  if (device && startDevice) startDevice.value = device.value;
+  if (alsa && startAlsa) startAlsa.value = alsa.value;
+  if (gate && startGate) startGate.value = gate.value;
+}
+
+['settings-device-id', 'settings-alsa-device', 'settings-gate-sensitivity'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', syncStartSettingsFromForm);
+  if (el) el.addEventListener('input', syncStartSettingsFromForm);
+});
+syncStartSettingsFromForm();
 
 async function apiFetch(url, options = {}) {
   const opts = {
@@ -978,7 +1166,7 @@ const labelMarkerPlugin = {
         const { x, y } = el.getProps(['x', 'y'], true);
         ctx.save();
         ctx.font = '600 10px system-ui,sans-serif';
-        ctx.fillStyle = ds.pointLabelColor || '#e2e8f0';
+        ctx.fillStyle = ds.pointLabelColor || cssVar('--text');
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillText(truncateLabel(pt.label, 18), x, y - 8);
@@ -987,8 +1175,6 @@ const labelMarkerPlugin = {
     });
   },
 };
-
-let loudnessChart = null;
 
 function ensureLoudnessChart() {
   if (loudnessChart) return loudnessChart;
@@ -1003,8 +1189,8 @@ function ensureLoudnessChart() {
         {
           label: 'dBA',
           data: [],
-          borderColor: '#0ea5e9',
-          backgroundColor: 'rgba(14,165,233,.12)',
+          borderColor: cssVar('--accent'),
+          backgroundColor: cssVar('--accent-soft'),
           borderWidth: 2,
           pointRadius: 0,
           tension: 0.15,
@@ -1013,7 +1199,7 @@ function ensureLoudnessChart() {
         {
           label: 'Gate L90 (rel.)',
           data: [],
-          borderColor: '#94a3b8',
+          borderColor: cssVar('--muted'),
           borderWidth: 1.5,
           borderDash: [5, 4],
           pointRadius: 0,
@@ -1027,11 +1213,11 @@ function ensureLoudnessChart() {
           showLine: false,
           pointRadius: 4,
           pointHoverRadius: 5,
-          backgroundColor: '#22c55e',
-          borderColor: '#14532d',
+          backgroundColor: cssVar('--yam-point'),
+          borderColor: cssVar('--yam-border'),
           borderWidth: 1,
           showPointLabels: true,
-          pointLabelColor: '#86efac',
+          pointLabelColor: cssVar('--yam-label'),
         },
         {
           label: 'CLAP',
@@ -1040,11 +1226,11 @@ function ensureLoudnessChart() {
           showLine: false,
           pointRadius: 5,
           pointHoverRadius: 6,
-          backgroundColor: '#f59e0b',
-          borderColor: '#78350f',
+          backgroundColor: cssVar('--clap-point'),
+          borderColor: cssVar('--clap-border'),
           borderWidth: 1,
           showPointLabels: true,
-          pointLabelColor: '#fcd34d',
+          pointLabelColor: cssVar('--clap-label'),
         },
       ],
     },
@@ -1075,7 +1261,7 @@ function ensureLoudnessChart() {
         x: {
           type: 'linear',
           ticks: {
-            color: '#94a3b8',
+            color: cssVar('--chart-tick'),
             maxRotation: 0,
             autoSkip: true,
             maxTicksLimit: 6,
@@ -1085,12 +1271,12 @@ function ensureLoudnessChart() {
               return d.toISOString().slice(11, 16);
             },
           },
-          grid: { color: 'rgba(51,65,85,.7)' },
+          grid: { color: cssVar('--chart-grid') },
         },
         y: {
-          title: { display: true, text: 'dB (rel.)', color: '#94a3b8', font: { size: 10 } },
-          ticks: { color: '#94a3b8' },
-          grid: { color: 'rgba(51,65,85,.7)' },
+          title: { display: true, text: 'dB (rel.)', color: cssVar('--chart-tick'), font: { size: 10 } },
+          ticks: { color: cssVar('--chart-tick') },
+          grid: { color: cssVar('--chart-grid') },
         },
       },
     },
@@ -1335,6 +1521,7 @@ if (startRecordingForm) {
       startRecordingBtn.classList.add('btn-disabled');
     }
     const enableClap = !!(startRecordingForm.querySelector('[name="enable_clap"]') || {}).checked;
+    syncStartSettingsFromForm();
     setStartProgress({
       title: 'Starting recording',
       message: 'Sending start request…',
@@ -1446,7 +1633,6 @@ const ovAudioNote = document.getElementById('ov-audio-note');
 
 const OVERVIEW_WINDOW_MS = 120_000;
 
-let overviewChart = null;
 let overviewData = null;
 let overviewScrubPoints = [];
 let overviewSeries = { dba: [], l90: [], yam: [], clap: [] };
@@ -1465,7 +1651,7 @@ const overviewPlayheadPlugin = {
     const x = scales.x.getPixelForValue(overviewPlayheadMs);
     if (x < chartArea.left || x > chartArea.right) return;
     ctx.save();
-    ctx.strokeStyle = '#f472b6';
+    ctx.strokeStyle = cssVar('--playhead');
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(x, chartArea.top);
@@ -1493,7 +1679,7 @@ function ensureOverviewChart() {
         {
           label: 'dBA',
           data: [],
-          borderColor: '#0ea5e9',
+          borderColor: cssVar('--accent'),
           borderWidth: 2,
           pointRadius: 0,
           tension: 0.15,
@@ -1502,7 +1688,7 @@ function ensureOverviewChart() {
         {
           label: 'Gate L90 (rel.)',
           data: [],
-          borderColor: '#94a3b8',
+          borderColor: cssVar('--muted'),
           borderWidth: 1.5,
           borderDash: [5, 4],
           pointRadius: 0,
@@ -1515,11 +1701,11 @@ function ensureOverviewChart() {
           data: [],
           showLine: false,
           pointRadius: 4,
-          backgroundColor: '#22c55e',
-          borderColor: '#14532d',
+          backgroundColor: cssVar('--yam-point'),
+          borderColor: cssVar('--yam-border'),
           borderWidth: 1,
           showPointLabels: true,
-          pointLabelColor: '#86efac',
+          pointLabelColor: cssVar('--yam-label'),
         },
         {
           label: 'CLAP',
@@ -1527,11 +1713,11 @@ function ensureOverviewChart() {
           data: [],
           showLine: false,
           pointRadius: 5,
-          backgroundColor: '#f59e0b',
-          borderColor: '#78350f',
+          backgroundColor: cssVar('--clap-point'),
+          borderColor: cssVar('--clap-border'),
           borderWidth: 1,
           showPointLabels: true,
-          pointLabelColor: '#fcd34d',
+          pointLabelColor: cssVar('--clap-label'),
         },
       ],
     },
@@ -1567,7 +1753,7 @@ function ensureOverviewChart() {
         x: {
           type: 'linear',
           ticks: {
-            color: '#94a3b8',
+            color: cssVar('--chart-tick'),
             maxRotation: 0,
             autoSkip: true,
             maxTicksLimit: 8,
@@ -1577,12 +1763,12 @@ function ensureOverviewChart() {
               return d.toISOString().slice(11, 16);
             },
           },
-          grid: { color: 'rgba(51,65,85,.7)' },
+          grid: { color: cssVar('--chart-grid') },
         },
         y: {
-          title: { display: true, text: 'dB (rel.)', color: '#94a3b8', font: { size: 10 } },
-          ticks: { color: '#94a3b8' },
-          grid: { color: 'rgba(51,65,85,.7)' },
+          title: { display: true, text: 'dB (rel.)', color: cssVar('--chart-tick'), font: { size: 10 } },
+          ticks: { color: cssVar('--chart-tick') },
+          grid: { color: cssVar('--chart-grid') },
         },
       },
     },
@@ -1904,7 +2090,6 @@ if (ANALYZE_RECORDING) {
 // ── Multi-recording report dashboard ────────────────────────────────────
 const generateReportBtn = document.getElementById('generate-report-btn');
 const recordingsSelectAll = document.getElementById('recordings-select-all');
-let reportHourlyChart = null;
 
 function selectedRecordingNames() {
   return Array.from(document.querySelectorAll('.recording-select:checked')).map((el) => el.value);
@@ -1991,8 +2176,8 @@ function ensureReportHourlyChart() {
       datasets: [{
         label: 'Hourly Leq',
         data: [],
-        borderColor: '#0ea5e9',
-        backgroundColor: 'rgba(14,165,233,.12)',
+        borderColor: cssVar('--accent'),
+        backgroundColor: cssVar('--accent-soft'),
         borderWidth: 2,
         pointRadius: 3,
         spanGaps: false,
@@ -2022,17 +2207,17 @@ function ensureReportHourlyChart() {
       scales: {
         x: {
           ticks: {
-            color: '#94a3b8',
+            color: cssVar('--chart-tick'),
             maxRotation: 45,
             autoSkip: true,
             maxTicksLimit: 14,
           },
-          grid: { color: 'rgba(51,65,85,.7)' },
+          grid: { color: cssVar('--chart-grid') },
         },
         y: {
-          title: { display: true, text: 'dBA Leq', color: '#94a3b8', font: { size: 10 } },
-          ticks: { color: '#94a3b8' },
-          grid: { color: 'rgba(51,65,85,.7)' },
+          title: { display: true, text: 'dBA Leq', color: cssVar('--chart-tick'), font: { size: 10 } },
+          ticks: { color: cssVar('--chart-tick') },
+          grid: { color: cssVar('--chart-grid') },
         },
       },
     },
@@ -2047,7 +2232,7 @@ function ensureReportHourlyChart() {
           const x = scales.x.getPixelForValue(i);
           const half = (scales.x.getPixelForValue(1) - scales.x.getPixelForValue(0)) / 2;
           ctx.save();
-          ctx.fillStyle = 'rgba(148,163,184,.12)';
+          ctx.fillStyle = cssVar('--chart-night');
           ctx.fillRect(x - half, chartArea.top, half * 2, chartArea.bottom - chartArea.top);
           ctx.restore();
         });
