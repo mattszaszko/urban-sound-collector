@@ -142,6 +142,29 @@ class AggregateTests(unittest.TestCase):
         self.assertIsNotNone(report["zone_a"]["leq_db"])
         self.assertTrue(report["zone_c"]["takeaway"])
 
+    def test_zone_a_percentiles_and_human_context(self) -> None:
+        from core.report.aggregate import leq_context
+
+        self.assertEqual(leq_context(35.0), "Quiet bedroom")
+        self.assertEqual(leq_context(48.0), "Conversational backdrop")
+        self.assertEqual(leq_context(62.0), "Busy street / TV")
+        self.assertEqual(leq_context(75.0), "Lawnmower / peak traffic")
+
+        # Ten ascending levels → L90≈quiet floor, L10≈loud spikes, L50≈median.
+        base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        events = [_evt(i, dba=40.0 + i, base=base) for i in range(10)]
+        report = build_dashboard_report(
+            [("levels.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+            site_label="Anchor Site",
+        )
+        zone_a = report["zone_a"]
+        self.assertEqual(zone_a["l90_db"], 40.0)
+        self.assertEqual(zone_a["l50_db"], 44.0)
+        self.assertEqual(zone_a["l10_db"], 48.0)
+        self.assertNotIn("chunk", zone_a["header_line"].lower())
+        self.assertEqual(zone_a["leq_context"], leq_context(zone_a["leq_db"]))
+
 
 if __name__ == "__main__":
     unittest.main()

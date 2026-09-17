@@ -24,6 +24,8 @@
     --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
     --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
     --clap-label:#fcd34d;--playhead:#f472b6;
+    --band-quiet:rgba(34,197,94,.14);--band-converse:rgba(234,179,8,.14);
+    --band-busy:rgba(249,115,22,.16);--band-loud:rgba(239,68,68,.18);
   }
   html[data-theme="light"]{
     color-scheme: light;
@@ -43,6 +45,8 @@
     --error-banner-text:#b91c1c;--yam-point:#16a34a;--yam-border:#166534;
     --yam-label:#15803d;--clap-point:#d97706;--clap-border:#92400e;
     --clap-label:#b45309;--playhead:#db2777;
+    --band-quiet:rgba(22,163,74,.12);--band-converse:rgba(202,138,4,.12);
+    --band-busy:rgba(234,88,12,.14);--band-loud:rgba(220,38,38,.16);
   }
   body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
        min-height:100vh;padding:1rem}
@@ -232,6 +236,16 @@
   .report-sub{font-size:.78rem;color:var(--muted);margin-bottom:.75rem}
   .report-chart-box{position:relative;height:260px;background:var(--bg);
                     border:1px solid var(--border);border-radius:8px;padding:.35rem}
+  .report-band-legend{display:flex;flex-wrap:wrap;gap:.45rem .85rem;margin-top:.65rem;
+                      font-size:.72rem;color:var(--muted);line-height:1.35}
+  .report-band-legend-intro{flex:1 1 100%;margin-bottom:.1rem}
+  .report-band-legend span{display:inline-flex;align-items:center;gap:.35rem}
+  .band-swatch{width:12px;height:12px;border-radius:3px;display:inline-block;
+               border:1px solid var(--border);flex-shrink:0}
+  .band-swatch.quiet{background:var(--band-quiet)}
+  .band-swatch.converse{background:var(--band-converse)}
+  .band-swatch.busy{background:var(--band-busy)}
+  .band-swatch.loud{background:var(--band-loud)}
   .diet-row{display:grid;grid-template-columns:9rem 1fr 3.5rem;gap:.5rem;
             align-items:center;margin-bottom:.45rem;font-size:.8rem}
   .diet-bar{height:.55rem;background:var(--border);border-radius:999px;overflow:hidden}
@@ -288,6 +302,7 @@
   }
   @media(min-width:960px){
     .impact-grid{grid-template-columns:repeat(4,1fr)}
+    #rpt-impact{grid-template-columns:repeat(3,1fr)}
     .overview-chart-box{height:340px}
   }
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
@@ -725,10 +740,17 @@
       </div>
     </div>
     <div class="overview-chart-note" id="rpt-chart-note">
-      Chronological hourly L<sub>eq</sub> (local time) · night 22:00–06:59 shaded · gaps left empty
+      Hourly sound level over time · coloured bands show how loud it feels in everyday terms
     </div>
     <div class="report-chart-box">
-      <canvas id="report-hourly-chart" aria-label="Hourly Leq profile"></canvas>
+      <canvas id="report-hourly-chart" aria-label="Hourly sound level profile"></canvas>
+    </div>
+    <div class="report-band-legend" id="rpt-band-legend" aria-label="Sound level bands">
+      <span class="report-band-legend-intro">Coloured bands are loudness analogies (how loud it feels), not detected sound types:</span>
+      <span><i class="band-swatch quiet" aria-hidden="true"></i>Under 40 — sounds like a quiet bedroom</span>
+      <span><i class="band-swatch converse" aria-hidden="true"></i>40–55 — sounds like a conversational backdrop</span>
+      <span><i class="band-swatch busy" aria-hidden="true"></i>55–70 — sounds like a busy street or TV</span>
+      <span><i class="band-swatch loud" aria-hidden="true"></i>Over 70 — sounds like a lawnmower or peak traffic</span>
     </div>
   </div>
   <div class="card report-zone" id="report-zone-c">
@@ -2121,14 +2143,25 @@ if (generateReportBtn) {
 }
 syncReportButton();
 
+function fmtReportDb(v) {
+  return v == null || Number.isNaN(Number(v)) ? '—' : `${Number(v).toFixed(1)} dBA`;
+}
+
 function renderReportImpact(zoneA) {
   const el = document.getElementById('rpt-impact');
   if (!el) return;
+  const ambientHint = [
+    zoneA.l90_db != null ? `Quiet moments ${fmtReportDb(zoneA.l90_db)}` : null,
+    zoneA.leq_context || null,
+  ].filter(Boolean).join(' · ') || 'Overall energy of the period';
+  const peakHint = [
+    zoneA.l10_db != null ? `Loud spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
+    zoneA.peak_lafmax_at_local ? `Highest at ${zoneA.peak_lafmax_at_local}` : null,
+  ].filter(Boolean).join(' · ') || 'Sudden loud moments';
   el.innerHTML = [
-    impactCard('Ambient L<sub>eq</sub>', zoneA.leq_db != null ? `${Number(zoneA.leq_db).toFixed(1)} dBA` : '—', zoneA.leq_context || ''),
-    impactCard('Peak LAFmax', zoneA.peak_lafmax_db != null ? `${Number(zoneA.peak_lafmax_db).toFixed(1)} dBA` : '—', zoneA.peak_lafmax_at_local || ''),
-    impactCard('Chunks', String(zoneA.chunk_count || 0), `${(zoneA.recordings || []).length} recording(s)`),
-    impactCard('Timezone', zoneA.timezone || '—', 'Local civil time'),
+    impactCard('Ambient level', fmtReportDb(zoneA.leq_db), ambientHint),
+    impactCard('Typical ambient', fmtReportDb(zoneA.l50_db), 'Everyday neighborhood baseline'),
+    impactCard('Peak disturbance', fmtReportDb(zoneA.peak_lafmax_db), peakHint),
   ].join('');
 }
 
@@ -2174,7 +2207,7 @@ function ensureReportHourlyChart() {
     data: {
       labels: [],
       datasets: [{
-        label: 'Hourly Leq',
+        label: 'Hourly level',
         data: [],
         borderColor: cssVar('--accent'),
         backgroundColor: cssVar('--accent-soft'),
@@ -2199,7 +2232,7 @@ function ensureReportHourlyChart() {
             },
             label(ctx) {
               const v = ctx.parsed.y;
-              return v == null ? 'No data' : `Leq ${Number(v).toFixed(1)} dBA`;
+              return v == null ? 'No data' : `${Number(v).toFixed(1)} dBA`;
             },
           },
         },
@@ -2215,25 +2248,35 @@ function ensureReportHourlyChart() {
           grid: { color: cssVar('--chart-grid') },
         },
         y: {
-          title: { display: true, text: 'dBA Leq', color: cssVar('--chart-tick'), font: { size: 10 } },
+          min: 30,
+          max: 80,
+          title: { display: true, text: 'Sound level (dBA)', color: cssVar('--chart-tick'), font: { size: 10 } },
           ticks: { color: cssVar('--chart-tick') },
           grid: { color: cssVar('--chart-grid') },
         },
       },
     },
     plugins: [{
-      id: 'nightBand',
+      id: 'comfortBands',
       beforeDraw(chart) {
-        const meta = chart.data.datasets[0]._nightFlags;
-        if (!meta || !meta.length) return;
         const { ctx, chartArea, scales } = chart;
-        meta.forEach((isNight, i) => {
-          if (!isNight) return;
-          const x = scales.x.getPixelForValue(i);
-          const half = (scales.x.getPixelForValue(1) - scales.x.getPixelForValue(0)) / 2;
+        if (!chartArea || !scales.y) return;
+        const yScale = scales.y;
+        const bands = [
+          { lo: Number.NEGATIVE_INFINITY, hi: 40, color: cssVar('--band-quiet') },
+          { lo: 40, hi: 55, color: cssVar('--band-converse') },
+          { lo: 55, hi: 70, color: cssVar('--band-busy') },
+          { lo: 70, hi: Number.POSITIVE_INFINITY, color: cssVar('--band-loud') },
+        ];
+        bands.forEach((band) => {
+          const yTop = yScale.getPixelForValue(band.hi);
+          const yBot = yScale.getPixelForValue(band.lo);
+          const top = Math.max(chartArea.top, Math.min(yTop, yBot));
+          const bottom = Math.min(chartArea.bottom, Math.max(yTop, yBot));
+          if (!(bottom > top)) return;
           ctx.save();
-          ctx.fillStyle = cssVar('--chart-night');
-          ctx.fillRect(x - half, chartArea.top, half * 2, chartArea.bottom - chartArea.top);
+          ctx.fillStyle = band.color || 'transparent';
+          ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, bottom - top);
           ctx.restore();
         });
       },
@@ -2253,8 +2296,8 @@ function setReportProfileView(view) {
   const note = document.getElementById('rpt-chart-note');
   if (note) {
     note.innerHTML = reportProfileView === 'typical'
-      ? 'Typical day · all chunks by clock hour (0–23) · night 22:00–06:59 shaded · gaps left empty'
-      : 'Chronological hourly L<sub>eq</sub> (local time) · night 22:00–06:59 shaded · gaps left empty';
+      ? 'Typical day · clock hours averaged across the selection · coloured bands show how loud it feels'
+      : 'Hourly sound level over time · coloured bands show how loud it feels in everyday terms';
   }
   if (reportZoneB) renderReportHourly(reportZoneB);
 }
@@ -2273,8 +2316,12 @@ function renderReportHourly(zoneB) {
       ? `${String(h.hour).padStart(2, '0')}:00`
       : (h.label || `${String(h.hour).padStart(2, '0')}:00`)
   ));
-  chart.data.datasets[0].data = rows.map((h) => (h.leq_db == null ? null : h.leq_db));
-  chart.data.datasets[0]._nightFlags = rows.map((h) => h.period === 'night');
+  const values = rows.map((h) => (h.leq_db == null ? null : h.leq_db));
+  chart.data.datasets[0].data = values;
+  const finite = values.filter((v) => v != null && Number.isFinite(v));
+  const dataMax = finite.length ? Math.max(...finite) : 70;
+  chart.options.scales.y.min = 30;
+  chart.options.scales.y.max = Math.max(80, Math.ceil((dataMax + 2) / 5) * 5);
   chart.update('none');
 }
 
@@ -2330,9 +2377,9 @@ function applyReportPayload(payload) {
   const c = (payload && payload.zone_c) || {};
   reportZoneB = b;
   document.getElementById('rpt-header').textContent = a.header_line || 'Report';
+  const nRec = (a.recordings || []).length;
   document.getElementById('rpt-sub').textContent = [
-    a.timezone ? `Timezone ${a.timezone}` : '',
-    `${a.chunk_count || 0} chunks`,
+    nRec ? `${nRec} recording${nRec === 1 ? '' : 's'}` : '',
     (payload.meta && payload.meta.acoustic_event_count != null)
       ? `${payload.meta.acoustic_event_count} acoustic events` : '',
   ].filter(Boolean).join(' · ');

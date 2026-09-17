@@ -6,6 +6,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any
 
+from core.recording_overview import percentile_nearest
 from core.report.copy import build_takeaway
 from core.report.segment import (
     AcousticChunk,
@@ -27,15 +28,31 @@ DAY_HOURS = set(range(7, 22))
 
 
 def leq_context(leq_db: float | None) -> str:
+    """Map A-weighted level to a layperson anchor (WHO-style bands)."""
     if leq_db is None:
         return "—"
     if leq_db < 40:
-        return "Quiet Library"
-    if leq_db < 50:
-        return "Quiet Office"
-    if leq_db < 60:
-        return "Normal Conversation"
-    return "Busy Street"
+        return "Quiet bedroom"
+    if leq_db < 55:
+        return "Conversational backdrop"
+    if leq_db < 70:
+        return "Busy street / TV"
+    return "Lawnmower / peak traffic"
+
+
+def _level_percentiles(levels_db: list[float]) -> dict[str, float | None]:
+    """Acoustic Ln from chunk dBA: L10=loud spikes, L50=median, L90=quiet floor."""
+    if not levels_db:
+        return {"l10_db": None, "l50_db": None, "l90_db": None}
+    sorted_levels = sorted(float(v) for v in levels_db)
+    l10 = percentile_nearest(sorted_levels, 90)
+    l50 = percentile_nearest(sorted_levels, 50)
+    l90 = percentile_nearest(sorted_levels, 10)
+    return {
+        "l10_db": round(l10, 1) if l10 is not None else None,
+        "l50_db": round(l50, 1) if l50 is not None else None,
+        "l90_db": round(l90, 1) if l90 is not None else None,
+    }
 
 
 def _header_date_span(start: str, end: str) -> str:
@@ -174,6 +191,7 @@ def build_dashboard_report(
     # Zone A
     dbas = [c.dba for c in all_chunks]
     leq = energetic_leq(dbas)
+    percentiles = _level_percentiles(dbas)
     peak_laf = None
     peak_at_local = None
     peak_at_utc = None
@@ -209,6 +227,9 @@ def build_dashboard_report(
         "header_line": header_line,
         "leq_db": leq,
         "leq_context": leq_context(leq),
+        "l10_db": percentiles["l10_db"],
+        "l50_db": percentiles["l50_db"],
+        "l90_db": percentiles["l90_db"],
         "peak_lafmax_db": round(peak_laf, 1) if peak_laf is not None else None,
         "peak_lafmax_at_local": peak_at_local,
         "peak_lafmax_at_utc": peak_at_utc,
