@@ -21,6 +21,7 @@
     --log-text:#7dd3fc;--hairline:rgba(51,65,85,.5);
     --chart-tick:#94a3b8;--chart-grid:rgba(51,65,85,.7);
     --chart-day:rgba(148,163,184,.16);--chart-night:transparent;
+    --chart-gap:rgba(148,163,184,.45);
     --error-banner-bg:#7f1d1d;
     --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
     --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
@@ -52,6 +53,7 @@
     --log-text:#0369a1;--hairline:rgba(148,163,184,.55);
     --chart-tick:#64748b;--chart-grid:rgba(148,163,184,.45);
     --chart-day:transparent;--chart-night:rgba(15,23,42,.08);
+    --chart-gap:rgba(100,116,139,.55);
     --error-banner-bg:#fef2f2;
     --error-banner-text:#b91c1c;--yam-point:#16a34a;--yam-border:#166534;
     --yam-label:#15803d;--clap-point:#d97706;--clap-border:#92400e;
@@ -273,6 +275,12 @@
   .swatch.range{width:14px;height:10px;border-radius:2px;background:var(--range-fill);
                 border:1px solid var(--range-edge)}
   .swatch.bar-mini{width:8px;height:12px;border-radius:1px;background:var(--gated-bar)}
+  .swatch.gap-mark{width:10px;height:12px;border-radius:1px;border:1px solid var(--chart-gap);
+                   background:repeating-linear-gradient(-45deg,transparent,transparent 2px,
+                     var(--chart-gap) 2px,var(--chart-gap) 3.5px)}
+  .report-gap-note{display:none;margin:.15rem 0 .35rem;font-size:.72rem;color:var(--muted);
+                   line-height:1.35}
+  .report-gap-note.visible{display:block}
   .diet-row{display:grid;grid-template-columns:9rem 1fr 3.5rem;gap:.5rem;
             align-items:center;margin-bottom:.45rem;font-size:.8rem}
   .diet-bar{height:.55rem;background:var(--border);border-radius:999px;overflow:hidden}
@@ -924,7 +932,9 @@
       <span><i class="swatch line" style="background:var(--accent)"></i>Blue line — overall level for the hour</span>
       <span><i class="swatch range" aria-hidden="true"></i>Soft band — quieter moments to louder spikes within the hour</span>
       <span><i class="swatch bar-mini" aria-hidden="true"></i>Bars — noisy moments %</span>
+      <span id="rpt-gap-legend" hidden><i class="swatch gap-mark" aria-hidden="true"></i>Hatched break — time gap with no recordings</span>
     </div>
+    <div class="report-gap-note" id="rpt-gap-note"></div>
     <div class="report-chart-box">
       <canvas id="report-hourly-chart" aria-label="Hourly sound level profile"></canvas>
     </div>
@@ -1002,7 +1012,9 @@
         <p>
           Noise-profile hourly levels use energetic L<sub>eq</sub>; soft bands show
           within-hour L90–L10; bars show the share of <em>noisy moments</em>
-          (ungated chunks — when the gate was open) in that hour.
+          (ungated chunks — when the gate was open) in that hour. On the Timeline
+          (and By-hour time budget), empty hours between recordings are collapsed;
+          a hatched break marks each omitted stretch so the chart stays readable.
         </p>
         <p>
           <strong>Acoustic Comfort Rating (A–E)</strong> starts at 100 points and subtracts
@@ -2828,6 +2840,7 @@ function reportHourTickLabel(rows, value, index, ticks, { forceHoursOnly = false
   const dataIndex = typeof value === 'number' ? value : parseInt(String(value), 10);
   const row = rows[Number.isFinite(dataIndex) ? dataIndex : index];
   if (!row) return '';
+  if (row.is_gap) return '···';
   const hh = `${String(row.hour).padStart(2, '0')}:00`;
   if (forceHoursOnly || !row.date_short) return hh;
 
@@ -2845,6 +2858,8 @@ function reportHourTickLabel(rows, value, index, ticks, { forceHoursOnly = false
     if (prevData && prevData.date_short && prevData.date_short !== row.date_short) {
       showDate = true;
     }
+    // After a collapsed gap, always restate the date so the jump is obvious.
+    if (prevData && prevData.is_gap) showDate = true;
   }
   // Two-line tick keeps the date above the hour so wide date text doesn't
   // collide with neighbouring hour labels on the same baseline.
@@ -2857,6 +2872,10 @@ function selectTimelineHourTicks(rows, maxTicks = 16) {
   const must = new Set([0, n - 1]);
   const dateBoundaries = new Set();
   for (let i = 0; i < n; i++) {
+    if (rows[i].is_gap) {
+      must.add(i);
+      continue;
+    }
     if (Number(rows[i].hour) === 0) {
       must.add(i);
       dateBoundaries.add(i);
@@ -2864,8 +2883,14 @@ function selectTimelineHourTicks(rows, maxTicks = 16) {
     if (
       i > 0
       && rows[i].date_short
+      && rows[i - 1]
+      && !rows[i - 1].is_gap
       && rows[i].date_short !== rows[i - 1].date_short
     ) {
+      must.add(i);
+      dateBoundaries.add(i);
+    }
+    if (i > 0 && rows[i - 1] && rows[i - 1].is_gap) {
       must.add(i);
       dateBoundaries.add(i);
     }
@@ -2902,6 +2927,69 @@ function selectTimelineHourTicks(rows, maxTicks = 16) {
   return indices;
 }
 
+function drawTimelineGapBands(chart) {
+  const { ctx, chartArea, scales } = chart;
+  if (!chartArea || !scales.x) return;
+  const rows = chart.$reportRows || [];
+  if (!rows.length) return;
+  const xScale = scales.x;
+  const gapColor = (cssVar('--chart-gap') || 'rgba(148,163,184,.45)').trim();
+  rows.forEach((row, i) => {
+    if (!row || !row.is_gap) return;
+    const x = xScale.getPixelForValue(i);
+    const half = (xScale.getPixelForValue(1) - xScale.getPixelForValue(0)) / 2;
+    if (!Number.isFinite(x) || !Number.isFinite(half)) return;
+    const left = x - half * 0.72;
+    const width = Math.max(6, half * 1.44);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, chartArea.top, width, chartArea.bottom - chartArea.top);
+    ctx.clip();
+    ctx.fillStyle = gapColor;
+    ctx.globalAlpha = 0.18;
+    ctx.fillRect(left, chartArea.top, width, chartArea.bottom - chartArea.top);
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = gapColor;
+    ctx.lineWidth = 1;
+    const step = 5;
+    for (let y = chartArea.top - width; y < chartArea.bottom + width; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(left + width, y + width);
+      ctx.stroke();
+    }
+    // Break chevrons on the midline
+    const midY = (chartArea.top + chartArea.bottom) / 2;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = cssVar('--muted') || gapColor;
+    ctx.font = '700 11px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('···', x, midY);
+    ctx.restore();
+  });
+}
+
+function setReportGapNote(rows, { legendId = 'rpt-gap-legend', noteId = 'rpt-gap-note' } = {}) {
+  const gaps = (rows || []).filter((r) => r && r.is_gap);
+  const legend = document.getElementById(legendId);
+  const note = document.getElementById(noteId);
+  if (legend) legend.hidden = gaps.length === 0;
+  if (!note) return;
+  if (!gaps.length) {
+    note.textContent = '';
+    note.classList.remove('visible');
+    return;
+  }
+  const labels = gaps.map((g) => g.label || 'gap').filter(Boolean);
+  const unique = Array.from(new Set(labels));
+  const summary = unique.length <= 3
+    ? unique.join(', ')
+    : `${unique.slice(0, 2).join(', ')} +${unique.length - 2} more`;
+  note.textContent = `Empty hours collapsed — breaks mark skipped time (${summary}).`;
+  note.classList.add('visible');
+}
+
 function renderHourlyBudgetStack(budget) {
   const canvas = document.getElementById('report-budget-hourly-chart');
   if (!canvas || typeof Chart === 'undefined') {
@@ -2914,6 +3002,7 @@ function renderHourlyBudgetStack(budget) {
   const datasets = categories.map((cat, idx) => ({
     label: cat,
     data: hours.map((h) => {
+      if (h && h.is_gap) return null;
       const row = (h.shares || []).find((s) => s.category === cat);
       return row ? Number(row.pct) || 0 : 0;
     }),
@@ -2966,12 +3055,18 @@ function renderHourlyBudgetStack(budget) {
       plugins: {
         legend: { display: false },
         tooltip: {
+          filter(item) {
+            const rows = (reportBudgetHourlyChart && reportBudgetHourlyChart.$reportRows) || [];
+            const row = rows[item.dataIndex];
+            return !(row && row.is_gap);
+          },
           callbacks: {
             title(items) {
               const i = items && items[0] ? items[0].dataIndex : -1;
               const rows = (reportBudgetHourlyChart && reportBudgetHourlyChart.$reportRows) || [];
               const row = rows[i];
               if (!row) return '';
+              if (row.is_gap) return row.label || 'Time gap';
               const hh = `${String(row.hour).padStart(2, '0')}:00`;
               return row.date_short ? `${row.date_short} ${hh}` : hh;
             },
@@ -2982,6 +3077,10 @@ function renderHourlyBudgetStack(budget) {
         },
       },
     },
+    plugins: [{
+      id: 'timelineGapMarksBudget',
+      afterDatasetsDraw(chart) { drawTimelineGapBands(chart); },
+    }],
   });
   reportBudgetHourlyChart.$reportRows = hours;
   applyChartScaleColors(reportBudgetHourlyChart);
@@ -3064,6 +3163,9 @@ function ensureReportHourlyChart() {
         legend: { display: false },
         tooltip: {
           filter(item) {
+            const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
+            const row = rows[item.dataIndex];
+            if (row && row.is_gap) return false;
             // Hide the upper band edge from tooltips; show quieter + overall + noisy.
             return item.dataset.$role !== 'l10';
           },
@@ -3073,10 +3175,14 @@ function ensureReportHourlyChart() {
               const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
               const row = rows[i];
               if (!row) return '';
+              if (row.is_gap) return row.label || 'Time gap';
               if (row.label) return String(row.label);
               return `${String(row.hour).padStart(2, '0')}:00`;
             },
             label(ctx) {
+              const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
+              const row = rows[ctx.dataIndex];
+              if (row && row.is_gap) return null;
               const v = ctx.parsed.y;
               if (v == null) return null;
               const role = ctx.dataset.$role;
@@ -3092,7 +3198,7 @@ function ensureReportHourlyChart() {
               const i = items[0].dataIndex;
               const rows = (reportHourlyChart && reportHourlyChart.$reportRows) || [];
               const row = rows[i];
-              if (!row || row.l10_db == null) return [];
+              if (!row || row.is_gap || row.l10_db == null) return [];
               return [`Louder spikes ${Number(row.l10_db).toFixed(1)} dBA`];
             },
           },
@@ -3150,6 +3256,8 @@ function ensureReportHourlyChart() {
         if (!nightFlags.length) return;
         const xScale = scales.x;
         nightFlags.forEach((isNight, i) => {
+          const rows = chart.$reportRows || [];
+          if (rows[i] && rows[i].is_gap) return;
           const fill = (isNight ? cssVar('--chart-night') : cssVar('--chart-day')).trim();
           if (!fill || fill === 'transparent') return;
           const x = xScale.getPixelForValue(i);
@@ -3162,6 +3270,7 @@ function ensureReportHourlyChart() {
         });
       },
       afterDatasetsDraw(chart) {
+        drawTimelineGapBands(chart);
         const { ctx, chartArea, scales } = chart;
         if (!chartArea || !scales.y) return;
         const yScale = scales.y;
@@ -3291,10 +3400,11 @@ function renderReportHourly(zoneB) {
   chart.$reportRows = rows;
   chart.$nightFlags = rows.map((h) => h.period === 'night');
   chart.data.labels = rows.map((_, i) => String(i));
-  const leq = rows.map((h) => (h.leq_db == null ? null : h.leq_db));
-  const l90 = rows.map((h) => (h.l90_db == null ? null : h.l90_db));
-  const l10 = rows.map((h) => (h.l10_db == null ? null : h.l10_db));
+  const leq = rows.map((h) => (h.is_gap || h.leq_db == null ? null : h.leq_db));
+  const l90 = rows.map((h) => (h.is_gap || h.l90_db == null ? null : h.l90_db));
+  const l10 = rows.map((h) => (h.is_gap || h.l10_db == null ? null : h.l10_db));
   const noisy = rows.map((h) => {
+    if (h.is_gap) return null;
     if (h.leq_db == null && !(h.chunk_count > 0)) return null;
     if (h.gated_pct == null) return null;
     return Math.max(0, Math.min(100, Math.round((100 - Number(h.gated_pct)) * 10) / 10));
@@ -3328,6 +3438,7 @@ function renderReportHourly(zoneB) {
   chart.options.scales.y.min = yMin;
   chart.options.scales.y.max = yMax;
   updateReportBandLegend(yMin, yMax, noisy.some((v) => v != null));
+  setReportGapNote(useTypical ? [] : rows);
   chart.update('none');
 }
 

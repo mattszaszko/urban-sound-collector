@@ -231,6 +231,65 @@ def _budget_rows(seconds: Counter[str], *, label_map: dict[str, Any]) -> list[di
     return rows
 
 
+def format_timeline_gap_label(gap_hours: int) -> str:
+    """Human label for omitted empty hours between data segments."""
+    n = max(0, int(gap_hours))
+    if n <= 0:
+        return "gap"
+    if n < 24:
+        return f"{n} h gap"
+    days, rem = divmod(n, 24)
+    if rem == 0:
+        return f"{days} d gap"
+    return f"{days} d {rem} h gap"
+
+
+def _timeline_gap_marker(prev: datetime, nxt: datetime) -> dict[str, Any]:
+    """Single placeholder column standing in for one or more empty hours."""
+    delta_h = int((nxt - prev).total_seconds() // 3600)
+    missing = max(0, delta_h - 1)
+    return {
+        "is_gap": True,
+        "gap_hours": missing,
+        "gap_from": prev.isoformat(timespec="seconds"),
+        "gap_to": nxt.isoformat(timespec="seconds"),
+        "label": format_timeline_gap_label(missing),
+        "t_local": None,
+        "date_short": None,
+        "hour": None,
+        "period": None,
+        "leq_db": None,
+        "l90_db": None,
+        "l10_db": None,
+        "gated_pct": None,
+        "chunk_count": 0,
+        "gated_count": 0,
+        "seconds_total": 0.0,
+        "shares": [],
+    }
+
+
+def _iter_hour_keys_with_gaps(
+    hour_keys: list[datetime],
+) -> list[tuple[str, datetime, datetime | None]]:
+    """
+    Walk occupied hour buckets in order.
+
+    Yields ``("gap", prev, cur)`` before a data hour when at least one hour
+    between them has no samples, then ``("hour", cur, None)``.
+    """
+    out: list[tuple[str, datetime, datetime | None]] = []
+    prev: datetime | None = None
+    for cur in hour_keys:
+        if prev is not None:
+            delta_h = int((cur - prev).total_seconds() // 3600)
+            if delta_h > 1:
+                out.append(("gap", prev, cur))
+        out.append(("hour", cur, None))
+        prev = cur
+    return out
+
+
 def build_time_budget(
     chunks: list[AcousticChunk],
     *,
@@ -263,27 +322,27 @@ def build_time_budget(
         hour_counters.setdefault(key, Counter())[cat] += chunk_dur
 
     hourly: list[dict[str, Any]] = []
-    if chunks:
-        start = _hour_floor(chunks[0].dt_local)
-        end = _hour_floor(chunks[-1].dt_local)
-        cur = start
-        while cur <= end:
-            counter = hour_counters.get(cur, Counter())
-            hour = int(cur.hour)
-            rows = _budget_rows(counter, label_map=cfg)
-            hour_total = float(sum(counter.values()))
-            hourly.append(
-                {
-                    "t_local": cur.isoformat(timespec="seconds"),
-                    "label": cur.strftime("%d %b %H:%M"),
-                    "date_short": cur.strftime("%d %b"),
-                    "hour": hour,
-                    "period": "night" if hour in NIGHT_HOURS else "day",
-                    "seconds_total": round(hour_total, 1),
-                    "shares": rows,
-                }
-            )
-            cur = cur + timedelta(hours=1)
+    for kind, a, b in _iter_hour_keys_with_gaps(sorted(hour_counters.keys())):
+        if kind == "gap" and b is not None:
+            hourly.append(_timeline_gap_marker(a, b))
+            continue
+        cur = a
+        counter = hour_counters.get(cur, Counter())
+        hour = int(cur.hour)
+        rows = _budget_rows(counter, label_map=cfg)
+        hour_total = float(sum(counter.values()))
+        hourly.append(
+            {
+                "is_gap": False,
+                "t_local": cur.isoformat(timespec="seconds"),
+                "label": cur.strftime("%d %b %H:%M"),
+                "date_short": cur.strftime("%d %b"),
+                "hour": hour,
+                "period": "night" if hour in NIGHT_HOURS else "day",
+                "seconds_total": round(hour_total, 1),
+                "shares": rows,
+            }
+        )
 
     categories = _category_order(
         cfg,
@@ -322,17 +381,17 @@ def build_hourly_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
 
 
 def build_timeline_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
-    """Chronological hourly L_eq from first to last local hour in the selection."""
+    """Chronological hourly L_eq for occupied hours only.
+
+    Empty hours between recordings (or sparse coverage) are omitted and replaced
+    with a single ``is_gap`` marker so charts stay readable while still showing
+    that time was skipped.
+    """
     if not chunks:
         return []
 
     def _hour_floor(dt: datetime) -> datetime:
         return dt.replace(minute=0, second=0, microsecond=0)
-
-    start = _hour_floor(chunks[0].dt_local)
-    end = _hour_floor(chunks[-1].dt_local)
-    if end < start:
-        return []
 
     buckets: dict[datetime, list[AcousticChunk]] = {}
     for c in chunks:
@@ -340,13 +399,17 @@ def build_timeline_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
         buckets.setdefault(key, []).append(c)
 
     out: list[dict[str, Any]] = []
-    cur = start
-    while cur <= end:
+    for kind, a, b in _iter_hour_keys_with_gaps(sorted(buckets.keys())):
+        if kind == "gap" and b is not None:
+            out.append(_timeline_gap_marker(a, b))
+            continue
+        cur = a
         members = buckets.get(cur, [])
         hour = int(cur.hour)
         stats = _bucket_loudness_stats(members)
         out.append(
             {
+                "is_gap": False,
                 "t_local": cur.isoformat(timespec="seconds"),
                 "label": cur.strftime("%d %b %H:%M"),
                 "date_short": cur.strftime("%d %b"),
@@ -355,7 +418,6 @@ def build_timeline_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
                 **stats,
             }
         )
-        cur = cur + timedelta(hours=1)
     return out
 
 

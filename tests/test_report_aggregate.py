@@ -112,6 +112,7 @@ class AggregateTests(unittest.TestCase):
         )
         timeline = report["zone_b"]["timeline"]
         self.assertGreaterEqual(len(timeline), 10)
+        self.assertFalse(any(row.get("is_gap") for row in timeline))
         self.assertEqual(timeline[0]["hour"], 23)
         self.assertIsNotNone(timeline[0]["leq_db"])
         hours = [row["hour"] for row in timeline]
@@ -119,6 +120,31 @@ class AggregateTests(unittest.TestCase):
         self.assertIn(0, hours)
         self.assertTrue(any(row["label"].startswith("15 Sep") for row in timeline))
         self.assertTrue(any(row["label"].startswith("16 Sep") for row in timeline))
+
+    def test_timeline_collapses_empty_hours_with_gap_marker(self) -> None:
+        # 09:00 UTC = 10:00 Europe/Amsterdam (CET); 14:00 UTC = 15:00 local.
+        early = datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
+        later = datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc)
+        events_a = [_evt(i, dba=50.0, base=early) for i in range(5)]
+        events_b = [_evt(i, dba=58.0, base=later) for i in range(5)]
+        report = build_dashboard_report(
+            [("morning.jsonl", events_a), ("afternoon.jsonl", events_b)],
+            timezone_name="Europe/Amsterdam",
+        )
+        timeline = report["zone_b"]["timeline"]
+        self.assertEqual(len(timeline), 3)
+        self.assertEqual(timeline[0]["hour"], 10)
+        self.assertFalse(timeline[0].get("is_gap"))
+        self.assertTrue(timeline[1].get("is_gap"))
+        self.assertEqual(timeline[1]["gap_hours"], 4)
+        self.assertEqual(timeline[1]["label"], "4 h gap")
+        self.assertEqual(timeline[2]["hour"], 15)
+        self.assertIsNotNone(timeline[2]["leq_db"])
+
+        budget_hours = report["zone_c"]["time_budget"]["hourly"]
+        self.assertEqual(len(budget_hours), 3)
+        self.assertTrue(budget_hours[1].get("is_gap"))
+        self.assertEqual(budget_hours[1]["gap_hours"], 4)
 
     def test_gated_still_in_leq_not_in_votes(self) -> None:
         events = [
