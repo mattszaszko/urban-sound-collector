@@ -148,8 +148,8 @@
   .status-stop-form{margin:0}
   .status-stop-form .btn-stop{margin:0;width:auto;max-width:none;padding:.45rem 1.1rem}
   #status-card[hidden],#control-card[hidden]{display:none !important}
-  .record-layout.is-recording{display:flex;flex-direction:column;gap:0}
-  .record-layout.is-recording #status-card{width:100%;margin-bottom:1rem}
+  .record-layout{display:flex;flex-direction:column;gap:0}
+  .record-layout > .card{width:100%;margin-bottom:1rem}
   .live-chart-canvas-box{position:relative;height:220px;background:var(--bg);
                          border:1px solid var(--border);border-radius:8px;padding:.35rem}
   .live-chart-empty{position:absolute;inset:0;display:flex;align-items:center;
@@ -518,9 +518,7 @@
                 border:1px solid var(--danger-border)}
   .field-note{font-size:.7rem;color:var(--muted);margin-top:.35rem;line-height:1.45}
 
-  /* Record tab layout shells (stacked on mobile) */
-  .record-layout{display:flex;flex-direction:column;gap:0}
-  .record-layout > .card{margin-bottom:1rem}
+  /* Record tab: always full-width stacked cards */
 
   @media(min-width:640px){
     body{max-width:960px;margin:0 auto;padding:1.5rem}
@@ -533,22 +531,6 @@
 
   @media(min-width:960px){
     body{max-width:1180px;padding:1.75rem 2rem}
-    .record-layout{
-      display:grid;
-      grid-template-columns:minmax(0,1.6fr) minmax(300px,.85fr);
-      gap:1rem;
-      align-items:start;
-      margin-bottom:1rem;
-    }
-    .record-layout > .card{margin-bottom:0}
-    #status-card{grid-column:1;grid-row:1}
-    #control-card{grid-column:2;grid-row:1;position:sticky;top:1rem}
-    .record-layout.is-recording{
-      display:block;
-    }
-    .record-layout.is-recording #status-card{
-      display:block;width:100%;
-    }
     .live-chart-canvas-box{height:320px}
     #log-box{height:280px;font-size:.78rem}
     .export-options{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:1rem 1.5rem}
@@ -560,7 +542,6 @@
 
   @media(min-width:1280px){
     body{max-width:1360px;padding:2rem 2.5rem}
-    .record-layout{grid-template-columns:minmax(0,1.75fr) minmax(320px,.8fr);gap:1.25rem}
     .live-chart-canvas-box{height:380px}
     #log-box{height:340px}
     header h1{font-size:1.35rem}
@@ -623,9 +604,9 @@
 <!-- ── RECORD TAB ── -->
 <div class="tab-panel{% if not analyze_recording and not report_recordings %} active{% endif %}" id="panel-record" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
 
-<div class="record-layout{% if status.recording %} is-recording{% endif %}" id="record-layout">
-<!-- ── STATUS (visible while recording) ── -->
-<div class="card" id="status-card"{% if not status.recording %} hidden{% endif %}>
+<div class="record-layout{% if status.recording and (status.chunk_count or 0) >= 1 %} is-live{% endif %}" id="record-layout">
+<!-- ── STATUS (visible once first chunk arrives) ── -->
+<div class="card" id="status-card"{% if not status.recording or (status.chunk_count or 0) < 1 %} hidden{% endif %}>
   <div class="status-card-head">
     <h2>Status</h2>
     <form method="post" action="/api/stop" class="status-stop-form" id="status-stop-form">
@@ -690,8 +671,8 @@
   </div>
 </div>
 
-<!-- ── CONTROL (visible when idle) ── -->
-<div class="card" id="control-card"{% if status.recording %} hidden{% endif %}>
+<!-- ── CONTROL (visible until live; full width) ── -->
+<div class="card" id="control-card"{% if status.recording and (status.chunk_count or 0) >= 1 %} hidden{% endif %}>
   <h2>Control</h2>
 
   <form method="post" action="/api/start" id="start-recording-form">
@@ -1604,6 +1585,15 @@ const clapWindowBandsPlugin = {
       ctx.lineTo(x1, chartArea.bottom);
       ctx.stroke();
       ctx.globalAlpha = 1;
+      const label = Number.isInteger(secs) || Math.abs(secs - Math.round(secs)) < 0.05
+        ? `${Math.round(secs)} s`
+        : `${secs.toFixed(1)} s`;
+      const midX = (x0 + x1) / 2;
+      ctx.font = '600 10px system-ui,sans-serif';
+      ctx.fillStyle = cssVar('--clap-label');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label, midX, chartArea.bottom - 3);
     }
     ctx.restore();
   },
@@ -1787,15 +1777,16 @@ function updateLoudnessChart(payload) {
   }
 }
 
-function setRecordingLayout(recording, recordingId) {
+function setRecordingLayout(recording, recordingId, chunkCount) {
+  const live = !!recording && Number(chunkCount || 0) >= 1;
   const layout = document.getElementById('record-layout');
   const statusCard = document.getElementById('status-card');
   const controlCard = document.getElementById('control-card');
   const idEl = document.getElementById('status-recording-id');
-  if (layout) layout.classList.toggle('is-recording', !!recording);
-  if (statusCard) statusCard.hidden = !recording;
-  if (controlCard) controlCard.hidden = !!recording;
-  if (idEl) idEl.textContent = recording && recordingId ? recordingId : '';
+  if (layout) layout.classList.toggle('is-live', live);
+  if (statusCard) statusCard.hidden = !live;
+  if (controlCard) controlCard.hidden = live;
+  if (idEl) idEl.textContent = live && recordingId ? recordingId : '';
 }
 
 let statusPollInFlight = false;
@@ -1809,7 +1800,7 @@ async function pollStatus() {
     ]);
     if (statusRes.ok) {
       const d = await statusRes.json();
-      setRecordingLayout(!!d.recording, d.recording_id || '');
+      setRecordingLayout(!!d.recording, d.recording_id || '', d.chunk_count || 0);
       const chunksEl = document.getElementById('stat-chunks');
       const elapsedEl = document.getElementById('stat-elapsed');
       const labelEl = document.getElementById('stat-label');
