@@ -1406,7 +1406,6 @@ async def api_clap_triggers_get(request: Request):
             "peak_decay_db": cfg.peak_decay_db,
             "trigger_labels": cfg.trigger_labels,
             "ambiguous_labels": cfg.ambiguous_labels,
-            "suppress_labels": cfg.suppress_labels,
         }
     )
 
@@ -1431,17 +1430,6 @@ async def api_clap_triggers_put(request: Request):
             peak_decay_db=float(body.get("peak_decay_db", 5)),
             trigger_labels=list(body.get("trigger_labels", [])),
             ambiguous_labels=list(body.get("ambiguous_labels", [])),
-            suppress_labels=list(
-                body.get(
-                    "suppress_labels",
-                    [
-                        "Wind",
-                        "Rustling leaves",
-                        "White noise",
-                        "Outside, rural or natural",
-                    ],
-                )
-            ),
         )
         save_trigger_config(cfg, CLAP_TRIGGERS_PATH)
     except (TypeError, ValueError) as exc:

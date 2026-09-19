@@ -433,8 +433,7 @@ def stream_live(
         logger.info(
             "CLAP enabled: dynamic_energy lookback=%ss pad=%sms settle=%s "
             "max_event=%ss margin_db=%s peak_decay_db=%s cooldown=%ss "
-            "dba_threshold=%s trigger_labels=%s ambiguous_labels=%s "
-            "suppress_labels=%s",
+            "dba_threshold=%s trigger_labels=%s ambiguous_labels=%s",
             clap_config.lookback_seconds,
             clap_config.pre_onset_pad_ms,
             clap_config.end_settle_chunks,
@@ -445,7 +444,6 @@ def stream_live(
             clap_config.dba_threshold,
             len(clap_config.trigger_labels),
             len(clap_config.ambiguous_labels),
-            len(clap_config.suppress_labels),
         )
 
     logger.info(

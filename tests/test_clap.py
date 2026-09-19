@@ -225,12 +225,11 @@ class ClapTriggerConfigTests(unittest.TestCase):
             self.assertEqual(cfg.max_event_seconds, 5.0)
             self.assertEqual(cfg.peak_decay_db, 5.0)
             self.assertEqual(cfg.trigger_labels, ["Vehicle"])
-            self.assertIn("Wind", cfg.suppress_labels)
             save_trigger_config(cfg, path)
             raw = path.read_text(encoding="utf-8")
             self.assertIn("lookback_seconds", raw)
             self.assertIn("peak_decay_db", raw)
-            self.assertIn("suppress_labels", raw)
+            self.assertNotIn("suppress_labels", raw)
             self.assertNotIn("pre_roll_seconds", raw)
 
 
@@ -348,30 +347,23 @@ class ClapTriggerTests(unittest.TestCase):
         self.assertEqual(status, CLAP_STATUS_SKIPPED)
         self.assertEqual(reason, "no_match")
 
-    def test_suppress_blocks_even_if_listed_as_trigger(self) -> None:
-        cfg = ClapTriggerConfig(
-            cooldown_seconds=5.0,
-            dba_threshold=55.0,
-            trigger_labels=["Wind", "Vehicle"],
-            ambiguous_labels=["White noise"],
-            suppress_labels=["Wind", "White noise"],
-        )
-        cfg = cfg.normalized()
-        self.assertNotIn("Wind", cfg.trigger_labels)
-        self.assertNotIn("White noise", cfg.ambiguous_labels)
-        arm, status, reason = evaluate_arm(
-            gated=False,
-            top_label="Wind",
-            dba_spl=75.0,
-            preroll_ready=True,
-            capture_active=False,
-            config=cfg,
-            state=self.state,
-            now_monotonic=100.0,
-        )
-        self.assertFalse(arm)
-        self.assertEqual(status, CLAP_STATUS_SKIPPED)
-        self.assertIn("suppress", reason)
+    def test_legacy_suppress_labels_remapped_to_off(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "triggers.json"
+            path.write_text(
+                '{"cooldown_seconds": 5, "dba_threshold": 55, '
+                '"trigger_labels": ["Vehicle", "Wind"], '
+                '"ambiguous_labels": ["Noise", "White noise"], '
+                '"suppress_labels": ["Wind", "White noise"]}\n',
+                encoding="utf-8",
+            )
+            cfg = load_trigger_config(path)
+            self.assertEqual(cfg.trigger_labels, ["Vehicle"])
+            self.assertEqual(cfg.ambiguous_labels, ["Noise"])
+            save_trigger_config(cfg, path)
+            raw = path.read_text(encoding="utf-8")
+            self.assertNotIn("suppress_labels", raw)
+            self.assertNotIn("Wind", raw)
 
 
 class ClapPromptTests(unittest.TestCase):

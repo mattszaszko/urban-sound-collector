@@ -1106,11 +1106,10 @@
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
       Map YAMNet labels to CLAP modes. Off = ignore, Trigger = arm on that label,
-      Ambiguous = arm only when also loud (dBA threshold), Suppress = never arm
-      (wind / broadband). Capture slices from gate/energy onset (lookback) until
-      peak decays by the peak-decay margin, the gate closes, or max duration —
-      then <code>repeatpad</code>s short clips. No label carry — only
-      <code>triggered</code> rows have CLAP labels.
+      Ambiguous = arm only when also loud (dBA threshold). Capture slices from
+      gate/energy onset (lookback) until peak decays by the peak-decay margin,
+      the gate closes, or max duration — then <code>repeatpad</code>s short clips.
+      No label carry — only <code>triggered</code> rows have CLAP labels.
     </div>
     <div class="trigger-settings">
       <div>
@@ -1442,9 +1441,12 @@ function normalizeTriggersPayload(raw) {
   const ambiguous_labels = Array.isArray(raw.ambiguous_labels)
     ? raw.ambiguous_labels.map((x) => String(x).trim()).filter(Boolean)
     : [];
-  const suppress_labels = Array.isArray(raw.suppress_labels)
-    ? raw.suppress_labels.map((x) => String(x).trim()).filter(Boolean)
-    : ['Wind', 'Rustling leaves', 'White noise', 'Outside, rural or natural'];
+  // Legacy suppress_labels are remapped to Off (omitted from trigger/ambiguous).
+  const suppressLegacy = new Set(
+    (Array.isArray(raw.suppress_labels) ? raw.suppress_labels : [])
+      .map((x) => String(x).trim().toLowerCase())
+      .filter(Boolean)
+  );
   const num = (v, fallback) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
@@ -1458,9 +1460,8 @@ function normalizeTriggersPayload(raw) {
     max_event_seconds: num(raw.max_event_seconds, 5),
     onset_dba_margin_db: num(raw.onset_dba_margin_db, 3),
     peak_decay_db: num(raw.peak_decay_db, 5),
-    trigger_labels,
-    ambiguous_labels,
-    suppress_labels,
+    trigger_labels: trigger_labels.filter((x) => !suppressLegacy.has(x.toLowerCase())),
+    ambiguous_labels: ambiguous_labels.filter((x) => !suppressLegacy.has(x.toLowerCase())),
   };
 }
 
@@ -3997,7 +3998,6 @@ const trigSearch = document.getElementById('trig-search');
 let catalogLabels = [];
 let triggerSet = new Set();
 let ambiguousSet = new Set();
-let suppressSet = new Set();
 let lastTriggerMeta = {
   lookback_seconds: 4,
   pre_onset_pad_ms: 150,
@@ -4012,7 +4012,6 @@ function radioNameFor(label) {
 }
 
 function currentMode(label) {
-  if (suppressSet.has(label)) return 'suppress';
   if (triggerSet.has(label)) return 'trigger';
   if (ambiguousSet.has(label)) return 'ambiguous';
   return 'off';
@@ -4021,10 +4020,8 @@ function currentMode(label) {
 function setMode(label, mode, rowEl) {
   triggerSet.delete(label);
   ambiguousSet.delete(label);
-  suppressSet.delete(label);
   if (mode === 'trigger') triggerSet.add(label);
   else if (mode === 'ambiguous') ambiguousSet.add(label);
-  else if (mode === 'suppress') suppressSet.add(label);
   const row = rowEl || themesContainer.querySelector(`.label-row[data-label="${CSS.escape(label)}"]`);
   if (!row) return;
   const input = row.querySelector(`input[type="radio"][value="${mode}"]`);
@@ -4089,7 +4086,7 @@ function renderCatalog(themes, labels) {
 
     const actions = document.createElement('div');
     actions.className = 'theme-actions';
-    [['trigger', 'All trigger'], ['ambiguous', 'All ambiguous'], ['suppress', 'All suppress'], ['off', 'Clear']].forEach(([action, text]) => {
+    [['trigger', 'All trigger'], ['ambiguous', 'All ambiguous'], ['off', 'Clear']].forEach(([action, text]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = text;
@@ -4122,7 +4119,7 @@ function renderCatalog(themes, labels) {
       radios.className = 'radio-group';
       const rname = radioNameFor(label);
       const mode = currentMode(label);
-      [['off', 'Off'], ['trigger', 'Trigger'], ['ambiguous', 'Ambiguous'], ['suppress', 'Suppress']].forEach(([val, text]) => {
+      [['off', 'Off'], ['trigger', 'Trigger'], ['ambiguous', 'Ambiguous']].forEach(([val, text]) => {
         const lab = document.createElement('label');
         const inp = document.createElement('input');
         inp.type = 'radio';
@@ -4181,7 +4178,6 @@ async function loadTriggerConfig() {
   };
   triggerSet = new Set(data.trigger_labels || []);
   ambiguousSet = new Set(data.ambiguous_labels || []);
-  suppressSet = new Set(data.suppress_labels || []);
   // Re-apply radios if catalog already rendered
   themesContainer.querySelectorAll('.label-row').forEach((row) => {
     const label = row.dataset.label;
@@ -4196,14 +4192,12 @@ async function loadTriggerConfig() {
 function collectTriggersPayload() {
   const triggers = [];
   const ambiguous = [];
-  const suppress = [];
   themesContainer.querySelectorAll('.label-row').forEach((row) => {
     const label = row.dataset.label;
     const checked = row.querySelector('input[type="radio"]:checked');
     const mode = checked ? checked.value : 'off';
     if (mode === 'trigger') triggers.push(label);
     else if (mode === 'ambiguous') ambiguous.push(label);
-    else if (mode === 'suppress') suppress.push(label);
   });
   return {
     cooldown_seconds: parseFloat(document.getElementById('trig-cooldown').value) || 0,
@@ -4216,7 +4210,6 @@ function collectTriggersPayload() {
     peak_decay_db: parseFloat(document.getElementById('trig-peak-decay').value) || 0,
     trigger_labels: triggers,
     ambiguous_labels: ambiguous,
-    suppress_labels: suppress,
   };
 }
 
@@ -4239,7 +4232,6 @@ function applyTriggersPayload(cfg) {
   };
   triggerSet = new Set(cfg.trigger_labels || []);
   ambiguousSet = new Set(cfg.ambiguous_labels || []);
-  suppressSet = new Set(cfg.suppress_labels || []);
   themesContainer.querySelectorAll('.label-row').forEach((row) => {
     const label = row.dataset.label;
     const mode = currentMode(label);
@@ -4263,7 +4255,6 @@ async function saveTriggersToServer(body, statusMsg) {
   }
   triggerSet = new Set(body.trigger_labels || []);
   ambiguousSet = new Set(body.ambiguous_labels || []);
-  suppressSet = new Set(body.suppress_labels || []);
   lastTriggerMeta = {
     lookback_seconds: body.lookback_seconds ?? lastTriggerMeta.lookback_seconds,
     pre_onset_pad_ms: body.pre_onset_pad_ms ?? lastTriggerMeta.pre_onset_pad_ms,
@@ -4275,7 +4266,7 @@ async function saveTriggersToServer(body, statusMsg) {
   setInlineStatus(
     triggersStatus,
     statusMsg ||
-      `Saved (${(body.trigger_labels || []).length} trigger, ${(body.ambiguous_labels || []).length} ambiguous, ${(body.suppress_labels || []).length} suppress).`,
+      `Saved (${(body.trigger_labels || []).length} trigger, ${(body.ambiguous_labels || []).length} ambiguous).`,
     'ok'
   );
   return true;
@@ -4300,7 +4291,7 @@ document.getElementById('triggers-export-btn').addEventListener('click', () => {
   downloadJson('clap_triggers.json', body);
   setInlineStatus(
     triggersStatus,
-    `Exported (${body.trigger_labels.length} trigger, ${body.ambiguous_labels.length} ambiguous, ${body.suppress_labels.length} suppress).`,
+    `Exported (${body.trigger_labels.length} trigger, ${body.ambiguous_labels.length} ambiguous).`,
     'ok'
   );
 });
@@ -4319,7 +4310,7 @@ document.getElementById('triggers-import-file').addEventListener('change', async
     const cfg = normalizeTriggersPayload(raw);
     if (!confirm(
       `Replace trigger settings with "${file.name}" ` +
-      `(${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous, ${cfg.suppress_labels.length} suppress) and save?`
+      `(${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous) and save?`
     )) {
       return;
     }
@@ -4329,7 +4320,7 @@ document.getElementById('triggers-import-file').addEventListener('change', async
     applyTriggersPayload(cfg);
     await saveTriggersToServer(
       cfg,
-      `Imported and saved (${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous, ${cfg.suppress_labels.length} suppress).`
+      `Imported and saved (${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous).`
     );
   } catch (err) {
     const msg = err && err.message ? err.message : 'Import failed';

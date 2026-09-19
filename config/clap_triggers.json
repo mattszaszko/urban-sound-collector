@@ -41,11 +41,5 @@
     "Environmental noise",
     "Sound effect",
     "Field recording"
-  ],
-  "suppress_labels": [
-    "Wind",
-    "Rustling leaves",
-    "White noise",
-    "Outside, rural or natural"
   ]
 }

@@ -25,14 +25,6 @@ CLAP_STATUS_PENDING = "pending"
 CLAP_STATUS_SKIPPED = "skipped"
 CLAP_STATUS_GATED = "gated"
 
-# Environmental / broadband labels that must never arm CLAP.
-DEFAULT_SUPPRESS_LABELS = [
-    "Wind",
-    "Rustling leaves",
-    "White noise",
-    "Outside, rural or natural",
-]
-
 
 @dataclass
 class ClapTriggerConfig:
@@ -40,9 +32,6 @@ class ClapTriggerConfig:
     dba_threshold: float = 55.0
     trigger_labels: list[str] = field(default_factory=list)
     ambiguous_labels: list[str] = field(default_factory=list)
-    suppress_labels: list[str] = field(
-        default_factory=lambda: list(DEFAULT_SUPPRESS_LABELS)
-    )
     lookback_seconds: float = DEFAULT_LOOKBACK_SECONDS
     pre_onset_pad_ms: float = DEFAULT_PRE_ONSET_PAD_MS
     end_settle_chunks: int = DEFAULT_END_SETTLE_CHUNKS
@@ -51,22 +40,12 @@ class ClapTriggerConfig:
     peak_decay_db: float = DEFAULT_PEAK_DECAY_DB
 
     def normalized(self) -> "ClapTriggerConfig":
-        suppress = sorted({x.strip() for x in self.suppress_labels if x.strip()})
-        suppress_set = {x.lower() for x in suppress}
-        triggers = sorted(
-            {
-                x.strip()
-                for x in self.trigger_labels
-                if x.strip() and x.strip().lower() not in suppress_set
-            }
-        )
+        triggers = sorted({x.strip() for x in self.trigger_labels if x.strip()})
         ambiguous = sorted(
             {
                 x.strip()
                 for x in self.ambiguous_labels
-                if x.strip()
-                and x.strip().lower() not in suppress_set
-                and x.strip() not in set(triggers)
+                if x.strip() and x.strip() not in set(triggers)
             }
         )
         return ClapTriggerConfig(
@@ -74,7 +53,6 @@ class ClapTriggerConfig:
             dba_threshold=float(self.dba_threshold),
             trigger_labels=triggers,
             ambiguous_labels=ambiguous,
-            suppress_labels=suppress,
             lookback_seconds=float(self.lookback_seconds),
             pre_onset_pad_ms=float(self.pre_onset_pad_ms),
             end_settle_chunks=max(1, int(self.end_settle_chunks)),
@@ -93,18 +71,28 @@ class ClapTriggerState:
 
 def load_trigger_config(path: Path = DEFAULT_TRIGGERS_PATH) -> ClapTriggerConfig:
     data = json.loads(path.read_text(encoding="utf-8"))
-    # Legacy hybrid 7+3 keys are ignored when present; dynamic defaults apply.
-    raw_suppress = data.get("suppress_labels")
-    if raw_suppress is None:
-        suppress_labels = list(DEFAULT_SUPPRESS_LABELS)
-    else:
-        suppress_labels = list(raw_suppress)
+    # Legacy keys (pre_roll_seconds, post_roll_seconds) are ignored.
+    # Legacy suppress_labels are remapped to Off (stripped from trigger/ambiguous).
+    legacy_suppress = {
+        str(x).strip().lower()
+        for x in (data.get("suppress_labels") or [])
+        if str(x).strip()
+    }
+    trigger_labels = [
+        x
+        for x in data.get("trigger_labels", [])
+        if str(x).strip() and str(x).strip().lower() not in legacy_suppress
+    ]
+    ambiguous_labels = [
+        x
+        for x in data.get("ambiguous_labels", [])
+        if str(x).strip() and str(x).strip().lower() not in legacy_suppress
+    ]
     return ClapTriggerConfig(
         cooldown_seconds=float(data.get("cooldown_seconds", 5.0)),
         dba_threshold=float(data.get("dba_threshold", 55.0)),
-        trigger_labels=list(data.get("trigger_labels", [])),
-        ambiguous_labels=list(data.get("ambiguous_labels", [])),
-        suppress_labels=suppress_labels,
+        trigger_labels=trigger_labels,
+        ambiguous_labels=ambiguous_labels,
         lookback_seconds=float(
             data.get("lookback_seconds", DEFAULT_LOOKBACK_SECONDS)
         ),
@@ -140,7 +128,6 @@ def save_trigger_config(
         "peak_decay_db": cfg.peak_decay_db,
         "trigger_labels": cfg.trigger_labels,
         "ambiguous_labels": cfg.ambiguous_labels,
-        "suppress_labels": cfg.suppress_labels,
     }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
@@ -176,9 +163,6 @@ def evaluate_arm(
         return False, CLAP_STATUS_GATED, "gated"
     if not preroll_ready:
         return False, CLAP_STATUS_SKIPPED, "buffer_warming"
-
-    if _label_in_set(top_label, config.suppress_labels):
-        return False, CLAP_STATUS_SKIPPED, f"suppress:{top_label}"
 
     in_trigger = _label_in_set(top_label, config.trigger_labels)
     in_ambiguous = _label_in_set(top_label, config.ambiguous_labels)
