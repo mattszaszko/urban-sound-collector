@@ -12,6 +12,7 @@ from core.clap_capture import (
     DEFAULT_LOOKBACK_SECONDS,
     DEFAULT_MAX_EVENT_SECONDS,
     DEFAULT_ONSET_DBA_MARGIN_DB,
+    DEFAULT_PEAK_DECAY_DB,
     DEFAULT_PRE_ONSET_PAD_MS,
 )
 
@@ -24,6 +25,14 @@ CLAP_STATUS_PENDING = "pending"
 CLAP_STATUS_SKIPPED = "skipped"
 CLAP_STATUS_GATED = "gated"
 
+# Environmental / broadband labels that must never arm CLAP.
+DEFAULT_SUPPRESS_LABELS = [
+    "Wind",
+    "Rustling leaves",
+    "White noise",
+    "Outside, rural or natural",
+]
+
 
 @dataclass
 class ClapTriggerConfig:
@@ -31,25 +40,47 @@ class ClapTriggerConfig:
     dba_threshold: float = 55.0
     trigger_labels: list[str] = field(default_factory=list)
     ambiguous_labels: list[str] = field(default_factory=list)
+    suppress_labels: list[str] = field(
+        default_factory=lambda: list(DEFAULT_SUPPRESS_LABELS)
+    )
     lookback_seconds: float = DEFAULT_LOOKBACK_SECONDS
     pre_onset_pad_ms: float = DEFAULT_PRE_ONSET_PAD_MS
     end_settle_chunks: int = DEFAULT_END_SETTLE_CHUNKS
     max_event_seconds: float = DEFAULT_MAX_EVENT_SECONDS
     onset_dba_margin_db: float = DEFAULT_ONSET_DBA_MARGIN_DB
+    peak_decay_db: float = DEFAULT_PEAK_DECAY_DB
 
     def normalized(self) -> "ClapTriggerConfig":
+        suppress = sorted({x.strip() for x in self.suppress_labels if x.strip()})
+        suppress_set = {x.lower() for x in suppress}
+        triggers = sorted(
+            {
+                x.strip()
+                for x in self.trigger_labels
+                if x.strip() and x.strip().lower() not in suppress_set
+            }
+        )
+        ambiguous = sorted(
+            {
+                x.strip()
+                for x in self.ambiguous_labels
+                if x.strip()
+                and x.strip().lower() not in suppress_set
+                and x.strip() not in set(triggers)
+            }
+        )
         return ClapTriggerConfig(
             cooldown_seconds=float(self.cooldown_seconds),
             dba_threshold=float(self.dba_threshold),
-            trigger_labels=sorted({x.strip() for x in self.trigger_labels if x.strip()}),
-            ambiguous_labels=sorted(
-                {x.strip() for x in self.ambiguous_labels if x.strip()}
-            ),
+            trigger_labels=triggers,
+            ambiguous_labels=ambiguous,
+            suppress_labels=suppress,
             lookback_seconds=float(self.lookback_seconds),
             pre_onset_pad_ms=float(self.pre_onset_pad_ms),
             end_settle_chunks=max(1, int(self.end_settle_chunks)),
             max_event_seconds=float(self.max_event_seconds),
             onset_dba_margin_db=float(self.onset_dba_margin_db),
+            peak_decay_db=float(self.peak_decay_db),
         )
 
 
@@ -63,11 +94,17 @@ class ClapTriggerState:
 def load_trigger_config(path: Path = DEFAULT_TRIGGERS_PATH) -> ClapTriggerConfig:
     data = json.loads(path.read_text(encoding="utf-8"))
     # Legacy hybrid 7+3 keys are ignored when present; dynamic defaults apply.
+    raw_suppress = data.get("suppress_labels")
+    if raw_suppress is None:
+        suppress_labels = list(DEFAULT_SUPPRESS_LABELS)
+    else:
+        suppress_labels = list(raw_suppress)
     return ClapTriggerConfig(
         cooldown_seconds=float(data.get("cooldown_seconds", 5.0)),
         dba_threshold=float(data.get("dba_threshold", 55.0)),
         trigger_labels=list(data.get("trigger_labels", [])),
         ambiguous_labels=list(data.get("ambiguous_labels", [])),
+        suppress_labels=suppress_labels,
         lookback_seconds=float(
             data.get("lookback_seconds", DEFAULT_LOOKBACK_SECONDS)
         ),
@@ -83,6 +120,7 @@ def load_trigger_config(path: Path = DEFAULT_TRIGGERS_PATH) -> ClapTriggerConfig
         onset_dba_margin_db=float(
             data.get("onset_dba_margin_db", DEFAULT_ONSET_DBA_MARGIN_DB)
         ),
+        peak_decay_db=float(data.get("peak_decay_db", DEFAULT_PEAK_DECAY_DB)),
     ).normalized()
 
 
@@ -90,7 +128,6 @@ def save_trigger_config(
     config: ClapTriggerConfig, path: Path = DEFAULT_TRIGGERS_PATH
 ) -> None:
     cfg = config.normalized()
-    ambiguous = [x for x in cfg.ambiguous_labels if x not in set(cfg.trigger_labels)]
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "cooldown_seconds": cfg.cooldown_seconds,
@@ -100,8 +137,10 @@ def save_trigger_config(
         "end_settle_chunks": cfg.end_settle_chunks,
         "max_event_seconds": cfg.max_event_seconds,
         "onset_dba_margin_db": cfg.onset_dba_margin_db,
+        "peak_decay_db": cfg.peak_decay_db,
         "trigger_labels": cfg.trigger_labels,
-        "ambiguous_labels": ambiguous,
+        "ambiguous_labels": cfg.ambiguous_labels,
+        "suppress_labels": cfg.suppress_labels,
     }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
@@ -137,6 +176,9 @@ def evaluate_arm(
         return False, CLAP_STATUS_GATED, "gated"
     if not preroll_ready:
         return False, CLAP_STATUS_SKIPPED, "buffer_warming"
+
+    if _label_in_set(top_label, config.suppress_labels):
+        return False, CLAP_STATUS_SKIPPED, f"suppress:{top_label}"
 
     in_trigger = _label_in_set(top_label, config.trigger_labels)
     in_ambiguous = _label_in_set(top_label, config.ambiguous_labels)

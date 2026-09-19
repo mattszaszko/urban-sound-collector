@@ -349,15 +349,17 @@ YAMNet still runs every open chunk. With **`--enable-clap`**, a short
 lookback buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
 YAMNet trigger fires (see web **Triggers** tab). CLAP uses a **dynamic energy
 slice**: when armed, onset is traced back to the start of the current gate-open
-(or elevated-RMS) run plus a small pre-onset pad; capture continues until the
-gate/energy settles for N chunks or a hard max event duration (default 7 s).
-Short clips are **`repeatpad`**-tiled to the model’s 10 s input; longer clips
-are truncated. The same **~80 Hz Butterworth HPF** as Branch B and
+(or elevated-RMS) run plus a small pre-onset pad; capture continues until
+**either** SPL drops ≥5 dB below the event peak for N chunks (default 2), the
+gate closes for N chunks, **or** a hard max event duration (default **5 s**).
+Environmental labels (`Wind`, `White noise`, etc.) are on a **suppress** list and
+never arm CLAP. Short clips are **`repeatpad`**-tiled to the model’s 10 s input;
+longer clips are truncated. The same **~80 Hz Butterworth HPF** as Branch B and
 **peak-normalization** run before audio ONNX (still **no** Branch B RMS AGC).
 Predictions are written on the completing chunk with link meta
-(`trigger_chunk_index`, `t_start_reason`, `event_seconds`, etc.). Statuses:
-`scheduled` → `pending` → `triggered` (no carry). `clap_model_name` should be
-`clap-htsat-unfused-onnx`.
+(`trigger_chunk_index`, `t_start_reason`, `t_end_reason`, `event_seconds`, etc.).
+Statuses: `scheduled` → `pending` → `triggered` (no carry). `clap_model_name`
+should be `clap-htsat-unfused-onnx`.
 
 One-time on each Pi (after `pip install -r requirements.txt`):
 

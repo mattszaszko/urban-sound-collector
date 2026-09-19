@@ -4,8 +4,9 @@
   "lookback_seconds": 4.0,
   "pre_onset_pad_ms": 150.0,
   "end_settle_chunks": 2,
-  "max_event_seconds": 7.0,
+  "max_event_seconds": 5.0,
   "onset_dba_margin_db": 3.0,
+  "peak_decay_db": 5.0,
   "trigger_labels": [
     "Vehicle",
     "Car",
@@ -34,12 +35,17 @@
   ],
   "ambiguous_labels": [
     "Noise",
-    "White noise",
     "Pink noise",
     "Static",
     "Hum",
     "Environmental noise",
     "Sound effect",
     "Field recording"
+  ],
+  "suppress_labels": [
+    "Wind",
+    "Rustling leaves",
+    "White noise",
+    "Outside, rural or natural"
   ]
 }

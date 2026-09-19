@@ -1403,8 +1403,10 @@ async def api_clap_triggers_get(request: Request):
             "end_settle_chunks": cfg.end_settle_chunks,
             "max_event_seconds": cfg.max_event_seconds,
             "onset_dba_margin_db": cfg.onset_dba_margin_db,
+            "peak_decay_db": cfg.peak_decay_db,
             "trigger_labels": cfg.trigger_labels,
             "ambiguous_labels": cfg.ambiguous_labels,
+            "suppress_labels": cfg.suppress_labels,
         }
     )
 
@@ -1424,10 +1426,22 @@ async def api_clap_triggers_put(request: Request):
             lookback_seconds=float(body.get("lookback_seconds", 4)),
             pre_onset_pad_ms=float(body.get("pre_onset_pad_ms", 150)),
             end_settle_chunks=int(body.get("end_settle_chunks", 2)),
-            max_event_seconds=float(body.get("max_event_seconds", 7)),
+            max_event_seconds=float(body.get("max_event_seconds", 5)),
             onset_dba_margin_db=float(body.get("onset_dba_margin_db", 3)),
+            peak_decay_db=float(body.get("peak_decay_db", 5)),
             trigger_labels=list(body.get("trigger_labels", [])),
             ambiguous_labels=list(body.get("ambiguous_labels", [])),
+            suppress_labels=list(
+                body.get(
+                    "suppress_labels",
+                    [
+                        "Wind",
+                        "Rustling leaves",
+                        "White noise",
+                        "Outside, rural or natural",
+                    ],
+                )
+            ),
         )
         save_trigger_config(cfg, CLAP_TRIGGERS_PATH)
     except (TypeError, ValueError) as exc:

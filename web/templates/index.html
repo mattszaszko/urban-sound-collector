@@ -1105,40 +1105,53 @@
   <div class="card">
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
-      Map YAMNet labels to CLAP trigger modes. Off = ignore, Trigger = arm CLAP on that
-      label, Ambiguous = arm only when also loud (dBA threshold). Capture slices the
-      event from gate/energy onset (with lookback) until settle or max duration, then
-      <code>repeatpad</code>s short clips for CLAP. No label carry — only
+      Map YAMNet labels to CLAP modes. Off = ignore, Trigger = arm on that label,
+      Ambiguous = arm only when also loud (dBA threshold), Suppress = never arm
+      (wind / broadband). Capture slices from gate/energy onset (lookback) until
+      peak decays by the peak-decay margin, the gate closes, or max duration —
+      then <code>repeatpad</code>s short clips. No label carry — only
       <code>triggered</code> rows have CLAP labels.
     </div>
     <div class="trigger-settings">
       <div>
         <label for="trig-cooldown">Cooldown (seconds)</label>
         <input type="number" id="trig-cooldown" min="0" step="0.5" value="5">
+        <div class="field-note">Minimum wait after one CLAP capture starts before another can start. Stops rapid re-triggers on the same sound.</div>
       </div>
       <div>
         <label for="trig-dba">dBA threshold</label>
         <input type="number" id="trig-dba" min="0" step="0.5" value="55">
+        <div class="field-note">For Ambiguous labels only: CLAP arms only when loudness is at least this level. Trigger labels ignore this.</div>
       </div>
       <div>
         <label for="trig-lookback">Lookback (seconds)</label>
         <input type="number" id="trig-lookback" min="1" step="0.5" value="4">
+        <div class="field-note">How far back in recent audio we search for when the event really started (so the clip includes the beginning, not just the trigger moment).</div>
       </div>
       <div>
         <label for="trig-pad">Pre-onset pad (ms)</label>
         <input type="number" id="trig-pad" min="0" step="10" value="150">
+        <div class="field-note">Extra audio kept just before the detected start, so the attack of the sound isn’t cut off.</div>
       </div>
       <div>
         <label for="trig-settle">End settle (chunks)</label>
         <input type="number" id="trig-settle" min="1" step="1" value="2">
+        <div class="field-note">How many ~1&nbsp;s chunks in a row must look “ended” (quieter than the peak, or gate closed) before we stop capturing.</div>
       </div>
       <div>
         <label for="trig-max-event">Max event (seconds)</label>
-        <input type="number" id="trig-max-event" min="0.5" step="0.5" value="7">
+        <input type="number" id="trig-max-event" min="0.5" step="0.5" value="5">
+        <div class="field-note">Hard cap on clip length. Stops a long wind swell or continuous noise from filling the whole CLAP window.</div>
       </div>
       <div>
         <label for="trig-onset-margin">Onset margin (dB)</label>
         <input type="number" id="trig-onset-margin" min="0" step="0.5" value="3">
+        <div class="field-note">When finding the start: treat audio as “elevated” once it’s this many dB above the recent ambient floor.</div>
+      </div>
+      <div>
+        <label for="trig-peak-decay">Peak decay (dB)</label>
+        <input type="number" id="trig-peak-decay" min="0" step="0.5" value="5">
+        <div class="field-note">When ending: stop once loudness has dropped this many dB below the event’s loudest point (even if the gate is still open).</div>
       </div>
     </div>
     <label for="trig-search">Filter labels</label>
@@ -1429,6 +1442,9 @@ function normalizeTriggersPayload(raw) {
   const ambiguous_labels = Array.isArray(raw.ambiguous_labels)
     ? raw.ambiguous_labels.map((x) => String(x).trim()).filter(Boolean)
     : [];
+  const suppress_labels = Array.isArray(raw.suppress_labels)
+    ? raw.suppress_labels.map((x) => String(x).trim()).filter(Boolean)
+    : ['Wind', 'Rustling leaves', 'White noise', 'Outside, rural or natural'];
   const num = (v, fallback) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
@@ -1439,10 +1455,12 @@ function normalizeTriggersPayload(raw) {
     lookback_seconds: num(raw.lookback_seconds, 4),
     pre_onset_pad_ms: num(raw.pre_onset_pad_ms, 150),
     end_settle_chunks: num(raw.end_settle_chunks, 2),
-    max_event_seconds: num(raw.max_event_seconds, 7),
+    max_event_seconds: num(raw.max_event_seconds, 5),
     onset_dba_margin_db: num(raw.onset_dba_margin_db, 3),
+    peak_decay_db: num(raw.peak_decay_db, 5),
     trigger_labels,
     ambiguous_labels,
+    suppress_labels,
   };
 }
 
@@ -3979,12 +3997,14 @@ const trigSearch = document.getElementById('trig-search');
 let catalogLabels = [];
 let triggerSet = new Set();
 let ambiguousSet = new Set();
+let suppressSet = new Set();
 let lastTriggerMeta = {
   lookback_seconds: 4,
   pre_onset_pad_ms: 150,
   end_settle_chunks: 2,
-  max_event_seconds: 7,
+  max_event_seconds: 5,
   onset_dba_margin_db: 3,
+  peak_decay_db: 5,
 };
 
 function radioNameFor(label) {
@@ -3992,6 +4012,7 @@ function radioNameFor(label) {
 }
 
 function currentMode(label) {
+  if (suppressSet.has(label)) return 'suppress';
   if (triggerSet.has(label)) return 'trigger';
   if (ambiguousSet.has(label)) return 'ambiguous';
   return 'off';
@@ -4000,8 +4021,10 @@ function currentMode(label) {
 function setMode(label, mode, rowEl) {
   triggerSet.delete(label);
   ambiguousSet.delete(label);
+  suppressSet.delete(label);
   if (mode === 'trigger') triggerSet.add(label);
   else if (mode === 'ambiguous') ambiguousSet.add(label);
+  else if (mode === 'suppress') suppressSet.add(label);
   const row = rowEl || themesContainer.querySelector(`.label-row[data-label="${CSS.escape(label)}"]`);
   if (!row) return;
   const input = row.querySelector(`input[type="radio"][value="${mode}"]`);
@@ -4066,7 +4089,7 @@ function renderCatalog(themes, labels) {
 
     const actions = document.createElement('div');
     actions.className = 'theme-actions';
-    [['trigger', 'All trigger'], ['ambiguous', 'All ambiguous'], ['off', 'Clear']].forEach(([action, text]) => {
+    [['trigger', 'All trigger'], ['ambiguous', 'All ambiguous'], ['suppress', 'All suppress'], ['off', 'Clear']].forEach(([action, text]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = text;
@@ -4099,7 +4122,7 @@ function renderCatalog(themes, labels) {
       radios.className = 'radio-group';
       const rname = radioNameFor(label);
       const mode = currentMode(label);
-      [['off', 'Off'], ['trigger', 'Trigger'], ['ambiguous', 'Ambiguous']].forEach(([val, text]) => {
+      [['off', 'Off'], ['trigger', 'Trigger'], ['ambiguous', 'Ambiguous'], ['suppress', 'Suppress']].forEach(([val, text]) => {
         const lab = document.createElement('label');
         const inp = document.createElement('input');
         inp.type = 'radio';
@@ -4145,17 +4168,20 @@ async function loadTriggerConfig() {
   document.getElementById('trig-lookback').value = data.lookback_seconds ?? 4;
   document.getElementById('trig-pad').value = data.pre_onset_pad_ms ?? 150;
   document.getElementById('trig-settle').value = data.end_settle_chunks ?? 2;
-  document.getElementById('trig-max-event').value = data.max_event_seconds ?? 7;
+  document.getElementById('trig-max-event').value = data.max_event_seconds ?? 5;
   document.getElementById('trig-onset-margin').value = data.onset_dba_margin_db ?? 3;
+  document.getElementById('trig-peak-decay').value = data.peak_decay_db ?? 5;
   lastTriggerMeta = {
     lookback_seconds: data.lookback_seconds ?? 4,
     pre_onset_pad_ms: data.pre_onset_pad_ms ?? 150,
     end_settle_chunks: data.end_settle_chunks ?? 2,
-    max_event_seconds: data.max_event_seconds ?? 7,
+    max_event_seconds: data.max_event_seconds ?? 5,
     onset_dba_margin_db: data.onset_dba_margin_db ?? 3,
+    peak_decay_db: data.peak_decay_db ?? 5,
   };
   triggerSet = new Set(data.trigger_labels || []);
   ambiguousSet = new Set(data.ambiguous_labels || []);
+  suppressSet = new Set(data.suppress_labels || []);
   // Re-apply radios if catalog already rendered
   themesContainer.querySelectorAll('.label-row').forEach((row) => {
     const label = row.dataset.label;
@@ -4170,12 +4196,14 @@ async function loadTriggerConfig() {
 function collectTriggersPayload() {
   const triggers = [];
   const ambiguous = [];
+  const suppress = [];
   themesContainer.querySelectorAll('.label-row').forEach((row) => {
     const label = row.dataset.label;
     const checked = row.querySelector('input[type="radio"]:checked');
     const mode = checked ? checked.value : 'off';
     if (mode === 'trigger') triggers.push(label);
     else if (mode === 'ambiguous') ambiguous.push(label);
+    else if (mode === 'suppress') suppress.push(label);
   });
   return {
     cooldown_seconds: parseFloat(document.getElementById('trig-cooldown').value) || 0,
@@ -4183,10 +4211,12 @@ function collectTriggersPayload() {
     lookback_seconds: parseFloat(document.getElementById('trig-lookback').value) || 4,
     pre_onset_pad_ms: parseFloat(document.getElementById('trig-pad').value) || 0,
     end_settle_chunks: parseInt(document.getElementById('trig-settle').value, 10) || 2,
-    max_event_seconds: parseFloat(document.getElementById('trig-max-event').value) || 7,
+    max_event_seconds: parseFloat(document.getElementById('trig-max-event').value) || 5,
     onset_dba_margin_db: parseFloat(document.getElementById('trig-onset-margin').value) || 0,
+    peak_decay_db: parseFloat(document.getElementById('trig-peak-decay').value) || 0,
     trigger_labels: triggers,
     ambiguous_labels: ambiguous,
+    suppress_labels: suppress,
   };
 }
 
@@ -4196,17 +4226,20 @@ function applyTriggersPayload(cfg) {
   document.getElementById('trig-lookback').value = cfg.lookback_seconds ?? 4;
   document.getElementById('trig-pad').value = cfg.pre_onset_pad_ms ?? 150;
   document.getElementById('trig-settle').value = cfg.end_settle_chunks ?? 2;
-  document.getElementById('trig-max-event').value = cfg.max_event_seconds ?? 7;
+  document.getElementById('trig-max-event').value = cfg.max_event_seconds ?? 5;
   document.getElementById('trig-onset-margin').value = cfg.onset_dba_margin_db ?? 3;
+  document.getElementById('trig-peak-decay').value = cfg.peak_decay_db ?? 5;
   lastTriggerMeta = {
     lookback_seconds: cfg.lookback_seconds ?? 4,
     pre_onset_pad_ms: cfg.pre_onset_pad_ms ?? 150,
     end_settle_chunks: cfg.end_settle_chunks ?? 2,
-    max_event_seconds: cfg.max_event_seconds ?? 7,
+    max_event_seconds: cfg.max_event_seconds ?? 5,
     onset_dba_margin_db: cfg.onset_dba_margin_db ?? 3,
+    peak_decay_db: cfg.peak_decay_db ?? 5,
   };
   triggerSet = new Set(cfg.trigger_labels || []);
   ambiguousSet = new Set(cfg.ambiguous_labels || []);
+  suppressSet = new Set(cfg.suppress_labels || []);
   themesContainer.querySelectorAll('.label-row').forEach((row) => {
     const label = row.dataset.label;
     const mode = currentMode(label);
@@ -4230,17 +4263,19 @@ async function saveTriggersToServer(body, statusMsg) {
   }
   triggerSet = new Set(body.trigger_labels || []);
   ambiguousSet = new Set(body.ambiguous_labels || []);
+  suppressSet = new Set(body.suppress_labels || []);
   lastTriggerMeta = {
     lookback_seconds: body.lookback_seconds ?? lastTriggerMeta.lookback_seconds,
     pre_onset_pad_ms: body.pre_onset_pad_ms ?? lastTriggerMeta.pre_onset_pad_ms,
     end_settle_chunks: body.end_settle_chunks ?? lastTriggerMeta.end_settle_chunks,
     max_event_seconds: body.max_event_seconds ?? lastTriggerMeta.max_event_seconds,
     onset_dba_margin_db: body.onset_dba_margin_db ?? lastTriggerMeta.onset_dba_margin_db,
+    peak_decay_db: body.peak_decay_db ?? lastTriggerMeta.peak_decay_db,
   };
   setInlineStatus(
     triggersStatus,
     statusMsg ||
-      `Saved (${(body.trigger_labels || []).length} trigger, ${(body.ambiguous_labels || []).length} ambiguous).`,
+      `Saved (${(body.trigger_labels || []).length} trigger, ${(body.ambiguous_labels || []).length} ambiguous, ${(body.suppress_labels || []).length} suppress).`,
     'ok'
   );
   return true;
@@ -4265,7 +4300,7 @@ document.getElementById('triggers-export-btn').addEventListener('click', () => {
   downloadJson('clap_triggers.json', body);
   setInlineStatus(
     triggersStatus,
-    `Exported (${body.trigger_labels.length} trigger, ${body.ambiguous_labels.length} ambiguous).`,
+    `Exported (${body.trigger_labels.length} trigger, ${body.ambiguous_labels.length} ambiguous, ${body.suppress_labels.length} suppress).`,
     'ok'
   );
 });
@@ -4284,7 +4319,7 @@ document.getElementById('triggers-import-file').addEventListener('change', async
     const cfg = normalizeTriggersPayload(raw);
     if (!confirm(
       `Replace trigger settings with "${file.name}" ` +
-      `(${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous) and save?`
+      `(${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous, ${cfg.suppress_labels.length} suppress) and save?`
     )) {
       return;
     }
@@ -4294,7 +4329,7 @@ document.getElementById('triggers-import-file').addEventListener('change', async
     applyTriggersPayload(cfg);
     await saveTriggersToServer(
       cfg,
-      `Imported and saved (${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous).`
+      `Imported and saved (${cfg.trigger_labels.length} trigger, ${cfg.ambiguous_labels.length} ambiguous, ${cfg.suppress_labels.length} suppress).`
     );
   } catch (err) {
     const msg = err && err.message ? err.message : 'Import failed';

@@ -118,7 +118,38 @@ class DynamicClapCaptureTests(unittest.TestCase):
         job.feed(np.full(100, 0.0, dtype=np.float32), _telem(gate_open=False, chunk_index=2))
         self.assertTrue(job.ready)
         self.assertFalse(job.meta.get("capped"))
+        self.assertEqual(job.meta.get("t_end_reason"), "gate_close")
         self.assertEqual(job.captured_samples, 300)
+
+    def test_wind_swell_peak_decay_ends_early(self) -> None:
+        """Sustained gate-open wind: end on peak decay, not the max cap."""
+        sr = 100  # 100 samples == 1 s
+        job = DynamicClapCapture(
+            sample_rate=sr,
+            lookback_seconds=4.0,
+            pre_onset_pad_ms=0.0,
+            end_settle_chunks=2,
+            max_event_seconds=5.0,
+            peak_decay_db=5.0,
+        )
+        # Closed, then arm on a peak chunk (gate stays open afterward).
+        job.feed(np.zeros(100, dtype=np.float32), _telem(gate_open=False, dba=50.0))
+        job.feed(np.ones(100, dtype=np.float32), _telem(gate_open=True, dba=65.0))
+        job.arm({"trigger_reason": "label:Vehicle"})
+        self.assertFalse(job.ready)
+        self.assertEqual(job.meta.get("dba_peak"), 65.0)
+        # Wind continues (gate open) but SPL is ≥5 dB below the peak for 2 chunks.
+        job.feed(np.ones(100, dtype=np.float32), _telem(gate_open=True, dba=59.0))
+        self.assertFalse(job.ready)
+        job.feed(np.ones(100, dtype=np.float32), _telem(gate_open=True, dba=58.0))
+        self.assertTrue(job.ready)
+        self.assertEqual(job.meta.get("t_end_reason"), "peak_decay")
+        self.assertFalse(job.meta.get("capped"))
+        secs = float(job.meta["event_seconds"])
+        self.assertGreaterEqual(secs, 1.5)
+        self.assertLessEqual(secs, 3.0)
+        # Without peak-decay this would keep capturing toward the 5 s cap.
+        self.assertLess(job.captured_samples, int(5.0 * sr))
 
     def test_max_event_cap(self) -> None:
         sr = 100
@@ -191,11 +222,15 @@ class ClapTriggerConfigTests(unittest.TestCase):
             )
             cfg = load_trigger_config(path)
             self.assertEqual(cfg.lookback_seconds, 4.0)
-            self.assertEqual(cfg.max_event_seconds, 7.0)
+            self.assertEqual(cfg.max_event_seconds, 5.0)
+            self.assertEqual(cfg.peak_decay_db, 5.0)
             self.assertEqual(cfg.trigger_labels, ["Vehicle"])
+            self.assertIn("Wind", cfg.suppress_labels)
             save_trigger_config(cfg, path)
             raw = path.read_text(encoding="utf-8")
             self.assertIn("lookback_seconds", raw)
+            self.assertIn("peak_decay_db", raw)
+            self.assertIn("suppress_labels", raw)
             self.assertNotIn("pre_roll_seconds", raw)
 
 
@@ -312,6 +347,31 @@ class ClapTriggerTests(unittest.TestCase):
         self.assertFalse(arm)
         self.assertEqual(status, CLAP_STATUS_SKIPPED)
         self.assertEqual(reason, "no_match")
+
+    def test_suppress_blocks_even_if_listed_as_trigger(self) -> None:
+        cfg = ClapTriggerConfig(
+            cooldown_seconds=5.0,
+            dba_threshold=55.0,
+            trigger_labels=["Wind", "Vehicle"],
+            ambiguous_labels=["White noise"],
+            suppress_labels=["Wind", "White noise"],
+        )
+        cfg = cfg.normalized()
+        self.assertNotIn("Wind", cfg.trigger_labels)
+        self.assertNotIn("White noise", cfg.ambiguous_labels)
+        arm, status, reason = evaluate_arm(
+            gated=False,
+            top_label="Wind",
+            dba_spl=75.0,
+            preroll_ready=True,
+            capture_active=False,
+            config=cfg,
+            state=self.state,
+            now_monotonic=100.0,
+        )
+        self.assertFalse(arm)
+        self.assertEqual(status, CLAP_STATUS_SKIPPED)
+        self.assertIn("suppress", reason)
 
 
 class ClapPromptTests(unittest.TestCase):

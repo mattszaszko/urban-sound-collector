@@ -11,7 +11,6 @@ from core.clap_event_buffer import (
     BufferedChunk,
     ChunkTelemetry,
     ClapEventBuffer,
-    chunk_settled,
     resolve_onset_sample,
 )
 
@@ -19,8 +18,9 @@ from core.clap_event_buffer import (
 DEFAULT_LOOKBACK_SECONDS = 4.0
 DEFAULT_PRE_ONSET_PAD_MS = 150.0
 DEFAULT_END_SETTLE_CHUNKS = 2
-DEFAULT_MAX_EVENT_SECONDS = 7.0
+DEFAULT_MAX_EVENT_SECONDS = 5.0
 DEFAULT_ONSET_DBA_MARGIN_DB = 3.0
+DEFAULT_PEAK_DECAY_DB = 5.0
 
 
 class CaptureState(str, Enum):
@@ -33,7 +33,8 @@ class DynamicClapCapture:
     """
     Lookback ring + state machine:
 
-    IDLE → (YAMNet arm) retroactive onset → CAPTURING → READY (settle or max).
+    IDLE → (YAMNet arm) retroactive onset → CAPTURING → READY
+    (peak decay, gate close, or max cap).
     """
 
     def __init__(
@@ -45,6 +46,7 @@ class DynamicClapCapture:
         end_settle_chunks: int = DEFAULT_END_SETTLE_CHUNKS,
         max_event_seconds: float = DEFAULT_MAX_EVENT_SECONDS,
         onset_dba_margin_db: float = DEFAULT_ONSET_DBA_MARGIN_DB,
+        peak_decay_db: float = DEFAULT_PEAK_DECAY_DB,
     ) -> None:
         self.sample_rate = int(sample_rate)
         self.lookback_seconds = float(lookback_seconds)
@@ -52,6 +54,7 @@ class DynamicClapCapture:
         self.end_settle_chunks = max(1, int(end_settle_chunks))
         self.max_event_seconds = float(max_event_seconds)
         self.onset_dba_margin_db = float(onset_dba_margin_db)
+        self.peak_decay_db = float(peak_decay_db)
 
         self.buffer = ClapEventBuffer(
             sample_rate=self.sample_rate,
@@ -60,7 +63,9 @@ class DynamicClapCapture:
         self._parts: list[np.ndarray] = []
         self._size = 0
         self._state = CaptureState.IDLE
-        self._settle_streak = 0
+        self._gate_settle_streak = 0
+        self._peak_decay_streak = 0
+        self._dba_peak: float | None = None
         self.meta: dict[str, Any] = {}
 
     @property
@@ -116,7 +121,11 @@ class DynamicClapCapture:
 
         self._parts = [seed] if seed.size else []
         self._size = int(seed.size)
-        self._settle_streak = 0
+        self._gate_settle_streak = 0
+        self._peak_decay_streak = 0
+        self._dba_peak = None
+        self._seed_peak_from_chunks(chunks, onset)
+
         self.meta = {
             **dict(meta),
             "window": "dynamic_energy",
@@ -124,25 +133,67 @@ class DynamicClapCapture:
             "pre_onset_pad_ms": self.pre_onset_pad_ms,
             "lookback_seconds": self.lookback_seconds,
             "max_event_seconds": self.max_event_seconds,
+            "peak_decay_db": self.peak_decay_db,
             "capped": capped,
             "event_seconds": round(self._size / float(self.sample_rate), 3),
+            "dba_peak": self._dba_peak,
         }
         if capped or self._size >= self.max_event_samples:
-            self._state = CaptureState.READY
-            self.meta["capped"] = True
-            self.meta["event_seconds"] = round(
-                self._size / float(self.sample_rate), 3
-            )
+            self._finish(capped=True, reason="capped")
             return
 
-        # If the trigger chunk itself is already settled (rare), start streak.
-        if chunks and chunk_settled(chunks[-1].telem, self.onset_dba_margin_db):
-            self._settle_streak = 1
-            if self._settle_streak >= self.end_settle_chunks:
-                self._finish(capped=False)
+        # If the trigger chunk itself already meets an end condition, start streaks.
+        if chunks:
+            self._update_end_streaks(chunks[-1].telem)
+            if self._try_finish_from_streaks():
                 return
 
         self._state = CaptureState.CAPTURING
+
+    def _seed_peak_from_chunks(
+        self, chunks: list[BufferedChunk], onset_sample: int
+    ) -> None:
+        """Track peak dBA over lookback chunks that contribute to the seeded event."""
+        cursor = 0
+        for chunk in chunks:
+            end = cursor + int(chunk.pcm.size)
+            if end > onset_sample:
+                self._note_peak(chunk.telem.dba_spl)
+            cursor = end
+
+    def _note_peak(self, dba_spl: float) -> None:
+        try:
+            val = float(dba_spl)
+        except (TypeError, ValueError):
+            return
+        if not np.isfinite(val):
+            return
+        if self._dba_peak is None or val > self._dba_peak:
+            self._dba_peak = val
+
+    def _update_end_streaks(self, telem: ChunkTelemetry) -> None:
+        if not telem.gate_open:
+            self._gate_settle_streak += 1
+        else:
+            self._gate_settle_streak = 0
+
+        self._note_peak(telem.dba_spl)
+        if (
+            self._dba_peak is not None
+            and float(telem.dba_spl) <= float(self._dba_peak) - self.peak_decay_db
+        ):
+            self._peak_decay_streak += 1
+        else:
+            self._peak_decay_streak = 0
+
+    def _try_finish_from_streaks(self) -> bool:
+        if self._gate_settle_streak >= self.end_settle_chunks:
+            self._finish(capped=False, reason="gate_close")
+            return True
+        if self._peak_decay_streak >= self.end_settle_chunks:
+            self._finish(capped=False, reason="peak_decay")
+            return True
+        return False
 
     def _extend_event(self, pcm: np.ndarray, telem: ChunkTelemetry) -> None:
         mono = np.asarray(pcm, dtype=np.float32).reshape(-1)
@@ -150,32 +201,31 @@ class DynamicClapCapture:
             return
         remaining = self.max_event_samples - self._size
         if remaining <= 0:
-            self._finish(capped=True)
+            self._finish(capped=True, reason="capped")
             return
         if mono.size > remaining:
             mono = mono[:remaining]
             self._parts.append(mono)
             self._size += int(mono.size)
-            self._finish(capped=True)
+            self._note_peak(telem.dba_spl)
+            self._finish(capped=True, reason="capped")
             return
 
         self._parts.append(mono)
         self._size += int(mono.size)
 
-        if chunk_settled(telem, self.onset_dba_margin_db):
-            self._settle_streak += 1
-        else:
-            self._settle_streak = 0
+        self._update_end_streaks(telem)
 
         if self._size >= self.max_event_samples:
-            self._finish(capped=True)
+            self._finish(capped=True, reason="capped")
             return
-        if self._settle_streak >= self.end_settle_chunks:
-            self._finish(capped=False)
+        self._try_finish_from_streaks()
 
-    def _finish(self, *, capped: bool) -> None:
+    def _finish(self, *, capped: bool, reason: str) -> None:
         self._state = CaptureState.READY
         self.meta["capped"] = bool(capped)
+        self.meta["t_end_reason"] = reason
+        self.meta["dba_peak"] = self._dba_peak
         self.meta["event_seconds"] = round(self._size / float(self.sample_rate), 3)
 
     def waveform(self) -> np.ndarray:
@@ -189,7 +239,9 @@ class DynamicClapCapture:
     def clear(self) -> None:
         self._parts = []
         self._size = 0
-        self._settle_streak = 0
+        self._gate_settle_streak = 0
+        self._peak_decay_streak = 0
+        self._dba_peak = None
         self._state = CaptureState.IDLE
         self.meta = {}
         # Keep lookback buffer across events so the next arm has history.
