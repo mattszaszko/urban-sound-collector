@@ -1,4 +1,4 @@
-"""Tests for CLAP ring buffer, hybrid capture, triggers, and ONNX wiring."""
+"""Tests for CLAP ring buffer, dynamic capture, triggers, and ONNX wiring."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from pathlib import Path
 import numpy as np
 
 from core.audio_ring_buffer import AudioRingBuffer
-from core.clap_capture import HybridClapCapture
+from core.clap_capture import DynamicClapCapture
+from core.clap_event_buffer import ChunkTelemetry
 from core.clap_onnx import (
     CLAP_MODEL_NAME,
     EMBED_DIM,
@@ -35,8 +36,27 @@ from core.clap_trigger import (
     ClapTriggerConfig,
     ClapTriggerState,
     evaluate_arm,
+    load_trigger_config,
+    save_trigger_config,
 )
 from core.classifier_clap import ClapClassifier, rebuild_text_embeddings
+
+
+def _telem(
+    *,
+    gate_open: bool,
+    dba: float = 50.0,
+    rms: float | None = -40.0,
+    ambient: float | None = -60.0,
+    chunk_index: int | None = None,
+) -> ChunkTelemetry:
+    return ChunkTelemetry(
+        gate_open=gate_open,
+        dba_spl=dba,
+        raw_rms_dbfs=rms,
+        ambient_noise_floor_dbfs=ambient,
+        chunk_index=chunk_index,
+    )
 
 
 class AudioRingBufferTests(unittest.TestCase):
@@ -56,27 +76,127 @@ class AudioRingBufferTests(unittest.TestCase):
         np.testing.assert_array_equal(ring.last_n(3), np.array([7, 8, 9], dtype=np.float32))
 
 
-class HybridClapCaptureTests(unittest.TestCase):
-    def test_pre_then_post_until_ready(self) -> None:
+class DynamicClapCaptureTests(unittest.TestCase):
+    def test_retroactive_onset_from_gate_open(self) -> None:
         sr = 100
-        job = HybridClapCapture(
-            sample_rate=sr, pre_roll_seconds=2.0, post_roll_seconds=8.0
+        job = DynamicClapCapture(
+            sample_rate=sr,
+            lookback_seconds=5.0,
+            pre_onset_pad_ms=0.0,
+            end_settle_chunks=2,
+            max_event_seconds=7.0,
         )
-        pre = np.ones(200, dtype=np.float32)
-        job.start(pre, {"trigger_chunk_index": 5, "trigger_reason": "label:Vehicle"})
-        self.assertTrue(job.active)
+        # closed, closed, open(3), open(4), trigger on open(5)
+        job.feed(np.full(100, 0.0, dtype=np.float32), _telem(gate_open=False, chunk_index=0))
+        job.feed(np.full(100, 0.0, dtype=np.float32), _telem(gate_open=False, chunk_index=1))
+        job.feed(np.full(100, 1.0, dtype=np.float32), _telem(gate_open=True, chunk_index=2))
+        job.feed(np.full(100, 1.0, dtype=np.float32), _telem(gate_open=True, chunk_index=3))
+        job.feed(np.full(100, 1.0, dtype=np.float32), _telem(gate_open=True, chunk_index=4))
+        job.arm({"trigger_chunk_index": 4, "trigger_reason": "label:Vehicle"})
+        self.assertEqual(job.meta["t_start_reason"], "gate_open")
         self.assertFalse(job.ready)
-        # 8 s post @ 100 Hz = 800 samples
-        for _ in range(7):
-            job.append_post(np.full(100, 2.0, dtype=np.float32))
-            self.assertFalse(job.ready)
-        job.append_post(np.full(100, 2.0, dtype=np.float32))
+        self.assertTrue(job.active)
+        # Seed should start at first open chunk (index 2) → 300 samples so far
+        self.assertEqual(job.captured_samples, 300)
+        wave = job.waveform()
+        np.testing.assert_array_equal(wave, np.ones(300, dtype=np.float32))
+
+    def test_settle_two_closed_chunks(self) -> None:
+        sr = 100
+        job = DynamicClapCapture(
+            sample_rate=sr,
+            lookback_seconds=4.0,
+            pre_onset_pad_ms=0.0,
+            end_settle_chunks=2,
+            max_event_seconds=7.0,
+        )
+        job.feed(np.full(100, 1.0, dtype=np.float32), _telem(gate_open=True, chunk_index=0))
+        job.arm({"trigger_reason": "label:Vehicle"})
+        self.assertFalse(job.ready)
+        job.feed(np.full(100, 0.0, dtype=np.float32), _telem(gate_open=False, chunk_index=1))
+        self.assertFalse(job.ready)
+        job.feed(np.full(100, 0.0, dtype=np.float32), _telem(gate_open=False, chunk_index=2))
+        self.assertTrue(job.ready)
+        self.assertFalse(job.meta.get("capped"))
+        self.assertEqual(job.captured_samples, 300)
+
+    def test_max_event_cap(self) -> None:
+        sr = 100
+        job = DynamicClapCapture(
+            sample_rate=sr,
+            lookback_seconds=2.0,
+            pre_onset_pad_ms=0.0,
+            end_settle_chunks=99,
+            max_event_seconds=0.5,  # 50 samples
+        )
+        job.feed(np.full(100, 1.0, dtype=np.float32), _telem(gate_open=True))
+        job.arm({"trigger_reason": "label:Vehicle"})
+        # Seed alone is 100 samples > 50 → ready + capped immediately
+        self.assertTrue(job.ready)
+        self.assertTrue(job.meta.get("capped"))
+        self.assertEqual(job.waveform().size, 50)
+
+    def test_short_transient_repeatpad(self) -> None:
+        sr = 1000
+        job = DynamicClapCapture(
+            sample_rate=sr,
+            lookback_seconds=2.0,
+            pre_onset_pad_ms=0.0,
+            end_settle_chunks=2,
+            max_event_seconds=7.0,
+        )
+        # One short open chunk then settle
+        job.feed(np.linspace(0.1, 0.9, 200, dtype=np.float32), _telem(gate_open=True))
+        job.arm({"trigger_reason": "label:Vehicle"})
+        job.feed(np.zeros(200, dtype=np.float32), _telem(gate_open=False))
+        job.feed(np.zeros(200, dtype=np.float32), _telem(gate_open=False))
         self.assertTrue(job.ready)
         wave = job.waveform()
-        self.assertEqual(wave.size, 1000)
-        np.testing.assert_array_equal(wave[:200], 1.0)
-        np.testing.assert_array_equal(wave[200:], 2.0)
-        self.assertEqual(job.meta["trigger_chunk_index"], 5)
+        self.assertLess(wave.size, 1000)
+        padded, is_longer = pad_or_truncate(wave, max_samples=480_000, padding="repeatpad")
+        self.assertEqual(padded.size, 480_000)
+        self.assertFalse(is_longer)
+        # Tiled: first 200 samples match the event onset region of the seed
+        np.testing.assert_allclose(padded[:200], wave[:200], atol=1e-6)
+
+    def test_pre_onset_pad_applied(self) -> None:
+        sr = 100
+        job = DynamicClapCapture(
+            sample_rate=sr,
+            lookback_seconds=5.0,
+            pre_onset_pad_ms=200.0,  # 20 samples
+            end_settle_chunks=2,
+            max_event_seconds=7.0,
+        )
+        job.feed(np.full(100, 0.0, dtype=np.float32), _telem(gate_open=False))
+        job.feed(np.full(100, 1.0, dtype=np.float32), _telem(gate_open=True))
+        job.arm({"trigger_reason": "label:Vehicle"})
+        self.assertEqual(job.meta["t_start_reason"], "gate_open")
+        # Onset at sample 100, pad 20 → start at 80 → 20 zeros + 100 ones
+        wave = job.waveform()
+        self.assertEqual(wave.size, 120)
+        np.testing.assert_array_equal(wave[:20], 0.0)
+        np.testing.assert_array_equal(wave[20:], 1.0)
+
+
+class ClapTriggerConfigTests(unittest.TestCase):
+    def test_load_ignores_legacy_pre_post(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "triggers.json"
+            path.write_text(
+                '{"cooldown_seconds": 5, "dba_threshold": 55, '
+                '"pre_roll_seconds": 7, "post_roll_seconds": 3, '
+                '"trigger_labels": ["Vehicle"], "ambiguous_labels": []}\n',
+                encoding="utf-8",
+            )
+            cfg = load_trigger_config(path)
+            self.assertEqual(cfg.lookback_seconds, 4.0)
+            self.assertEqual(cfg.max_event_seconds, 7.0)
+            self.assertEqual(cfg.trigger_labels, ["Vehicle"])
+            save_trigger_config(cfg, path)
+            raw = path.read_text(encoding="utf-8")
+            self.assertIn("lookback_seconds", raw)
+            self.assertNotIn("pre_roll_seconds", raw)
 
 
 class ClapTriggerTests(unittest.TestCase):

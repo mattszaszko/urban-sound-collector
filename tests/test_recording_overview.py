@@ -6,8 +6,10 @@ import unittest
 
 from core.recording_overview import (
     build_recording_overview,
+    clap_triggered_markers,
     loud_disturbance_stats,
     percentile_nearest,
+    slim_event_point,
 )
 
 
@@ -105,6 +107,26 @@ class BuildRecordingOverviewTests(unittest.TestCase):
             recording_active=False,
         )
         self.assertEqual(payload["summary"]["recording_id"], "legacy-id")
+
+
+class ClapEventSecondsTests(unittest.TestCase):
+    def test_slim_and_marker_include_event_seconds(self) -> None:
+        point = slim_event_point(
+            {
+                "created_at": "2026-01-01T00:00:05.000Z",
+                "dBA_spl": 62.0,
+                "clap_status": "triggered",
+                "clap_top_label": "siren",
+                "clap_meta": {"event_seconds": 3.25},
+            }
+        )
+        self.assertIsNotNone(point)
+        assert point is not None
+        self.assertEqual(point["clap_event_seconds"], 3.25)
+        markers = clap_triggered_markers([point])
+        self.assertEqual(len(markers), 1)
+        self.assertEqual(markers[0]["event_seconds"], 3.25)
+        self.assertEqual(markers[0]["label"], "siren")
 
 
 if __name__ == "__main__":

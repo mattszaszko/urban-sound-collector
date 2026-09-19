@@ -21,7 +21,6 @@ from core.audio_constants import (
     CAPTURE_SAMPLE_RATE,
     CAPTURE_STARTUP_DISCARD_SECONDS,
 )
-from core.audio_ring_buffer import AudioRingBuffer
 from core.capture_alsa import AlsAudioCapture
 from core.classifier_clap import ClapClassifier
 from core.classifier_tflite import (
@@ -29,7 +28,8 @@ from core.classifier_tflite import (
     MODEL_VERSION,
     YamnetTFLiteClassifier,
 )
-from core.clap_capture import HybridClapCapture
+from core.clap_capture import DynamicClapCapture
+from core.clap_event_buffer import ChunkTelemetry
 from core.clap_trigger import (
     CLAP_STATUS_GATED,
     CLAP_STATUS_PENDING,
@@ -263,8 +263,8 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         "--enable-clap",
         action="store_true",
         help=(
-            "Enable event-driven CLAP zero-shot on a 10 s hybrid ring window "
-            "(HPF + peak-norm before ONNX; requires rebuilt prompt embeddings)."
+            "Enable event-driven CLAP zero-shot with dynamic energy slicing "
+            "(HPF + peak-norm + repeatpad before ONNX; requires rebuilt prompt embeddings)."
         ),
     )
     parser.add_argument(
@@ -384,8 +384,9 @@ def stream_live(
     Branch A: A-weighted loudness at 48 kHz (ungained).
     Branch B: YAMNet TFLite at 16 kHz (dynamic HPF + RMS normalize).
     Branch C: Z- and A-weighted 1/3-octave spectrum at 48 kHz (ungained).
-    Optional CLAP: hybrid 7 s pre-roll + 3 s post-roll after YAMNet wake
-    (same HPF as Branch B, then peak-norm; no RMS AGC).
+    Optional CLAP: dynamic energy slice after YAMNet wake (lookback onset,
+    settle/max-duration offset, then repeatpad to 10 s CLAP input; same HPF
+    as Branch B, then peak-norm; no RMS AGC).
     Optional WAV: ungained mono 16-bit PCM @ capture rate.
     Startup: discard the first ~2 s of PCM (mic/ALSA settle pop) before
     any branch, WAV, or JSONL processing.
@@ -413,29 +414,30 @@ def stream_live(
     if enable_spectrum:
         spectrum_engine = SpectrumEngine(sample_rate=float(CAPTURE_SAMPLE_RATE))
 
-    clap_ring: AudioRingBuffer | None = None
     clap_state = ClapTriggerState()
     clap_config = None
-    clap_job: HybridClapCapture | None = None
+    clap_job: DynamicClapCapture | None = None
     if enable_clap:
         if clap_classifier is None:
             raise ValueError("enable_clap requires a ClapClassifier instance")
         clap_config = load_trigger_config()
-        # Keep enough history for pre-roll (and a little slack).
-        ring_secs = max(10.0, float(clap_config.pre_roll_seconds) + 1.0)
-        clap_ring = AudioRingBuffer(
-            maxlen_samples=int(CAPTURE_SAMPLE_RATE * ring_secs)
-        )
-        clap_job = HybridClapCapture(
+        clap_job = DynamicClapCapture(
             sample_rate=int(CAPTURE_SAMPLE_RATE),
-            pre_roll_seconds=float(clap_config.pre_roll_seconds),
-            post_roll_seconds=float(clap_config.post_roll_seconds),
+            lookback_seconds=float(clap_config.lookback_seconds),
+            pre_onset_pad_ms=float(clap_config.pre_onset_pad_ms),
+            end_settle_chunks=int(clap_config.end_settle_chunks),
+            max_event_seconds=float(clap_config.max_event_seconds),
+            onset_dba_margin_db=float(clap_config.onset_dba_margin_db),
         )
         logger.info(
-            "CLAP enabled: hybrid window pre=%ss post=%ss cooldown=%ss "
-            "dba_threshold=%s trigger_labels=%s ambiguous_labels=%s",
-            clap_config.pre_roll_seconds,
-            clap_config.post_roll_seconds,
+            "CLAP enabled: dynamic_energy lookback=%ss pad=%sms settle=%s "
+            "max_event=%ss margin_db=%s cooldown=%ss dba_threshold=%s "
+            "trigger_labels=%s ambiguous_labels=%s",
+            clap_config.lookback_seconds,
+            clap_config.pre_onset_pad_ms,
+            clap_config.end_settle_chunks,
+            clap_config.max_event_seconds,
+            clap_config.onset_dba_margin_db,
             clap_config.cooldown_seconds,
             clap_config.dba_threshold,
             len(clap_config.trigger_labels),
@@ -529,9 +531,6 @@ def stream_live(
                 spectrum_engine.analyse(pcm) if spectrum_engine is not None else None
             )
 
-            if clap_ring is not None:
-                clap_ring.append(pcm)
-
             # Branch B — YAMNet @ 16 kHz (HPF, dynamic normalize, silence gate).
             try:
                 prep = yamnet_preprocessor.prepare(pcm)
@@ -551,16 +550,35 @@ def stream_live(
                 enable_clap
                 and clap_classifier is not None
                 and clap_config is not None
-                and clap_ring is not None
                 and clap_job is not None
             ):
                 top_label = predictions[0]["label"] if predictions else "n/a"
                 dba_spl = float(metrics["dBA_spl"])
                 created_at = event_created_at
+                prep_meta = prep.metadata or {}
+                if "gate_open" in prep_meta:
+                    gate_open = bool(prep_meta["gate_open"])
+                else:
+                    gate_open = not bool(prep.gated)
+                telem = ChunkTelemetry(
+                    gate_open=gate_open,
+                    dba_spl=dba_spl,
+                    raw_rms_dbfs=(
+                        float(prep_meta["raw_rms_dbfs"])
+                        if prep_meta.get("raw_rms_dbfs") is not None
+                        else None
+                    ),
+                    ambient_noise_floor_dbfs=(
+                        float(prep_meta["ambient_noise_floor_dbfs"])
+                        if prep_meta.get("ambient_noise_floor_dbfs") is not None
+                        else None
+                    ),
+                    chunk_index=chunk_index,
+                )
+                # Always update lookback; extends active capture when armed.
+                clap_job.feed(pcm, telem)
 
-                # Active hybrid capture: keep filling post-roll, then infer.
                 if clap_job.active:
-                    clap_job.append_post(pcm)
                     if clap_job.ready:
                         try:
                             clap_result = clap_classifier.predict(clap_job.waveform())
@@ -574,17 +592,8 @@ def stream_live(
                                 "clap_model_version": clap_result.model_version,
                                 "clap_meta": {
                                     **link,
-                                    "window": (
-                                        f"hybrid_{clap_job.pre_roll_seconds:g}_"
-                                        f"{clap_job.post_roll_seconds:g}"
-                                    ),
-                                    "window_seconds": round(
-                                        clap_job.target_samples
-                                        / float(CAPTURE_SAMPLE_RATE),
-                                        2,
-                                    ),
-                                    "pre_roll_seconds": clap_job.pre_roll_seconds,
-                                    "post_roll_seconds": clap_job.post_roll_seconds,
+                                    "window": "dynamic_energy",
+                                    "window_seconds": link.get("event_seconds"),
                                     "inference_ms": clap_result.inference_ms,
                                     "cooldown_seconds": clap_config.cooldown_seconds,
                                 },
@@ -592,11 +601,13 @@ def stream_live(
                             clap_triggers += 1
                             logger.info(
                                 "CLAP triggered reason=%s top=%s ms=%s "
-                                "trigger_chunk=%s",
+                                "trigger_chunk=%s event_s=%s capped=%s",
                                 link.get("trigger_reason"),
                                 clap_result.top_label,
                                 clap_result.inference_ms,
                                 link.get("trigger_chunk_index"),
+                                link.get("event_seconds"),
+                                link.get("capped"),
                             )
                         except Exception as exc:  # noqa: BLE001
                             logger.warning("CLAP inference failed: %s", exc)
@@ -620,12 +631,7 @@ def stream_live(
                             "clap_top_confidence": None,
                             "clap_meta": {
                                 **dict(clap_job.meta),
-                                "window": (
-                                    f"hybrid_{clap_job.pre_roll_seconds:g}_"
-                                    f"{clap_job.post_roll_seconds:g}"
-                                ),
-                                "pre_roll_seconds": clap_job.pre_roll_seconds,
-                                "post_roll_seconds": clap_job.post_roll_seconds,
+                                "window": "dynamic_energy",
                                 "captured_seconds": round(
                                     clap_job.captured_samples
                                     / float(CAPTURE_SAMPLE_RATE),
@@ -634,50 +640,81 @@ def stream_live(
                             },
                         }
                 else:
-                    preroll_ready = len(clap_ring) >= clap_job.pre_samples
                     should_arm, status, reason = evaluate_arm(
                         gated=bool(prep.gated),
                         top_label=str(top_label),
                         dba_spl=dba_spl,
-                        preroll_ready=preroll_ready,
+                        preroll_ready=clap_job.warm,
                         capture_active=False,
                         config=clap_config,
                         state=clap_state,
                     )
                     if should_arm:
-                        clap_job.start(
-                            clap_ring.last_n(clap_job.pre_samples),
+                        clap_job.arm(
                             {
                                 "trigger_chunk_index": chunk_index,
                                 "trigger_created_at": created_at,
                                 "trigger_reason": reason,
                                 "trigger_yamnet_label": str(top_label),
                                 "trigger_dBA_spl": dba_spl,
-                            },
+                            }
                         )
                         clap_state.last_arm_monotonic = time.monotonic()
-                        clap_payload = {
-                            "clap_status": CLAP_STATUS_SCHEDULED,
-                            "clap_predictions": [],
-                            "clap_top_label": None,
-                            "clap_top_confidence": None,
-                            "clap_meta": {
-                                **dict(clap_job.meta),
-                                "window": (
-                                    f"hybrid_{clap_job.pre_roll_seconds:g}_"
-                                    f"{clap_job.post_roll_seconds:g}"
-                                ),
-                                "pre_roll_seconds": clap_job.pre_roll_seconds,
-                                "post_roll_seconds": clap_job.post_roll_seconds,
-                            },
-                        }
-                        logger.info(
-                            "CLAP scheduled reason=%s chunk=%s "
-                            "(waiting %.1fs post-roll)",
-                            reason,
-                            chunk_index,
-                            clap_job.post_roll_seconds,
-                        )
+                        if clap_job.ready:
+                            # Seed already hit max duration (rare) — infer now.
+                            try:
+                                clap_result = clap_classifier.predict(
+                                    clap_job.waveform()
+                                )
+                                link = dict(clap_job.meta)
+                                clap_payload = {
+                                    "clap_status": CLAP_STATUS_TRIGGERED,
+                                    "clap_predictions": clap_result.predictions,
+                                    "clap_top_label": clap_result.top_label,
+                                    "clap_top_confidence": clap_result.top_confidence,
+                                    "clap_model_name": clap_result.model_name,
+                                    "clap_model_version": clap_result.model_version,
+                                    "clap_meta": {
+                                        **link,
+                                        "window": "dynamic_energy",
+                                        "window_seconds": link.get("event_seconds"),
+                                        "inference_ms": clap_result.inference_ms,
+                                        "cooldown_seconds": clap_config.cooldown_seconds,
+                                    },
+                                }
+                                clap_triggers += 1
+                            except Exception as exc:  # noqa: BLE001
+                                logger.warning("CLAP inference failed: %s", exc)
+                                clap_payload = {
+                                    "clap_status": CLAP_STATUS_SKIPPED,
+                                    "clap_predictions": [],
+                                    "clap_top_label": None,
+                                    "clap_top_confidence": None,
+                                    "clap_meta": {
+                                        **dict(clap_job.meta),
+                                        "trigger_reason": f"error:{exc}",
+                                    },
+                                }
+                                clap_skips += 1
+                            clap_job.clear()
+                        else:
+                            clap_payload = {
+                                "clap_status": CLAP_STATUS_SCHEDULED,
+                                "clap_predictions": [],
+                                "clap_top_label": None,
+                                "clap_top_confidence": None,
+                                "clap_meta": {
+                                    **dict(clap_job.meta),
+                                    "window": "dynamic_energy",
+                                },
+                            }
+                            logger.info(
+                                "CLAP scheduled reason=%s chunk=%s "
+                                "(dynamic slice onset=%s)",
+                                reason,
+                                chunk_index,
+                                clap_job.meta.get("t_start_reason"),
+                            )
                     else:
                         clap_payload = {
                             "clap_status": status,

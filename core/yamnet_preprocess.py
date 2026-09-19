@@ -116,7 +116,7 @@ def apply_butter_hpf(
 ) -> np.ndarray:
     """Apply a Butterworth high-pass (same design as Branch B) to a buffer.
 
-    One-shot / offline use (e.g. CLAP hybrid window). Initializes filter state
+    One-shot / offline use (e.g. CLAP event window). Initializes filter state
     from the first sample to reduce startup transient. Does not share state
     with ``YamnetPreprocessor``'s streaming HPF.
     """

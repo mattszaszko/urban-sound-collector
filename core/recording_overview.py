@@ -83,6 +83,18 @@ def slim_event_point(event: dict, *, calib_offset: float = DEFAULT_CALIB_OFFSET)
     if not isinstance(clap_label, str):
         clap_label = None
 
+    clap_event_seconds: float | None = None
+    clap_meta = event.get("clap_meta")
+    if isinstance(clap_meta, dict):
+        for key in ("event_seconds", "window_seconds"):
+            raw_sec = clap_meta.get(key)
+            try:
+                if raw_sec is not None:
+                    clap_event_seconds = float(raw_sec)
+                    break
+            except (TypeError, ValueError):
+                continue
+
     chunk_index = event.get("chunk_index")
     try:
         chunk_i = int(chunk_index) if chunk_index is not None else None
@@ -100,6 +112,7 @@ def slim_event_point(event: dict, *, calib_offset: float = DEFAULT_CALIB_OFFSET)
         "gate_open": gate_open,
         "clap_status": clap_status,
         "clap": clap_label,
+        "clap_event_seconds": clap_event_seconds,
     }
 
 
@@ -124,7 +137,14 @@ def clap_triggered_markers(points: list[dict]) -> list[dict]:
     for p in points:
         if p.get("clap_status") != "triggered" or not p.get("clap") or p.get("dba") is None:
             continue
-        out.append({"t": p["t"], "dba": p["dba"], "label": p["clap"]})
+        marker: dict[str, Any] = {"t": p["t"], "dba": p["dba"], "label": p["clap"]}
+        secs = p.get("clap_event_seconds")
+        try:
+            if secs is not None and float(secs) > 0:
+                marker["event_seconds"] = float(secs)
+        except (TypeError, ValueError):
+            pass
+        out.append(marker)
     return out
 
 

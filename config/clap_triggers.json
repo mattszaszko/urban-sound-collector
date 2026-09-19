@@ -1,8 +1,11 @@
 {
   "cooldown_seconds": 5.0,
   "dba_threshold": 55.0,
-  "pre_roll_seconds": 7.0,
-  "post_roll_seconds": 3.0,
+  "lookback_seconds": 4.0,
+  "pre_onset_pad_ms": 150.0,
+  "end_settle_chunks": 2,
+  "max_event_seconds": 7.0,
+  "onset_dba_margin_db": 3.0,
   "trigger_labels": [
     "Vehicle",
     "Car",

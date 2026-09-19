@@ -25,7 +25,7 @@
     --error-banner-bg:#7f1d1d;
     --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
     --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
-    --clap-label:#fcd34d;--playhead:#f472b6;
+    --clap-label:#fcd34d;--clap-window:rgba(245,158,11,.22);--playhead:#f472b6;
     --band-quiet:rgba(34,197,94,.14);--band-converse:rgba(234,179,8,.14);
     --band-busy:rgba(249,115,22,.16);--band-loud:rgba(239,68,68,.18);
     --band-quiet-mark:#4ade80;--band-converse-mark:#eab308;
@@ -57,7 +57,7 @@
     --error-banner-bg:#fef2f2;
     --error-banner-text:#b91c1c;--yam-point:#16a34a;--yam-border:#166534;
     --yam-label:#15803d;--clap-point:#d97706;--clap-border:#92400e;
-    --clap-label:#b45309;--playhead:#db2777;
+    --clap-label:#b45309;--clap-window:rgba(217,119,6,.2);--playhead:#db2777;
     --band-quiet:rgba(22,163,74,.12);--band-converse:rgba(202,138,4,.12);
     --band-busy:rgba(234,88,12,.14);--band-loud:rgba(220,38,38,.16);
     --band-quiet-mark:#16a34a;--band-converse-mark:#ca8a04;
@@ -140,6 +140,16 @@
   .swatch{width:10px;height:10px;border-radius:2px;display:inline-block}
   .swatch.line{height:3px;width:14px;border-radius:1px}
   .swatch.dot{border-radius:50%}
+  .swatch.band{width:14px;height:10px;border-radius:2px;background:var(--clap-window);
+               border:1px solid var(--clap-point)}
+  .status-card-head{display:flex;align-items:center;justify-content:space-between;
+                    gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem}
+  .status-card-head h2{margin:0}
+  .status-stop-form{margin:0}
+  .status-stop-form .btn-stop{margin:0;width:auto;max-width:none;padding:.45rem 1.1rem}
+  #status-card[hidden],#control-card[hidden]{display:none !important}
+  .record-layout.is-recording{display:flex;flex-direction:column;gap:0}
+  .record-layout.is-recording #status-card{width:100%;margin-bottom:1rem}
   .live-chart-canvas-box{position:relative;height:220px;background:var(--bg);
                          border:1px solid var(--border);border-radius:8px;padding:.35rem}
   .live-chart-empty{position:absolute;inset:0;display:flex;align-items:center;
@@ -533,6 +543,12 @@
     .record-layout > .card{margin-bottom:0}
     #status-card{grid-column:1;grid-row:1}
     #control-card{grid-column:2;grid-row:1;position:sticky;top:1rem}
+    .record-layout.is-recording{
+      display:block;
+    }
+    .record-layout.is-recording #status-card{
+      display:block;width:100%;
+    }
     .live-chart-canvas-box{height:320px}
     #log-box{height:280px;font-size:.78rem}
     .export-options{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:1rem 1.5rem}
@@ -607,20 +623,19 @@
 <!-- ── RECORD TAB ── -->
 <div class="tab-panel{% if not analyze_recording and not report_recordings %} active{% endif %}" id="panel-record" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
 
-<div class="record-layout">
-<!-- ── STATUS ── -->
-<div class="card" id="status-card">
-  <h2>Status</h2>
+<div class="record-layout{% if status.recording %} is-recording{% endif %}" id="record-layout">
+<!-- ── STATUS (visible while recording) ── -->
+<div class="card" id="status-card"{% if not status.recording %} hidden{% endif %}>
+  <div class="status-card-head">
+    <h2>Status</h2>
+    <form method="post" action="/api/stop" class="status-stop-form" id="status-stop-form">
+      <button class="btn btn-stop" type="submit">■ Stop recording</button>
+    </form>
+  </div>
 
   <div class="status-row">
-    {% if status.recording %}
-    <span class="badge recording"><span class="dot"></span>Recording</span>
-    {% else %}
-    <span class="badge idle"><span class="dot"></span>Idle</span>
-    {% endif %}
-    {% if status.recording_id %}
-    <span style="color:var(--muted);font-size:.75rem">{{ status.recording_id }}</span>
-    {% endif %}
+    <span class="badge recording" id="status-badge"><span class="dot"></span>Recording</span>
+    <span style="color:var(--muted);font-size:.75rem" id="status-recording-id">{% if status.recording_id %}{{ status.recording_id }}{% endif %}</span>
   </div>
 
   <div class="stat-grid">
@@ -658,27 +673,27 @@
   <div class="live-chart-wrap">
     <div class="live-chart-meta">
       <div class="live-chart-note">
-        Rolling 5&nbsp;min · Gate L90 is post-HPF unweighted dBFS + 120 (relative)
+        Rolling 2&nbsp;min · Gate L90 is post-HPF unweighted dBFS + 120 (relative)
       </div>
       <div class="live-chart-legend">
         <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
         <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
         <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
         <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
+        <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
       </div>
     </div>
     <div class="live-chart-canvas-box">
-      <div class="live-chart-empty" id="live-chart-empty">Start a recording to see live loudness</div>
+      <div class="live-chart-empty" id="live-chart-empty">Waiting for loudness samples…</div>
       <canvas id="live-loudness-chart" aria-label="Live loudness chart"></canvas>
     </div>
   </div>
 </div>
 
-<!-- ── CONTROL ── -->
-<div class="card" id="control-card">
+<!-- ── CONTROL (visible when idle) ── -->
+<div class="card" id="control-card"{% if status.recording %} hidden{% endif %}>
   <h2>Control</h2>
 
-  {% if not status.recording %}
   <form method="post" action="/api/start" id="start-recording-form">
     <label>Duration (hours)</label>
     <input type="number" name="hours" value="8" min="0.25" max="336" step="0.25">
@@ -720,11 +735,6 @@
     <div class="report-progress-msg" id="start-progress-msg">Preparing…</div>
     <div class="report-progress-code" id="start-progress-code" hidden></div>
   </div>
-  {% else %}
-  <form method="post" action="/api/stop">
-    <button class="btn btn-stop" type="submit">■ Stop recording</button>
-  </form>
-  {% endif %}
 </div>
 </div><!-- /record-layout -->
 
@@ -835,7 +845,7 @@
         </div>
       </div>
       <div class="recording-actions">
-        <a class="view-btn" href="/analyze/{{ recording.name }}">View</a>
+        <a class="view-btn" href="/analyze/{{ recording.name }}">Inspect</a>
         <a class="dl-btn" href="/recordings/{{ recording.name }}"
            data-filename="{{ recording.name }}" download>↓ JSONL</a>
         {% if recording.has_wav %}
@@ -881,6 +891,7 @@
       <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
       <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
       <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
+      <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
     </div>
     <div class="overview-chart-box">
       <canvas id="overview-loudness-chart" aria-label="Recording loudness overview"></canvas>
@@ -1113,9 +1124,11 @@
   <div class="card">
     <h2>CLAP triggers</h2>
     <div class="field-note" style="margin-bottom:.75rem">
-      Map YAMNet labels to CLAP trigger modes. Off = ignore, Trigger = arm hybrid
-      CLAP (7&nbsp;s before + 3&nbsp;s after wake), Ambiguous = arm only when also loud
-      (dBA threshold). No label carry — only <code>triggered</code> rows have CLAP labels.
+      Map YAMNet labels to CLAP trigger modes. Off = ignore, Trigger = arm CLAP on that
+      label, Ambiguous = arm only when also loud (dBA threshold). Capture slices the
+      event from gate/energy onset (with lookback) until settle or max duration, then
+      <code>repeatpad</code>s short clips for CLAP. No label carry — only
+      <code>triggered</code> rows have CLAP labels.
     </div>
     <div class="trigger-settings">
       <div>
@@ -1125,6 +1138,26 @@
       <div>
         <label for="trig-dba">dBA threshold</label>
         <input type="number" id="trig-dba" min="0" step="0.5" value="55">
+      </div>
+      <div>
+        <label for="trig-lookback">Lookback (seconds)</label>
+        <input type="number" id="trig-lookback" min="1" step="0.5" value="4">
+      </div>
+      <div>
+        <label for="trig-pad">Pre-onset pad (ms)</label>
+        <input type="number" id="trig-pad" min="0" step="10" value="150">
+      </div>
+      <div>
+        <label for="trig-settle">End settle (chunks)</label>
+        <input type="number" id="trig-settle" min="1" step="1" value="2">
+      </div>
+      <div>
+        <label for="trig-max-event">Max event (seconds)</label>
+        <input type="number" id="trig-max-event" min="0.5" step="0.5" value="7">
+      </div>
+      <div>
+        <label for="trig-onset-margin">Onset margin (dB)</label>
+        <input type="number" id="trig-onset-margin" min="0" step="0.5" value="3">
       </div>
     </div>
     <label for="trig-search">Filter labels</label>
@@ -1422,8 +1455,11 @@ function normalizeTriggersPayload(raw) {
   return {
     cooldown_seconds: num(raw.cooldown_seconds, 5),
     dba_threshold: num(raw.dba_threshold, 55),
-    pre_roll_seconds: num(raw.pre_roll_seconds, 7),
-    post_roll_seconds: num(raw.post_roll_seconds, 3),
+    lookback_seconds: num(raw.lookback_seconds, 4),
+    pre_onset_pad_ms: num(raw.pre_onset_pad_ms, 150),
+    end_settle_chunks: num(raw.end_settle_chunks, 2),
+    max_event_seconds: num(raw.max_event_seconds, 7),
+    onset_dba_margin_db: num(raw.onset_dba_margin_db, 3),
     trigger_labels,
     ambiguous_labels,
   };
@@ -1504,7 +1540,10 @@ function clapMarkers(points) {
   const out = [];
   for (const p of points) {
     if (p.clap_status !== 'triggered' || !p.clap || p.dba == null) continue;
-    out.push({ x: Date.parse(p.t), y: p.dba, label: p.clap });
+    const marker = { x: Date.parse(p.t), y: p.dba, label: p.clap };
+    const secs = Number(p.clap_event_seconds ?? p.event_seconds);
+    if (Number.isFinite(secs) && secs > 0) marker.event_seconds = secs;
+    out.push(marker);
   }
   return out;
 }
@@ -1532,12 +1571,50 @@ const labelMarkerPlugin = {
   },
 };
 
+/** Shade [marker.x − event_seconds, marker.x] for each CLAP point that has a window. */
+const clapWindowBandsPlugin = {
+  id: 'clapWindowBands',
+  beforeDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.x) return;
+    const clapDs = chart.data.datasets.find((ds) => ds.label === 'CLAP');
+    if (!clapDs || !Array.isArray(clapDs.data) || !clapDs.data.length) return;
+    const xScale = scales.x;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+    ctx.clip();
+    for (const pt of clapDs.data) {
+      const secs = Number(pt && pt.event_seconds);
+      const endMs = Number(pt && pt.x);
+      if (!Number.isFinite(secs) || secs <= 0 || !Number.isFinite(endMs)) continue;
+      const startMs = endMs - secs * 1000;
+      const x0 = Math.max(chartArea.left, xScale.getPixelForValue(startMs));
+      const x1 = Math.min(chartArea.right, xScale.getPixelForValue(endMs));
+      if (x1 <= x0) continue;
+      ctx.fillStyle = cssVar('--clap-window');
+      ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
+      ctx.strokeStyle = cssVar('--clap-point');
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x0, chartArea.top);
+      ctx.lineTo(x0, chartArea.bottom);
+      ctx.moveTo(x1, chartArea.top);
+      ctx.lineTo(x1, chartArea.bottom);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  },
+};
+
 function ensureLoudnessChart() {
   if (loudnessChart) return loudnessChart;
   if (typeof Chart === 'undefined') return null;
   const canvas = document.getElementById('live-loudness-chart');
   if (!canvas) return null;
-  Chart.register(labelMarkerPlugin);
+  Chart.register(labelMarkerPlugin, clapWindowBandsPlugin);
   loudnessChart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
@@ -1662,7 +1739,7 @@ function updateLoudnessChart(payload) {
   const chart = ensureLoudnessChart();
   if (!chart) return;
 
-  const windowMs = (payload.window_s || 300) * 1000;
+  const windowMs = (payload.window_s || 120) * 1000;
   const lastT = Date.parse(points[points.length - 1].t);
   const end = Number.isFinite(lastT) ? lastT : Date.now();
   const start = end - windowMs;
@@ -1710,6 +1787,17 @@ function updateLoudnessChart(payload) {
   }
 }
 
+function setRecordingLayout(recording, recordingId) {
+  const layout = document.getElementById('record-layout');
+  const statusCard = document.getElementById('status-card');
+  const controlCard = document.getElementById('control-card');
+  const idEl = document.getElementById('status-recording-id');
+  if (layout) layout.classList.toggle('is-recording', !!recording);
+  if (statusCard) statusCard.hidden = !recording;
+  if (controlCard) controlCard.hidden = !!recording;
+  if (idEl) idEl.textContent = recording && recordingId ? recordingId : '';
+}
+
 let statusPollInFlight = false;
 async function pollStatus() {
   if (statusPollInFlight) return;
@@ -1717,14 +1805,19 @@ async function pollStatus() {
   try {
     const [statusRes, seriesRes] = await Promise.all([
       fetch('/api/status', { credentials: 'same-origin' }),
-      fetch('/api/status/series?window_s=300', { credentials: 'same-origin' }),
+      fetch('/api/status/series?window_s=120', { credentials: 'same-origin' }),
     ]);
     if (statusRes.ok) {
       const d = await statusRes.json();
-      document.getElementById('stat-chunks').textContent = d.chunk_count || '—';
-      document.getElementById('stat-elapsed').textContent = fmtElapsed(d.elapsed_s);
-      document.getElementById('stat-label').textContent = d.last_label || '—';
-      document.getElementById('stat-dba').textContent = d.last_dba || '—';
+      setRecordingLayout(!!d.recording, d.recording_id || '');
+      const chunksEl = document.getElementById('stat-chunks');
+      const elapsedEl = document.getElementById('stat-elapsed');
+      const labelEl = document.getElementById('stat-label');
+      const dbaEl = document.getElementById('stat-dba');
+      if (chunksEl) chunksEl.textContent = d.chunk_count || '—';
+      if (elapsedEl) elapsedEl.textContent = fmtElapsed(d.elapsed_s);
+      if (labelEl) labelEl.textContent = d.last_label || '—';
+      if (dbaEl) dbaEl.textContent = d.last_dba || '—';
       if (!d.recording) clearLoudnessChart();
     }
     if (seriesRes.ok) {
@@ -2027,7 +2120,7 @@ function ensureOverviewChart() {
   if (typeof Chart === 'undefined') return null;
   const canvas = document.getElementById('overview-loudness-chart');
   if (!canvas) return null;
-  Chart.register(labelMarkerPlugin, overviewPlayheadPlugin);
+  Chart.register(labelMarkerPlugin, clapWindowBandsPlugin, overviewPlayheadPlugin);
   overviewChart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
@@ -2316,9 +2409,12 @@ function buildOverviewSeries(data) {
   const yam = (data.yamnet_markers || []).map((m) => ({
     x: Date.parse(m.t), y: m.dba, label: m.label,
   })).filter((m) => Number.isFinite(m.x));
-  const clap = (data.clap_markers || []).map((m) => ({
-    x: Date.parse(m.t), y: m.dba, label: m.label,
-  })).filter((m) => Number.isFinite(m.x));
+  const clap = (data.clap_markers || []).map((m) => {
+    const marker = { x: Date.parse(m.t), y: m.dba, label: m.label };
+    const secs = Number(m.event_seconds);
+    if (Number.isFinite(secs) && secs > 0) marker.event_seconds = secs;
+    return marker;
+  }).filter((m) => Number.isFinite(m.x));
   overviewSeries = { dba, l90, yam, clap };
 }
 
@@ -3893,8 +3989,11 @@ let catalogLabels = [];
 let triggerSet = new Set();
 let ambiguousSet = new Set();
 let lastTriggerMeta = {
-  pre_roll_seconds: 7,
-  post_roll_seconds: 3,
+  lookback_seconds: 4,
+  pre_onset_pad_ms: 150,
+  end_settle_chunks: 2,
+  max_event_seconds: 7,
+  onset_dba_margin_db: 3,
 };
 
 function radioNameFor(label) {
@@ -4052,9 +4151,17 @@ async function loadTriggerConfig() {
   }
   document.getElementById('trig-cooldown').value = data.cooldown_seconds ?? 5;
   document.getElementById('trig-dba').value = data.dba_threshold ?? 55;
+  document.getElementById('trig-lookback').value = data.lookback_seconds ?? 4;
+  document.getElementById('trig-pad').value = data.pre_onset_pad_ms ?? 150;
+  document.getElementById('trig-settle').value = data.end_settle_chunks ?? 2;
+  document.getElementById('trig-max-event').value = data.max_event_seconds ?? 7;
+  document.getElementById('trig-onset-margin').value = data.onset_dba_margin_db ?? 3;
   lastTriggerMeta = {
-    pre_roll_seconds: data.pre_roll_seconds ?? 7,
-    post_roll_seconds: data.post_roll_seconds ?? 3,
+    lookback_seconds: data.lookback_seconds ?? 4,
+    pre_onset_pad_ms: data.pre_onset_pad_ms ?? 150,
+    end_settle_chunks: data.end_settle_chunks ?? 2,
+    max_event_seconds: data.max_event_seconds ?? 7,
+    onset_dba_margin_db: data.onset_dba_margin_db ?? 3,
   };
   triggerSet = new Set(data.trigger_labels || []);
   ambiguousSet = new Set(data.ambiguous_labels || []);
@@ -4082,8 +4189,11 @@ function collectTriggersPayload() {
   return {
     cooldown_seconds: parseFloat(document.getElementById('trig-cooldown').value) || 0,
     dba_threshold: parseFloat(document.getElementById('trig-dba').value) || 0,
-    pre_roll_seconds: lastTriggerMeta.pre_roll_seconds,
-    post_roll_seconds: lastTriggerMeta.post_roll_seconds,
+    lookback_seconds: parseFloat(document.getElementById('trig-lookback').value) || 4,
+    pre_onset_pad_ms: parseFloat(document.getElementById('trig-pad').value) || 0,
+    end_settle_chunks: parseInt(document.getElementById('trig-settle').value, 10) || 2,
+    max_event_seconds: parseFloat(document.getElementById('trig-max-event').value) || 7,
+    onset_dba_margin_db: parseFloat(document.getElementById('trig-onset-margin').value) || 0,
     trigger_labels: triggers,
     ambiguous_labels: ambiguous,
   };
@@ -4092,9 +4202,17 @@ function collectTriggersPayload() {
 function applyTriggersPayload(cfg) {
   document.getElementById('trig-cooldown').value = cfg.cooldown_seconds;
   document.getElementById('trig-dba').value = cfg.dba_threshold;
+  document.getElementById('trig-lookback').value = cfg.lookback_seconds ?? 4;
+  document.getElementById('trig-pad').value = cfg.pre_onset_pad_ms ?? 150;
+  document.getElementById('trig-settle').value = cfg.end_settle_chunks ?? 2;
+  document.getElementById('trig-max-event').value = cfg.max_event_seconds ?? 7;
+  document.getElementById('trig-onset-margin').value = cfg.onset_dba_margin_db ?? 3;
   lastTriggerMeta = {
-    pre_roll_seconds: cfg.pre_roll_seconds,
-    post_roll_seconds: cfg.post_roll_seconds,
+    lookback_seconds: cfg.lookback_seconds ?? 4,
+    pre_onset_pad_ms: cfg.pre_onset_pad_ms ?? 150,
+    end_settle_chunks: cfg.end_settle_chunks ?? 2,
+    max_event_seconds: cfg.max_event_seconds ?? 7,
+    onset_dba_margin_db: cfg.onset_dba_margin_db ?? 3,
   };
   triggerSet = new Set(cfg.trigger_labels || []);
   ambiguousSet = new Set(cfg.ambiguous_labels || []);
@@ -4122,8 +4240,11 @@ async function saveTriggersToServer(body, statusMsg) {
   triggerSet = new Set(body.trigger_labels || []);
   ambiguousSet = new Set(body.ambiguous_labels || []);
   lastTriggerMeta = {
-    pre_roll_seconds: body.pre_roll_seconds ?? lastTriggerMeta.pre_roll_seconds,
-    post_roll_seconds: body.post_roll_seconds ?? lastTriggerMeta.post_roll_seconds,
+    lookback_seconds: body.lookback_seconds ?? lastTriggerMeta.lookback_seconds,
+    pre_onset_pad_ms: body.pre_onset_pad_ms ?? lastTriggerMeta.pre_onset_pad_ms,
+    end_settle_chunks: body.end_settle_chunks ?? lastTriggerMeta.end_settle_chunks,
+    max_event_seconds: body.max_event_seconds ?? lastTriggerMeta.max_event_seconds,
+    onset_dba_margin_db: body.onset_dba_margin_db ?? lastTriggerMeta.onset_dba_margin_db,
   };
   setInlineStatus(
     triggersStatus,

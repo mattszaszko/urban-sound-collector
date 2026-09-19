@@ -1,4 +1,4 @@
-"""YAMNet→CLAP arming rules (hybrid 7+3 capture; no carry)."""
+"""YAMNet→CLAP arming rules (dynamic energy capture; no carry)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,14 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from core.clap_capture import (
+    DEFAULT_END_SETTLE_CHUNKS,
+    DEFAULT_LOOKBACK_SECONDS,
+    DEFAULT_MAX_EVENT_SECONDS,
+    DEFAULT_ONSET_DBA_MARGIN_DB,
+    DEFAULT_PRE_ONSET_PAD_MS,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TRIGGERS_PATH = REPO_ROOT / "config" / "clap_triggers.json"
@@ -16,10 +24,6 @@ CLAP_STATUS_PENDING = "pending"
 CLAP_STATUS_SKIPPED = "skipped"
 CLAP_STATUS_GATED = "gated"
 
-# Hybrid window defaults (seconds)
-CLAP_PRE_ROLL_SECONDS = 7.0
-CLAP_POST_ROLL_SECONDS = 3.0
-
 
 @dataclass
 class ClapTriggerConfig:
@@ -27,8 +31,11 @@ class ClapTriggerConfig:
     dba_threshold: float = 55.0
     trigger_labels: list[str] = field(default_factory=list)
     ambiguous_labels: list[str] = field(default_factory=list)
-    pre_roll_seconds: float = CLAP_PRE_ROLL_SECONDS
-    post_roll_seconds: float = CLAP_POST_ROLL_SECONDS
+    lookback_seconds: float = DEFAULT_LOOKBACK_SECONDS
+    pre_onset_pad_ms: float = DEFAULT_PRE_ONSET_PAD_MS
+    end_settle_chunks: int = DEFAULT_END_SETTLE_CHUNKS
+    max_event_seconds: float = DEFAULT_MAX_EVENT_SECONDS
+    onset_dba_margin_db: float = DEFAULT_ONSET_DBA_MARGIN_DB
 
     def normalized(self) -> "ClapTriggerConfig":
         return ClapTriggerConfig(
@@ -38,30 +45,43 @@ class ClapTriggerConfig:
             ambiguous_labels=sorted(
                 {x.strip() for x in self.ambiguous_labels if x.strip()}
             ),
-            pre_roll_seconds=float(self.pre_roll_seconds),
-            post_roll_seconds=float(self.post_roll_seconds),
+            lookback_seconds=float(self.lookback_seconds),
+            pre_onset_pad_ms=float(self.pre_onset_pad_ms),
+            end_settle_chunks=max(1, int(self.end_settle_chunks)),
+            max_event_seconds=float(self.max_event_seconds),
+            onset_dba_margin_db=float(self.onset_dba_margin_db),
         )
 
 
 @dataclass
 class ClapTriggerState:
-    """Cooldownoldown is measured from the last arm time (capture start)."""
+    """Cooldown is measured from the last arm time (capture start)."""
 
     last_arm_monotonic: float | None = None
 
 
 def load_trigger_config(path: Path = DEFAULT_TRIGGERS_PATH) -> ClapTriggerConfig:
     data = json.loads(path.read_text(encoding="utf-8"))
+    # Legacy hybrid 7+3 keys are ignored when present; dynamic defaults apply.
     return ClapTriggerConfig(
         cooldown_seconds=float(data.get("cooldown_seconds", 5.0)),
         dba_threshold=float(data.get("dba_threshold", 55.0)),
         trigger_labels=list(data.get("trigger_labels", [])),
         ambiguous_labels=list(data.get("ambiguous_labels", [])),
-        pre_roll_seconds=float(
-            data.get("pre_roll_seconds", CLAP_PRE_ROLL_SECONDS)
+        lookback_seconds=float(
+            data.get("lookback_seconds", DEFAULT_LOOKBACK_SECONDS)
         ),
-        post_roll_seconds=float(
-            data.get("post_roll_seconds", CLAP_POST_ROLL_SECONDS)
+        pre_onset_pad_ms=float(
+            data.get("pre_onset_pad_ms", DEFAULT_PRE_ONSET_PAD_MS)
+        ),
+        end_settle_chunks=int(
+            data.get("end_settle_chunks", DEFAULT_END_SETTLE_CHUNKS)
+        ),
+        max_event_seconds=float(
+            data.get("max_event_seconds", DEFAULT_MAX_EVENT_SECONDS)
+        ),
+        onset_dba_margin_db=float(
+            data.get("onset_dba_margin_db", DEFAULT_ONSET_DBA_MARGIN_DB)
         ),
     ).normalized()
 
@@ -75,8 +95,11 @@ def save_trigger_config(
     payload = {
         "cooldown_seconds": cfg.cooldown_seconds,
         "dba_threshold": cfg.dba_threshold,
-        "pre_roll_seconds": cfg.pre_roll_seconds,
-        "post_roll_seconds": cfg.post_roll_seconds,
+        "lookback_seconds": cfg.lookback_seconds,
+        "pre_onset_pad_ms": cfg.pre_onset_pad_ms,
+        "end_settle_chunks": cfg.end_settle_chunks,
+        "max_event_seconds": cfg.max_event_seconds,
+        "onset_dba_margin_db": cfg.onset_dba_margin_db,
         "trigger_labels": cfg.trigger_labels,
         "ambiguous_labels": ambiguous,
     }
@@ -102,7 +125,7 @@ def evaluate_arm(
     state: ClapTriggerState,
     now_monotonic: float | None = None,
 ) -> tuple[bool, str, str]:
-    """Decide whether to arm a hybrid CLAP capture.
+    """Decide whether to arm a dynamic CLAP capture.
 
     Returns (should_arm, status_if_not, reason).
     When should_arm is True, status_if_not is unused.

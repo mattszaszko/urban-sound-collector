@@ -336,7 +336,7 @@ tail -n 20 logs/*.log
 | `--quiet` | off | Suppress JSON on stdout |
 | `-o` | `recordings/<device>_<recording_id>.jsonl` | JSONL output (append + fsync) |
 | `--no-spectrum` | off | Disable Branch C spectral analysis |
-| `--enable-clap` | off | Event-driven CLAP zero-shot; hybrid window gets same HPF as YAMNet + peak-norm (requires ONNX + rebuilt embeddings) |
+| `--enable-clap` | off | Event-driven CLAP zero-shot; dynamic energy slice + repeatpad, same HPF as YAMNet + peak-norm (requires ONNX + rebuilt embeddings) |
 | `--record-wav` | off | Write ungained mono 16-bit WAV @ 48 kHz (sibling of `-o` by default) |
 | `--wav-path` | (from `-o`) | Explicit WAV path (implies recording) |
 | `--log-dir` | `logs` | Per-recording log directory |
@@ -345,14 +345,19 @@ Stop with **Ctrl+C**, or let `timeout` end the recording.
 
 ### CLAP (optional, event-driven)
 
-YAMNet still runs every open chunk. With **`--enable-clap`**, a 10 s
-ring buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
-YAMNet trigger fires (see web **Triggers** tab). CLAP uses a **hybrid window**:
-7 s before the wake + 3 s after, then the same **~80 Hz Butterworth HPF** as
-Branch B and **peak-normalization** before audio ONNX (still **no** Branch B
-RMS AGC), then writes predictions on the later chunk with link meta
-(`trigger_chunk_index`, etc.). Statuses: `scheduled` → `pending` → `triggered`
-(no carry). `clap_model_name` should be `clap-htsat-unfused-onnx`.
+YAMNet still runs every open chunk. With **`--enable-clap`**, a short
+lookback buffer feeds Xenova/LAION **clap-htsat-unfused** quantized ONNX when a
+YAMNet trigger fires (see web **Triggers** tab). CLAP uses a **dynamic energy
+slice**: when armed, onset is traced back to the start of the current gate-open
+(or elevated-RMS) run plus a small pre-onset pad; capture continues until the
+gate/energy settles for N chunks or a hard max event duration (default 7 s).
+Short clips are **`repeatpad`**-tiled to the model’s 10 s input; longer clips
+are truncated. The same **~80 Hz Butterworth HPF** as Branch B and
+**peak-normalization** run before audio ONNX (still **no** Branch B RMS AGC).
+Predictions are written on the completing chunk with link meta
+(`trigger_chunk_index`, `t_start_reason`, `event_seconds`, etc.). Statuses:
+`scheduled` → `pending` → `triggered` (no carry). `clap_model_name` should be
+`clap-htsat-unfused-onnx`.
 
 One-time on each Pi (after `pip install -r requirements.txt`):
 
@@ -364,7 +369,7 @@ python scripts/rebuild_clap_embeddings.py
 Or use the web UI: **Prompts** → confirm **ONNX ready** → **Rebuild embeddings**,
 then **Start recording** with Enable CLAP. Text ONNX loads only during rebuild (then freed);
 audio ONNX stays resident while CLAP is enabled. Default cooldown is 5 s between
-**arms** (new hybrid captures).
+**arms** (new dynamic captures; measured from arm time, not inference complete).
 
 ### Tests
 

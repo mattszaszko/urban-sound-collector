@@ -228,7 +228,7 @@ def _slim_series_point(event: dict, *, calib_offset: float) -> dict | None:
     """Project a JSONL event into a chart-friendly point."""
     return slim_event_point(event, calib_offset=calib_offset)
 
-def _status_series(*, window_s: int = 300) -> dict:
+def _status_series(*, window_s: int = 120) -> dict:
     """Build a slim rolling series for the live loudness chart."""
     window_s = max(60, min(900, int(window_s)))
     calib = float(DEFAULT_CALIB_OFFSET)
@@ -1031,11 +1031,11 @@ async def api_status(request: Request):
 async def api_status_series(request: Request):
     if not is_authenticated(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-    raw = request.query_params.get("window_s", "300")
+    raw = request.query_params.get("window_s", "120")
     try:
         window_s = int(raw)
     except (TypeError, ValueError):
-        window_s = 300
+        window_s = 120
     return JSONResponse(_status_series(window_s=window_s))
 
 
@@ -1398,8 +1398,11 @@ async def api_clap_triggers_get(request: Request):
             "ok": True,
             "cooldown_seconds": cfg.cooldown_seconds,
             "dba_threshold": cfg.dba_threshold,
-            "pre_roll_seconds": cfg.pre_roll_seconds,
-            "post_roll_seconds": cfg.post_roll_seconds,
+            "lookback_seconds": cfg.lookback_seconds,
+            "pre_onset_pad_ms": cfg.pre_onset_pad_ms,
+            "end_settle_chunks": cfg.end_settle_chunks,
+            "max_event_seconds": cfg.max_event_seconds,
+            "onset_dba_margin_db": cfg.onset_dba_margin_db,
             "trigger_labels": cfg.trigger_labels,
             "ambiguous_labels": cfg.ambiguous_labels,
         }
@@ -1418,8 +1421,11 @@ async def api_clap_triggers_put(request: Request):
         cfg = ClapTriggerConfig(
             cooldown_seconds=float(body.get("cooldown_seconds", 5)),
             dba_threshold=float(body.get("dba_threshold", 55)),
-            pre_roll_seconds=float(body.get("pre_roll_seconds", 7)),
-            post_roll_seconds=float(body.get("post_roll_seconds", 3)),
+            lookback_seconds=float(body.get("lookback_seconds", 4)),
+            pre_onset_pad_ms=float(body.get("pre_onset_pad_ms", 150)),
+            end_settle_chunks=int(body.get("end_settle_chunks", 2)),
+            max_event_seconds=float(body.get("max_event_seconds", 7)),
+            onset_dba_margin_db=float(body.get("onset_dba_margin_db", 3)),
             trigger_labels=list(body.get("trigger_labels", [])),
             ambiguous_labels=list(body.get("ambiguous_labels", [])),
         )
