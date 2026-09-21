@@ -866,7 +866,7 @@
     <div id="ov-status" class="inline-status"></div>
     <div class="impact-grid" id="ov-impact"></div>
     <div class="impact-grid" id="ov-labels" style="grid-template-columns:1fr 1fr"></div>
-    <div class="overview-chart-note">2&nbsp;min window · follows scrub / playback</div>
+    <div class="overview-chart-note">2&nbsp;min window · follows scrub / playback · local time ({{ site_timezone }})</div>
     <div class="live-chart-legend" style="margin-bottom:.45rem">
       <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
       <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
@@ -1468,6 +1468,43 @@ function normalizeTriggersPayload(raw) {
 // ── Live log via SSE ──────────────────────────────────────────────
 const ANALYZE_RECORDING = {{ analyze_recording | tojson }};
 const REPORT_RECORDINGS = {{ report_recordings | tojson }};
+const SITE_TIMEZONE = {{ site_timezone | tojson }};
+
+function fmtSiteClock(ms, { withSeconds = false } = {}) {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '';
+  const opts = {
+    timeZone: SITE_TIMEZONE || 'Europe/Amsterdam',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  };
+  if (withSeconds) opts.second = '2-digit';
+  try {
+    return new Intl.DateTimeFormat('en-GB', opts).format(d);
+  } catch {
+    return d.toISOString().slice(11, withSeconds ? 19 : 16);
+  }
+}
+
+function fmtSiteDateTime(ms) {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '';
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: SITE_TIMEZONE || 'Europe/Amsterdam',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).format(d).replace(',', '');
+  } catch {
+    return d.toISOString().replace('T', ' ').replace('Z', ' UTC');
+  }
+}
 const box = document.getElementById('log-box');
 const placeholder = document.getElementById('log-placeholder');
 let seenFirst = false;
@@ -2197,7 +2234,7 @@ function ensureOverviewChart() {
             title(items) {
               if (!items.length) return '';
               const x = items[0].parsed.x;
-              return Number.isFinite(x) ? new Date(x).toISOString().slice(11, 19) + 'Z' : '';
+              return Number.isFinite(x) ? fmtSiteClock(x, { withSeconds: true }) : '';
             },
             label(ctx) {
               const raw = ctx.raw || {};
@@ -2217,9 +2254,7 @@ function ensureOverviewChart() {
             autoSkip: true,
             maxTicksLimit: 8,
             callback(v) {
-              const d = new Date(v);
-              if (Number.isNaN(d.getTime())) return '';
-              return d.toISOString().slice(11, 16);
+              return fmtSiteClock(v);
             },
           },
           grid: { color: cssVar('--chart-grid') },
@@ -2309,8 +2344,10 @@ function updateOverviewChartWindow(playheadMs) {
 function renderOverviewDetail(idx) {
   const p = overviewScrubPoints[idx];
   if (!p || !ovDetail) return;
+  const tMs = Date.parse(p.t);
+  const tLabel = Number.isFinite(tMs) ? fmtSiteDateTime(tMs) : (p.t || '—');
   const bits = [
-    `<strong>${p.t || '—'}</strong>`,
+    `<strong>${tLabel}</strong>`,
     `dBA ${fmtNum(p.dba)}`,
     `LAFmax ${fmtNum(p.lafmax)}`,
     `L90 ${fmtNum(p.l90_rel)}`,

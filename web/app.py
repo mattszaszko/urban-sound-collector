@@ -861,6 +861,7 @@ def _index_context(
         pi_hostname=hostname(),
         site_label=SITE_LABEL,
         public_url=PUBLIC_URL,
+        site_timezone=SITE_TIMEZONE,
         error=error,
         analyze_recording=analyze_recording,
         report_recordings=report_recordings or [],
