@@ -70,6 +70,7 @@ YAMNET_CATALOG_PATH = CONFIG_DIR / "yamnet_label_catalog.json"
 # Config from .env
 # ---------------------------------------------------------------------------
 PASSWORD = os.environ.get("USC_PASSWORD", "changeme")
+VIEWER_PASSWORD = os.environ.get("USC_VIEWER_PASSWORD", "").strip()
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-please")
 PORT = int(os.environ.get("PORT", "8080"))
 DEFAULT_DEVICE_ID = default_device_id()
@@ -82,15 +83,23 @@ SITE_TIMEZONE = os.environ.get("SITE_TIMEZONE", DEFAULT_SITE_TIMEZONE).strip() o
 SHUTDOWN_GRACE_SEC = max(15, int(os.environ.get("SHUTDOWN_GRACE_SEC", "60")))
 
 os.environ["SECRET_KEY"] = SECRET_KEY
+os.environ["USC_PASSWORD"] = PASSWORD
+if VIEWER_PASSWORD:
+    os.environ["USC_VIEWER_PASSWORD"] = VIEWER_PASSWORD
+else:
+    os.environ.pop("USC_VIEWER_PASSWORD", None)
 
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
 from web.auth import (  # noqa: E402  (after env setup)
     SESSION_COOKIE,
+    get_role,
+    is_admin,
     is_authenticated,
     login_page,
     make_session_cookie,
+    verify_login,
 )
 
 # ---------------------------------------------------------------------------
@@ -814,18 +823,27 @@ async def get_login():
 
 
 @app.post("/login")
-async def post_login(password: str = Form(...)):
-    if password == PASSWORD:
-        resp = RedirectResponse("/", status_code=303)
-        resp.set_cookie(
-            SESSION_COOKIE,
-            make_session_cookie(password),
-            httponly=True,
-            samesite="lax",
-            max_age=60 * 60 * 24 * 7,
-        )
-        return resp
-    return login_page(error="Incorrect password.")
+async def post_login(
+    password: str = Form(...),
+    role: str = Form("admin"),
+):
+    matched = verify_login(role, password)
+    if matched is None:
+        if role == "viewer" and not VIEWER_PASSWORD:
+            return login_page(
+                error="Viewer login is not configured on this device.",
+                role="viewer",
+            )
+        return login_page(error="Incorrect password.", role=role if role in ("admin", "viewer") else "admin")
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(
+        SESSION_COOKIE,
+        make_session_cookie(password, matched),
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+    )
+    return resp
 
 
 @app.get("/logout")
@@ -862,6 +880,7 @@ def _index_context(
         site_label=SITE_LABEL,
         public_url=PUBLIC_URL,
         site_timezone=SITE_TIMEZONE,
+        user_role=get_role(request) or "viewer",
         error=error,
         analyze_recording=analyze_recording,
         report_recordings=report_recordings or [],
@@ -914,6 +933,31 @@ def _wants_json(request: Request) -> bool:
     return "application/json" in accept
 
 
+def _require_admin_json(request: Request) -> JSONResponse | None:
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if not is_admin(request):
+        return JSONResponse(
+            {"ok": False, "error": "forbidden", "code": "viewer_readonly"},
+            status_code=403,
+        )
+    return None
+
+
+def _forbid_viewer_redirect(
+    request: Request, *, tab: str | None = None
+) -> RedirectResponse | None:
+    """For form POSTs: send viewers back to the UI instead of mutating."""
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    if is_admin(request):
+        return None
+    q = "error=viewer_readonly"
+    if tab:
+        q = f"tab={tab}&{q}"
+    return RedirectResponse(f"/?{q}", status_code=303)
+
+
 @app.post("/api/start")
 async def api_start(
     request: Request,
@@ -933,6 +977,17 @@ async def api_start(
                 status_code=401,
             )
         return RedirectResponse("/login", status_code=303)
+    if not is_admin(request):
+        if wants_json:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "code": "viewer_readonly",
+                    "error": "Disabled for viewers",
+                },
+                status_code=403,
+            )
+        return RedirectResponse("/?error=viewer_readonly", status_code=303)
 
     if _find_collector_process():
         if wants_json:
@@ -992,8 +1047,9 @@ async def api_start(
 
 @app.post("/api/stop")
 async def api_stop(request: Request):
-    if not is_authenticated(request):
-        return RedirectResponse("/login", status_code=303)
+    blocked = _forbid_viewer_redirect(request)
+    if blocked:
+        return blocked
 
     _stop_collector()
     return RedirectResponse("/", status_code=303)
@@ -1001,8 +1057,9 @@ async def api_stop(request: Request):
 
 @app.post("/api/shutdown")
 async def api_shutdown(request: Request):
-    if not is_authenticated(request):
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    denied = _require_admin_json(request)
+    if denied:
+        return denied
 
     stopped_recording = _stop_collector()
     _schedule_poweroff_after(SHUTDOWN_GRACE_SEC)
@@ -1295,8 +1352,9 @@ async def api_recordings_delete(
     request: Request,
     filename: str = Form(...),
 ):
-    if not is_authenticated(request):
-        return RedirectResponse("/login", status_code=303)
+    blocked = _forbid_viewer_redirect(request, tab="data")
+    if blocked:
+        return blocked
 
     if not filename.lower().endswith(".jsonl"):
         return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
@@ -1332,6 +1390,13 @@ def _require_auth_json(request: Request) -> JSONResponse | None:
     return None
 
 
+def _require_admin_for_clap_write(request: Request) -> JSONResponse | None:
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    return _require_admin_json(request)
+
+
 @app.get("/api/clap/prompts")
 async def api_clap_prompts_get(request: Request):
     denied = _require_auth_json(request)
@@ -1354,7 +1419,7 @@ async def api_clap_prompts_get(request: Request):
 
 @app.put("/api/clap/prompts")
 async def api_clap_prompts_put(request: Request):
-    denied = _require_auth_json(request)
+    denied = _require_admin_for_clap_write(request)
     if denied:
         return denied
     from core.clap_prompts import ClapPromptPair, save_prompt_pairs
@@ -1374,7 +1439,7 @@ async def api_clap_prompts_put(request: Request):
 
 @app.post("/api/clap/embeddings/rebuild")
 async def api_clap_embeddings_rebuild(request: Request):
-    denied = _require_auth_json(request)
+    denied = _require_admin_for_clap_write(request)
     if denied:
         return denied
     from core.classifier_clap import rebuild_text_embeddings
@@ -1413,7 +1478,7 @@ async def api_clap_triggers_get(request: Request):
 
 @app.put("/api/clap/triggers")
 async def api_clap_triggers_put(request: Request):
-    denied = _require_auth_json(request)
+    denied = _require_admin_for_clap_write(request)
     if denied:
         return denied
     from core.clap_trigger import ClapTriggerConfig, save_trigger_config
@@ -1454,7 +1519,7 @@ async def api_yamnet_catalog(request: Request):
 
 @app.post("/api/clap/yamnet-catalog/sync")
 async def api_yamnet_catalog_sync(request: Request):
-    denied = _require_auth_json(request)
+    denied = _require_admin_for_clap_write(request)
     if denied:
         return denied
     script = REPO_ROOT / "scripts" / "sync_yamnet_label_catalog.py"

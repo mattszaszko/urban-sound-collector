@@ -179,6 +179,19 @@
   .btn-row{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.75rem}
   .btn-row .btn{width:auto;flex:1 1 auto;margin-top:0;min-width:8rem}
   .btn-disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
+  .viewer-badge{font-size:.7rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+                color:var(--muted);border:1px solid var(--border);border-radius:6px;
+                padding:.2rem .45rem;margin-right:.35rem}
+  .viewer-lock-wrap{position:relative;display:inline-block;max-width:100%;cursor:not-allowed}
+  .viewer-lock-wrap.block{display:block;width:100%}
+  .viewer-lock-wrap .viewer-locked,
+  .viewer-locked{opacity:.45 !important;filter:grayscale(.15)}
+  .viewer-lock-wrap[data-tip]:hover::after{
+    content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 6px);
+    transform:translateX(-50%);background:var(--surface);color:var(--text);
+    border:1px solid var(--border);border-radius:6px;padding:.35rem .55rem;
+    font-size:.72rem;font-weight:600;white-space:nowrap;z-index:50;
+    box-shadow:0 4px 16px #0005;pointer-events:none}
   .inline-status{font-size:.8rem;color:var(--muted);margin-top:.75rem;line-height:1.4;
                  min-height:1.2em}
   .inline-status.ok{color:var(--green)}
@@ -572,6 +585,9 @@
     </div>
   </div>
   <div class="header-actions">
+    {% if user_role == 'viewer' %}
+    <span class="viewer-badge" title="Signed in as viewer (read-only)">Viewer</span>
+    {% endif %}
     <button class="btn-color-mode" type="button" id="color-mode-toggle"
             title="Toggle light/dark mode" aria-label="Toggle light/dark mode">
       <span class="icon-moon" aria-hidden="true">☾</span>
@@ -599,6 +615,8 @@
 <div class="error-banner">Recording file not found.</div>
 {% elif error == 'bad_request' %}
 <div class="error-banner">Could not delete that file.</div>
+{% elif error == 'viewer_readonly' %}
+<div class="error-banner">That action is disabled for viewers.</div>
 {% endif %}
 
 <!-- ── RECORD TAB ── -->
@@ -1469,6 +1487,94 @@ function normalizeTriggersPayload(raw) {
 const ANALYZE_RECORDING = {{ analyze_recording | tojson }};
 const REPORT_RECORDINGS = {{ report_recordings | tojson }};
 const SITE_TIMEZONE = {{ site_timezone | tojson }};
+const USER_ROLE = {{ user_role | tojson }};
+const IS_VIEWER = USER_ROLE === 'viewer';
+const VIEWER_LOCK_TIP = 'Disabled for viewers';
+
+function lockForViewer(el, { block = false } = {}) {
+  if (!IS_VIEWER || !el) return;
+  if (el.classList.contains('viewer-locked') && el.closest('.viewer-lock-wrap')) {
+    return;
+  }
+  if (el.tagName === 'INPUT' || el.tagName === 'BUTTON' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') {
+    el.disabled = true;
+  }
+  el.classList.add('viewer-locked');
+  if (el.classList.contains('btn') || el.classList.contains('btn-shutdown-sm') || el.classList.contains('del-btn') || el.classList.contains('btn-danger-sm')) {
+    el.classList.add('btn-disabled');
+  }
+  el.setAttribute('aria-disabled', 'true');
+  let wrap = el.closest('.viewer-lock-wrap');
+  if (!wrap) {
+    wrap = document.createElement('span');
+    wrap.className = 'viewer-lock-wrap' + (block ? ' block' : '');
+    wrap.dataset.tip = VIEWER_LOCK_TIP;
+    el.parentNode.insertBefore(wrap, el);
+    wrap.appendChild(el);
+  } else {
+    wrap.dataset.tip = VIEWER_LOCK_TIP;
+    if (block) wrap.classList.add('block');
+  }
+}
+
+function applyViewerLocks() {
+  if (!IS_VIEWER) return;
+  const ids = [
+    'shutdown-btn',
+    'start-recording-btn',
+    'prompts-add-btn',
+    'prompts-save-btn',
+    'prompts-rebuild-btn',
+    'prompts-import-btn',
+    'triggers-save-btn',
+    'triggers-import-btn',
+    'catalog-refresh-btn',
+    'settings-device-id',
+    'settings-alsa-device',
+    'settings-gate-sensitivity',
+    'trig-cooldown',
+    'trig-dba',
+    'trig-lookback',
+    'trig-pad',
+    'trig-settle',
+    'trig-max-event',
+    'trig-onset-margin',
+    'trig-peak-decay',
+  ];
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) lockForViewer(el, { block: el.tagName === 'INPUT' });
+  });
+
+  const startForm = document.getElementById('start-recording-form');
+  if (startForm) {
+    startForm.querySelectorAll('input, button, select, textarea').forEach((el) => {
+      lockForViewer(el, { block: el.tagName === 'INPUT' && el.type !== 'checkbox' && el.type !== 'hidden' });
+    });
+  }
+  const stopBtn = document.querySelector('#status-stop-form button');
+  if (stopBtn) lockForViewer(stopBtn);
+
+  document.querySelectorAll('.recording-actions form[action="/api/recordings/delete"] button').forEach((btn) => {
+    lockForViewer(btn);
+  });
+
+  document.querySelectorAll('#prompts-tbody input, #prompts-tbody button').forEach((el) => {
+    lockForViewer(el, { block: el.tagName === 'INPUT' });
+  });
+  document.querySelectorAll('#themes-container input[type="radio"], #themes-container .theme-actions button').forEach((el) => {
+    lockForViewer(el);
+  });
+}
+
+function guardViewerAction(ev) {
+  if (!IS_VIEWER) return false;
+  if (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  return true;
+}
 
 function fmtSiteClock(ms, { withSeconds = false } = {}) {
   const d = new Date(ms);
@@ -2012,6 +2118,7 @@ const startRecordingBtn = document.getElementById('start-recording-btn');
 if (startRecordingForm) {
   startRecordingForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (guardViewerAction()) return;
     if (startRecordingBtn) {
       startRecordingBtn.disabled = true;
       startRecordingBtn.classList.add('btn-disabled');
@@ -3846,6 +3953,7 @@ function showShutdownOverlay(data) {
 }
 
 shutdownBtn.addEventListener('click', async () => {
+  if (guardViewerAction()) return;
   const ok = window.confirm(
     'Shut down this Raspberry Pi?\n\n' +
     'Any active recording will be stopped. ' +
@@ -3925,8 +4033,16 @@ function addPromptRow(label = '', prompt = '') {
     '<td class="col-actions"><button type="button" class="btn-danger-sm prompt-del">Delete</button></td>';
   tr.querySelector('.prompt-label').value = label;
   tr.querySelector('.prompt-text').value = prompt;
-  tr.querySelector('.prompt-del').addEventListener('click', () => tr.remove());
+  tr.querySelector('.prompt-del').addEventListener('click', () => {
+    if (guardViewerAction()) return;
+    tr.remove();
+  });
   promptsTbody.appendChild(tr);
+  if (IS_VIEWER) {
+    tr.querySelectorAll('input, textarea, button').forEach((el) => {
+      lockForViewer(el, { block: el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' });
+    });
+  }
 }
 
 function collectPrompts() {
@@ -3952,11 +4068,16 @@ async function loadPrompts() {
   renderSync(data.sync, data.onnx);
   setInlineStatus(promptsStatus, '');
   promptsLoaded = true;
+  applyViewerLocks();
 }
 
-document.getElementById('prompts-add-btn').addEventListener('click', () => addPromptRow());
+document.getElementById('prompts-add-btn').addEventListener('click', () => {
+  if (guardViewerAction()) return;
+  addPromptRow();
+});
 
 async function savePromptsToServer(prompts, statusMsg) {
+  if (IS_VIEWER) return false;
   setInlineStatus(promptsStatus, 'Saving…');
   const { ok, data } = await apiFetch('/api/clap/prompts', {
     method: 'PUT',
@@ -3978,6 +4099,7 @@ async function savePromptsToServer(prompts, statusMsg) {
 }
 
 document.getElementById('prompts-save-btn').addEventListener('click', async () => {
+  if (guardViewerAction()) return;
   await savePromptsToServer(collectPrompts());
 });
 
@@ -3988,10 +4110,12 @@ document.getElementById('prompts-export-btn').addEventListener('click', () => {
 });
 
 document.getElementById('prompts-import-btn').addEventListener('click', () => {
+  if (guardViewerAction()) return;
   document.getElementById('prompts-import-file').click();
 });
 
 document.getElementById('prompts-import-file').addEventListener('change', async (ev) => {
+  if (guardViewerAction()) return;
   const input = ev.target;
   const file = input.files && input.files[0];
   input.value = '';
@@ -4016,6 +4140,7 @@ document.getElementById('prompts-import-file').addEventListener('change', async 
 });
 
 document.getElementById('prompts-rebuild-btn').addEventListener('click', async () => {
+  if (guardViewerAction()) return;
   setInlineStatus(promptsStatus, 'Rebuilding embeddings…');
   const { ok, data } = await apiFetch('/api/clap/embeddings/rebuild', { method: 'POST' });
   if (!ok || !data || data.ok === false) {
@@ -4055,6 +4180,7 @@ function currentMode(label) {
 }
 
 function setMode(label, mode, rowEl) {
+  if (IS_VIEWER) return;
   triggerSet.delete(label);
   ambiguousSet.delete(label);
   if (mode === 'trigger') triggerSet.add(label);
@@ -4178,6 +4304,11 @@ function renderCatalog(themes, labels) {
     themesContainer.appendChild(block);
   });
   filterLabels();
+  if (IS_VIEWER) {
+    themesContainer.querySelectorAll('input[type="radio"], .theme-actions button').forEach((el) => {
+      lockForViewer(el);
+    });
+  }
 }
 
 async function loadCatalogAndApply() {
@@ -4279,6 +4410,7 @@ function applyTriggersPayload(cfg) {
 }
 
 async function saveTriggersToServer(body, statusMsg) {
+  if (IS_VIEWER) return false;
   setInlineStatus(triggersStatus, 'Saving…');
   const { ok, data } = await apiFetch('/api/clap/triggers', {
     method: 'PUT',
@@ -4320,6 +4452,7 @@ async function loadTriggersPanel() {
 trigSearch.addEventListener('input', filterLabels);
 
 document.getElementById('triggers-save-btn').addEventListener('click', async () => {
+  if (guardViewerAction()) return;
   await saveTriggersToServer(collectTriggersPayload());
 });
 
@@ -4334,10 +4467,12 @@ document.getElementById('triggers-export-btn').addEventListener('click', () => {
 });
 
 document.getElementById('triggers-import-btn').addEventListener('click', () => {
+  if (guardViewerAction()) return;
   document.getElementById('triggers-import-file').click();
 });
 
 document.getElementById('triggers-import-file').addEventListener('change', async (ev) => {
+  if (guardViewerAction()) return;
   const input = ev.target;
   const file = input.files && input.files[0];
   input.value = '';
@@ -4367,6 +4502,7 @@ document.getElementById('triggers-import-file').addEventListener('change', async
 });
 
 document.getElementById('catalog-refresh-btn').addEventListener('click', async () => {
+  if (guardViewerAction()) return;
   setInlineStatus(triggersStatus, 'Syncing catalog…');
   const { ok, data } = await apiFetch('/api/clap/yamnet-catalog/sync', { method: 'POST' });
   if (!ok || !data || !data.ok) {
@@ -4386,6 +4522,7 @@ document.getElementById('catalog-refresh-btn').addEventListener('click', async (
 // Prefetch prompts + triggers data on page load (silent)
 loadPrompts().catch(() => {});
 loadTriggersPanel().catch(() => {});
+applyViewerLocks();
 </script>
 </body>
 </html>
