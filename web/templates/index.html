@@ -3007,18 +3007,19 @@ const OVERVIEW_KEY_MAX_CHUNKS = 20; // max chunks per key-repeat event while hol
 let overviewArrowHoldStarted = 0;
 
 function overviewArrowStepMs(e) {
+  const baseChunks = e.shiftKey ? 10 : 1;
   if (!e.repeat) {
     overviewArrowHoldStarted = performance.now();
-    return OVERVIEW_CHUNK_MS;
+    return baseChunks * OVERVIEW_CHUNK_MS;
   }
   const held = performance.now() - overviewArrowHoldStarted;
   let chunks = 1;
   if (held > OVERVIEW_KEY_ACCEL_AFTER_MS) {
     const t = Math.min(1, (held - OVERVIEW_KEY_ACCEL_AFTER_MS) / OVERVIEW_KEY_ACCEL_RAMP_MS);
-    // Ease-in so early hold stays near 1 chunk, then ramps up.
+    // Ease-in so early hold stays near 1× base, then ramps up.
     chunks = 1 + Math.round(t * t * (OVERVIEW_KEY_MAX_CHUNKS - 1));
   }
-  return chunks * OVERVIEW_CHUNK_MS;
+  return chunks * baseChunks * OVERVIEW_CHUNK_MS;
 }
 
 function nudgeOverviewPlayheadByMs(deltaMs) {
