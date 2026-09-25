@@ -142,11 +142,18 @@
                      position:relative}
   .overview-spectrum .spectrum-bar{width:7rem;margin-top:0;flex-shrink:0;cursor:help}
   .spectrum-tip{
-    display:none;position:absolute;left:0;bottom:calc(100% + .4rem);z-index:20;
+    display:none;position:absolute;left:0;bottom:calc(100% + .4rem);z-index:30;
     min-width:9.5rem;padding:.55rem .65rem;border-radius:8px;
-    background:var(--card);border:1px solid var(--border);box-shadow:0 6px 18px rgba(0,0,0,.22);
-    color:var(--text);font-size:.68rem;line-height:1.35;pointer-events:none;
-    white-space:nowrap
+    background:var(--surface);border:1px solid var(--border);
+    box-shadow:0 8px 22px rgba(0,0,0,.35);color:var(--text);
+    font-size:.68rem;line-height:1.35;pointer-events:none;white-space:nowrap;
+    opacity:1
+  }
+  html[data-theme="light"] .spectrum-tip{
+    background:#ffffff;box-shadow:0 8px 22px rgba(15,23,42,.18)
+  }
+  html[data-theme="dark"] .spectrum-tip{
+    background:#1e293b;box-shadow:0 8px 22px rgba(0,0,0,.55)
   }
   .overview-spectrum:hover .spectrum-tip,
   .overview-spectrum:focus-within .spectrum-tip{display:block}
@@ -2404,8 +2411,11 @@ let overviewSelectedName = null;
 let overviewRaf = 0;
 let overviewSeriesGen = 0;
 let overviewSeriesTimer = 0;
+let overviewSeriesPendingMs = null;
 let overviewLoadedRange = { min: null, max: null };
-const SERIES_FETCH_DEBOUNCE_MS = 80;
+const SERIES_FETCH_DEBOUNCE_MS = 140;
+/** Fetch slightly more than the visible 2 min window so edge scrubbing stays filled. */
+const SERIES_FETCH_WINDOW_S = 180;
 
 const overviewPlayheadPlugin = {
   id: 'overviewPlayhead',
@@ -2615,12 +2625,13 @@ function updateOverviewChartWindow(playheadMs) {
 }
 
 function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}) {
-  if (!overviewScrubPoints.length) return;
-  const idx = nearestScrubIndex(ms);
-  const p = overviewScrubPoints[idx];
-  const tMs = Date.parse(p.t);
-  overviewPlayheadMs = Number.isFinite(tMs) ? tMs : ms;
-  if (ovScrub) ovScrub.value = String(idx);
+  if (!Number.isFinite(ms)) return;
+  if (!overviewScrubPoints.length && overviewStartedMs == null) return;
+  // Keep continuous time for chart/audio; scrubber thumb only tracks the nearest coarse index.
+  overviewPlayheadMs = ms;
+  if (overviewScrubPoints.length && ovScrub) {
+    ovScrub.value = String(nearestScrubIndex(overviewPlayheadMs));
+  }
   renderOverviewDetailForMs(overviewPlayheadMs);
   updateOverviewChartWindow(overviewPlayheadMs);
   if (overviewChart) overviewChart.update('none');
@@ -2742,19 +2753,28 @@ function buildOverviewSeriesFromWindow(data) {
   overviewLoadedRange = { min, max };
 }
 
-function overviewSeriesCovers(playheadMs) {
-  const { min, max } = overviewLoadedRange;
-  if (!Number.isFinite(playheadMs) || min == null || max == null) return false;
-  const span = Math.max(1, max - min);
-  const margin = Math.max(12_000, span * 0.28);
-  return playheadMs >= min + margin && playheadMs <= max - margin;
+function overviewSeriesCoversDisplay(playheadMs) {
+  if (!Number.isFinite(playheadMs)) return false;
+  const { min, max } = overviewWindowBounds(playheadMs);
+  const lo = overviewLoadedRange.min;
+  const hi = overviewLoadedRange.max;
+  if (lo == null || hi == null) return false;
+  // Loaded dense series must cover the visible chart window (small slack).
+  return lo <= min + 1500 && hi >= max - 1500;
 }
 
-async function fetchOverviewWindowSeries(centerMs) {
+function seriesFetchCenterMs(playheadMs) {
+  // Match the clamped visible window — not raw playhead±half, which underfills at the start/end.
+  const { min, max } = overviewWindowBounds(playheadMs);
+  return (min + max) / 2;
+}
+
+async function fetchOverviewWindowSeries(playheadMs) {
   const name = overviewSelectedName;
-  if (!name || !Number.isFinite(centerMs)) return;
+  if (!name || !Number.isFinite(playheadMs)) return;
   const gen = ++overviewSeriesGen;
-  const windowS = (overviewData && overviewData.series_window_s) || 120;
+  const centerMs = seriesFetchCenterMs(playheadMs);
+  const windowS = SERIES_FETCH_WINDOW_S;
   const { ok, data } = await apiFetch(
     `/api/recordings/${encodeURIComponent(name)}/overview/series` +
       `?t_ms=${encodeURIComponent(String(centerMs))}` +
@@ -2770,22 +2790,31 @@ async function fetchOverviewWindowSeries(centerMs) {
   }
 }
 
-function scheduleOverviewSeriesFetch(centerMs, { immediate = false } = {}) {
-  if (!Number.isFinite(centerMs)) return;
-  if (!immediate && overviewSeriesCovers(centerMs)) return;
-  if (overviewSeriesTimer) {
-    clearTimeout(overviewSeriesTimer);
-    overviewSeriesTimer = 0;
-  }
-  const run = () => {
-    overviewSeriesTimer = 0;
-    fetchOverviewWindowSeries(centerMs);
-  };
+function scheduleOverviewSeriesFetch(playheadMs, { immediate = false } = {}) {
+  if (!Number.isFinite(playheadMs)) return;
+  if (!immediate && overviewSeriesCoversDisplay(playheadMs)) return;
+
   if (immediate) {
-    run();
+    if (overviewSeriesTimer) {
+      clearTimeout(overviewSeriesTimer);
+      overviewSeriesTimer = 0;
+    }
+    overviewSeriesPendingMs = null;
+    fetchOverviewWindowSeries(playheadMs);
     return;
   }
-  overviewSeriesTimer = setTimeout(run, SERIES_FETCH_DEBOUNCE_MS);
+
+  // Keep the latest target; do not reset the timer on every scrub/audio frame (that prevents fetch).
+  overviewSeriesPendingMs = playheadMs;
+  if (overviewSeriesTimer) return;
+  overviewSeriesTimer = setTimeout(() => {
+    overviewSeriesTimer = 0;
+    const target = overviewSeriesPendingMs;
+    overviewSeriesPendingMs = null;
+    if (Number.isFinite(target) && !overviewSeriesCoversDisplay(target)) {
+      fetchOverviewWindowSeries(target);
+    }
+  }, SERIES_FETCH_DEBOUNCE_MS);
 }
 
 function nearestPointInList(points, ms) {
@@ -2924,6 +2953,7 @@ async function loadRecordingOverview(name, { loudThreshold } = {}) {
   overviewSeries = { dba: [], l90: [], yam: [], clap: [] };
   overviewLoadedRange = { min: null, max: null };
   overviewSeriesGen += 1;
+  overviewSeriesPendingMs = null;
   if (overviewSeriesTimer) {
     clearTimeout(overviewSeriesTimer);
     overviewSeriesTimer = 0;
