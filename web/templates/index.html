@@ -2999,15 +2999,39 @@ if (ovScrub) {
   });
 }
 
-function nudgeOverviewScrub(delta) {
-  if (!ovScrub || !overviewScrubPoints.length) return false;
-  const max = Math.max(0, overviewScrubPoints.length - 1);
-  const cur = parseInt(ovScrub.value, 10) || 0;
-  const next = Math.max(0, Math.min(max, cur + delta));
-  if (next === cur) return true;
-  ovScrub.value = String(next);
-  const p = overviewScrubPoints[next];
-  if (p) setOverviewPlayheadMs(Date.parse(p.t), { seekAudio: true });
+/** One JSONL chunk ≈ 1 s; keyboard scrub steps in chunk time, not coarse scrub indices. */
+const OVERVIEW_CHUNK_MS = 1000;
+const OVERVIEW_KEY_ACCEL_AFTER_MS = 450;
+const OVERVIEW_KEY_ACCEL_RAMP_MS = 1800;
+const OVERVIEW_KEY_MAX_CHUNKS = 20; // max chunks per key-repeat event while holding
+let overviewArrowHoldStarted = 0;
+
+function overviewArrowStepMs(e) {
+  if (!e.repeat) {
+    overviewArrowHoldStarted = performance.now();
+    return OVERVIEW_CHUNK_MS;
+  }
+  const held = performance.now() - overviewArrowHoldStarted;
+  let chunks = 1;
+  if (held > OVERVIEW_KEY_ACCEL_AFTER_MS) {
+    const t = Math.min(1, (held - OVERVIEW_KEY_ACCEL_AFTER_MS) / OVERVIEW_KEY_ACCEL_RAMP_MS);
+    // Ease-in so early hold stays near 1 chunk, then ramps up.
+    chunks = 1 + Math.round(t * t * (OVERVIEW_KEY_MAX_CHUNKS - 1));
+  }
+  return chunks * OVERVIEW_CHUNK_MS;
+}
+
+function nudgeOverviewPlayheadByMs(deltaMs) {
+  let base = overviewPlayheadMs;
+  if (!Number.isFinite(base)) {
+    if (overviewScrubPoints.length) base = Date.parse(overviewScrubPoints[0].t);
+    else if (Number.isFinite(overviewStartedMs)) base = overviewStartedMs;
+  }
+  if (!Number.isFinite(base)) return false;
+  let next = base + deltaMs;
+  if (Number.isFinite(overviewStartedMs)) next = Math.max(overviewStartedMs, next);
+  if (Number.isFinite(overviewEndedMs)) next = Math.min(overviewEndedMs, next);
+  setOverviewPlayheadMs(next, { seekAudio: true });
   return true;
 }
 
@@ -3025,9 +3049,15 @@ document.addEventListener('keydown', (e) => {
   if (isTypingTarget(e.target)) return;
   const panel = document.getElementById('panel-analyze');
   if (panel && panel.hidden) return;
-  const step = e.shiftKey ? 10 : 1;
-  if (nudgeOverviewScrub(e.key === 'ArrowLeft' ? -step : step)) {
+  const stepMs = overviewArrowStepMs(e);
+  if (nudgeOverviewPlayheadByMs(e.key === 'ArrowLeft' ? -stepMs : stepMs)) {
     e.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    overviewArrowHoldStarted = 0;
   }
 });
 
