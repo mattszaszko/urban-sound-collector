@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import bisect
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Any
 
 from core.events import event_recording_id
@@ -11,6 +13,7 @@ from core.loudness import DEFAULT_CALIB_OFFSET
 # Target chart points when downsampling long recordings.
 CHART_MAX_POINTS = 1500
 DEFAULT_LOUD_THRESHOLD_LAFMAX = 65.0
+DEFAULT_SERIES_WINDOW_S = 120.0
 
 
 def percentile_nearest(sorted_values: list[float], pct: float) -> float | None:
@@ -205,6 +208,74 @@ def downsample_points(points: list[dict], max_points: int = CHART_MAX_POINTS) ->
     return out
 
 
+def created_at_to_ms(created_at: object) -> float | None:
+    """Parse an event/point ``created_at`` string to UTC epoch milliseconds."""
+    if not isinstance(created_at, str) or not created_at:
+        return None
+    raw = created_at.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp() * 1000.0
+
+
+def slim_points_from_events(
+    events: list[dict],
+    *,
+    calib_offset: float = DEFAULT_CALIB_OFFSET,
+) -> list[dict]:
+    """Project events to slim chart points (skip rows without ``created_at``)."""
+    out: list[dict] = []
+    for event in events:
+        slim = slim_event_point(event, calib_offset=calib_offset)
+        if slim is not None:
+            out.append(slim)
+    return out
+
+
+def build_overview_window_series(
+    slim_points: list[dict],
+    *,
+    center_ms: float,
+    window_s: float = DEFAULT_SERIES_WINDOW_S,
+) -> dict[str, Any]:
+    """Return full-resolution slim points for a time window around ``center_ms``."""
+    window_s = max(30.0, min(900.0, float(window_s)))
+    half_ms = window_s * 500.0
+    lo = float(center_ms) - half_ms
+    hi = float(center_ms) + half_ms
+
+    # Timestamps in recording order (JSONL is chronological). Missing → +inf so they sort last.
+    keys: list[float] = []
+    for p in slim_points:
+        ms = created_at_to_ms(p.get("t"))
+        keys.append(ms if ms is not None else float("inf"))
+
+    start_i = bisect.bisect_left(keys, lo)
+    end_i = bisect.bisect_right(keys, hi)
+    filtered = [
+        p
+        for p, ms in zip(slim_points[start_i:end_i], keys[start_i:end_i])
+        if ms != float("inf") and lo <= ms <= hi
+    ]
+
+    return {
+        "ok": True,
+        "center_ms": float(center_ms),
+        "window_s": window_s,
+        "t_min": filtered[0].get("t") if filtered else None,
+        "t_max": filtered[-1].get("t") if filtered else None,
+        "points": filtered,
+        "yamnet_markers": yamnet_change_markers(filtered),
+        "clap_markers": clap_triggered_markers(filtered),
+    }
+
+
 def build_recording_overview(
     events: list[dict],
     *,
@@ -260,8 +331,6 @@ def build_recording_overview(
     if chunks >= 2:
         # Prefer timestamp delta when parseable; else ~0.975 s/chunk.
         try:
-            from datetime import datetime, timezone
-
             def _parse(t: str) -> datetime:
                 raw = t[:-1] + "+00:00" if t.endswith("Z") else t
                 dt = datetime.fromisoformat(raw)
@@ -348,10 +417,11 @@ def build_recording_overview(
                 "top_labels": _top(clap_counts),
             },
         },
+        # Coarse series for the scrubber only; Inspect chart loads a dense window via /overview/series.
         "points": points_chart,
         "points_full": points_full_flag,
-        "yamnet_markers": yamnet_change_markers(points_full),
-        "clap_markers": clap_triggered_markers(points_full),
-        # Full points for scrub detail / audio sync (can be large; only if not huge)
-        "scrub_points": points_full if chunks <= 20_000 else points_chart,
+        "yamnet_markers": yamnet_change_markers(points_chart),
+        "clap_markers": clap_triggered_markers(points_chart),
+        "scrub_points": points_chart,
+        "series_window_s": DEFAULT_SERIES_WINDOW_S,
     }

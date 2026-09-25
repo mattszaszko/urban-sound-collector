@@ -138,8 +138,30 @@
   .spectrum-bar .band-dark{background:#6366F1}
   .spectrum-bar .band-mid{background:#10B981}
   .spectrum-bar .band-bright{background:#EAB308}
-  .overview-spectrum{display:inline-flex;align-items:center;gap:.45rem;margin-top:.35rem}
-  .overview-spectrum .spectrum-bar{width:7rem;margin-top:0;flex-shrink:0}
+  .overview-spectrum{display:inline-flex;align-items:center;gap:.45rem;margin-top:.35rem;
+                     position:relative}
+  .overview-spectrum .spectrum-bar{width:7rem;margin-top:0;flex-shrink:0;cursor:help}
+  .spectrum-tip{
+    display:none;position:absolute;left:0;bottom:calc(100% + .4rem);z-index:20;
+    min-width:9.5rem;padding:.55rem .65rem;border-radius:8px;
+    background:var(--card);border:1px solid var(--border);box-shadow:0 6px 18px rgba(0,0,0,.22);
+    color:var(--text);font-size:.68rem;line-height:1.35;pointer-events:none;
+    white-space:nowrap
+  }
+  .overview-spectrum:hover .spectrum-tip,
+  .overview-spectrum:focus-within .spectrum-tip{display:block}
+  .spectrum-tip-title{font-weight:600;margin-bottom:.4rem;color:var(--muted)}
+  .spectrum-tip-graph{display:flex;align-items:flex-end;gap:.35rem;height:3.1rem;margin-bottom:.4rem}
+  .spectrum-tip-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:.2rem;min-width:1.6rem}
+  .spectrum-tip-col .bar-track{width:100%;height:2.4rem;display:flex;align-items:flex-end;
+                              background:var(--bg);border-radius:3px;overflow:hidden}
+  .spectrum-tip-col .bar-fill{width:100%;border-radius:2px 2px 0 0;min-height:2px}
+  .spectrum-tip-col .bar-fill.dark{background:#6366F1}
+  .spectrum-tip-col .bar-fill.mid{background:#10B981}
+  .spectrum-tip-col .bar-fill.bright{background:#EAB308}
+  .spectrum-tip-col .pct{font-variant-numeric:tabular-nums;font-weight:600}
+  .spectrum-tip-col .lbl{color:var(--muted);font-size:.6rem}
+  .spectrum-tip-note{color:var(--muted);font-size:.6rem;white-space:normal;max-width:10rem}
   .live-chart-wrap{margin-top:.25rem}
   .live-chart-meta{display:flex;flex-wrap:wrap;gap:.5rem .85rem;align-items:center;
                    justify-content:space-between;margin-bottom:.5rem}
@@ -913,7 +935,7 @@
     <div id="ov-status" class="inline-status"></div>
     <div class="impact-grid" id="ov-impact"></div>
     <div class="impact-grid" id="ov-labels" style="grid-template-columns:1fr 1fr"></div>
-    <div class="overview-chart-note">2&nbsp;min window · follows scrub / playback · local time ({{ site_timezone }}) · dBA colored by spectrum (A-weighted)</div>
+    <div class="overview-chart-note">2&nbsp;min window · full-resolution series loads as you scrub · local time ({{ site_timezone }}) · dBA colored by spectrum (A-weighted)</div>
     <div class="live-chart-legend" style="margin-bottom:.45rem">
       <span><i class="swatch line spectrum-grad" aria-hidden="true"></i>dBA by spectrum</span>
       <span><i class="swatch spectrum-dark" aria-hidden="true"></i>Dark</span>
@@ -2372,6 +2394,7 @@ const OVERVIEW_WINDOW_MS = 120_000;
 
 let overviewData = null;
 let overviewScrubPoints = [];
+let overviewWindowPoints = [];
 let overviewSeries = { dba: [], l90: [], yam: [], clap: [] };
 let overviewPlayheadMs = null;
 let overviewStartedMs = null;
@@ -2379,6 +2402,10 @@ let overviewEndedMs = null;
 let overviewSyncFromAudio = false;
 let overviewSelectedName = null;
 let overviewRaf = 0;
+let overviewSeriesGen = 0;
+let overviewSeriesTimer = 0;
+let overviewLoadedRange = { min: null, max: null };
+const SERIES_FETCH_DEBOUNCE_MS = 80;
 
 const overviewPlayheadPlugin = {
   id: 'overviewPlayhead',
@@ -2594,9 +2621,10 @@ function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}
   const tMs = Date.parse(p.t);
   overviewPlayheadMs = Number.isFinite(tMs) ? tMs : ms;
   if (ovScrub) ovScrub.value = String(idx);
-  renderOverviewDetail(idx);
+  renderOverviewDetailForMs(overviewPlayheadMs);
   updateOverviewChartWindow(overviewPlayheadMs);
   if (overviewChart) overviewChart.update('none');
+  scheduleOverviewSeriesFetch(overviewPlayheadMs);
 
   if (
     seekAudio &&
@@ -2672,8 +2700,8 @@ function renderOverviewSummary(data) {
   ].join('');
 }
 
-function buildOverviewSeries(data) {
-  const source = data.scrub_points || data.points || [];
+function buildOverviewSeriesFromWindow(data) {
+  const source = (data && data.points) || [];
   const dba = [];
   const l90 = [];
   for (const p of source) {
@@ -2698,10 +2726,106 @@ function buildOverviewSeries(data) {
     return marker;
   }).filter((m) => Number.isFinite(m.x));
   overviewSeries = { dba, l90, yam, clap };
+  overviewWindowPoints = source;
+
+  let min = null;
+  let max = null;
+  if (dba.length || l90.length) {
+    const xs = dba.concat(l90).map((p) => p.x);
+    min = Math.min(...xs);
+    max = Math.max(...xs);
+  } else if (Number.isFinite(data.center_ms)) {
+    const half = ((data.window_s || 120) * 1000) / 2;
+    min = data.center_ms - half;
+    max = data.center_ms + half;
+  }
+  overviewLoadedRange = { min, max };
 }
 
-function renderOverviewDetail(idx) {
-  const p = overviewScrubPoints[idx];
+function overviewSeriesCovers(playheadMs) {
+  const { min, max } = overviewLoadedRange;
+  if (!Number.isFinite(playheadMs) || min == null || max == null) return false;
+  const span = Math.max(1, max - min);
+  const margin = Math.max(12_000, span * 0.28);
+  return playheadMs >= min + margin && playheadMs <= max - margin;
+}
+
+async function fetchOverviewWindowSeries(centerMs) {
+  const name = overviewSelectedName;
+  if (!name || !Number.isFinite(centerMs)) return;
+  const gen = ++overviewSeriesGen;
+  const windowS = (overviewData && overviewData.series_window_s) || 120;
+  const { ok, data } = await apiFetch(
+    `/api/recordings/${encodeURIComponent(name)}/overview/series` +
+      `?t_ms=${encodeURIComponent(String(centerMs))}` +
+      `&window_s=${encodeURIComponent(String(windowS))}`
+  );
+  if (gen !== overviewSeriesGen) return;
+  if (!ok || !data || !data.ok) return;
+  buildOverviewSeriesFromWindow(data);
+  if (Number.isFinite(overviewPlayheadMs)) {
+    renderOverviewDetailForMs(overviewPlayheadMs);
+    updateOverviewChartWindow(overviewPlayheadMs);
+    if (overviewChart) overviewChart.update('none');
+  }
+}
+
+function scheduleOverviewSeriesFetch(centerMs, { immediate = false } = {}) {
+  if (!Number.isFinite(centerMs)) return;
+  if (!immediate && overviewSeriesCovers(centerMs)) return;
+  if (overviewSeriesTimer) {
+    clearTimeout(overviewSeriesTimer);
+    overviewSeriesTimer = 0;
+  }
+  const run = () => {
+    overviewSeriesTimer = 0;
+    fetchOverviewWindowSeries(centerMs);
+  };
+  if (immediate) {
+    run();
+    return;
+  }
+  overviewSeriesTimer = setTimeout(run, SERIES_FETCH_DEBOUNCE_MS);
+}
+
+function nearestPointInList(points, ms) {
+  if (!points || !points.length || !Number.isFinite(ms)) return null;
+  let best = points[0];
+  let bestDist = Infinity;
+  for (const p of points) {
+    const t = Date.parse(p.t);
+    if (!Number.isFinite(t)) continue;
+    const d = Math.abs(t - ms);
+    if (d < bestDist) {
+      bestDist = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+function spectrumTipHtml(bands) {
+  const dark = Math.max(0, Number(bands && bands.dark) || 0);
+  const mid = Math.max(0, Number(bands && bands.mid) || 0);
+  const bright = Math.max(0, Number(bands && bands.bright) || 0);
+  const total = dark + mid + bright;
+  const pct = (v) => (total > 0 ? (100 * v / total) : 0);
+  const col = (key, value) => {
+    const p = pct(value);
+    return `<div class="spectrum-tip-col">` +
+      `<div class="bar-track"><div class="bar-fill ${key}" style="height:${p.toFixed(1)}%"></div></div>` +
+      `<span class="pct">${value.toFixed(1)}%</span>` +
+      `<span class="lbl">${SPECTRUM_LABELS[key]}</span>` +
+      `</div>`;
+  };
+  return `<div class="spectrum-tip" role="tooltip">` +
+    `<div class="spectrum-tip-title">Frequency balance (A-weighted)</div>` +
+    `<div class="spectrum-tip-graph">${col('dark', dark)}${col('mid', mid)}${col('bright', bright)}</div>` +
+    `<div class="spectrum-tip-note">Not a sound type — share of energy in each band.</div>` +
+    `</div>`;
+}
+
+function renderOverviewDetailForPoint(p) {
   if (!p || !ovDetail) return;
   const tMs = Date.parse(p.t);
   const tLabel = Number.isFinite(tMs) ? fmtSiteDateTime(tMs) : (p.t || '—');
@@ -2718,15 +2842,26 @@ function renderOverviewDetail(idx) {
   if (dominant) {
     const bands = p.spectrum_bands;
     bits.push(
-      `<span class="overview-spectrum">Spectrum <strong>${SPECTRUM_LABELS[dominant]}</strong>` +
+      `<span class="overview-spectrum" tabindex="0">` +
+      `Spectrum <strong>${SPECTRUM_LABELS[dominant]}</strong>` +
       `<span class="spectrum-bar" aria-hidden="true">` +
       `<span class="band-dark" style="width:${Math.max(0, Number(bands.dark) || 0)}%"></span>` +
       `<span class="band-mid" style="width:${Math.max(0, Number(bands.mid) || 0)}%"></span>` +
       `<span class="band-bright" style="width:${Math.max(0, Number(bands.bright) || 0)}%"></span>` +
-      `</span></span>`
+      `</span>${spectrumTipHtml(bands)}</span>`
     );
   }
   ovDetail.innerHTML = bits.join(' · ');
+}
+
+function renderOverviewDetailForMs(ms) {
+  const fromWindow = nearestPointInList(overviewWindowPoints, ms);
+  if (fromWindow) {
+    renderOverviewDetailForPoint(fromWindow);
+    return;
+  }
+  const idx = nearestScrubIndex(ms);
+  renderOverviewDetailForPoint(overviewScrubPoints[idx]);
 }
 
 function setupOverviewAudio(data) {
@@ -2785,6 +2920,14 @@ async function loadRecordingOverview(name, { loudThreshold } = {}) {
   }
   overviewData = data;
   overviewScrubPoints = data.scrub_points || data.points || [];
+  overviewWindowPoints = [];
+  overviewSeries = { dba: [], l90: [], yam: [], clap: [] };
+  overviewLoadedRange = { min: null, max: null };
+  overviewSeriesGen += 1;
+  if (overviewSeriesTimer) {
+    clearTimeout(overviewSeriesTimer);
+    overviewSeriesTimer = 0;
+  }
   overviewStartedMs = data.summary && data.summary.started_at
     ? Date.parse(data.summary.started_at)
     : (overviewScrubPoints[0] ? Date.parse(overviewScrubPoints[0].t) : null);
@@ -2797,7 +2940,6 @@ async function loadRecordingOverview(name, { loudThreshold } = {}) {
     ovLoudThr.value = data.summary.disturbances.threshold_lafmax_db;
   }
   renderOverviewSummary(data);
-  buildOverviewSeries(data);
   ensureOverviewChart();
   if (ovScrub) {
     ovScrub.max = String(Math.max(0, overviewScrubPoints.length - 1));
@@ -2805,11 +2947,15 @@ async function loadRecordingOverview(name, { loudThreshold } = {}) {
   }
   setupOverviewAudio(data);
   if (overviewScrubPoints.length) {
-    setOverviewPlayheadMs(Date.parse(overviewScrubPoints[0].t), { seekAudio: true });
+    const startMs = Date.parse(overviewScrubPoints[0].t);
+    setOverviewPlayheadMs(startMs, { seekAudio: true });
+    scheduleOverviewSeriesFetch(overviewPlayheadMs, { immediate: true });
   }
   setInlineStatus(
     ovStatus,
-    data.points_full ? '' : 'Long recording: series may be reduced for scrubbing; stats use all chunks.',
+    data.points_full
+      ? ''
+      : 'Long recording: scrubber is coarse; chart loads full resolution for the visible 2 min window.',
     data.points_full ? '' : 'ok'
   );
 }
@@ -2822,6 +2968,38 @@ if (ovScrub) {
     setOverviewPlayheadMs(Date.parse(p.t), { seekAudio: true });
   });
 }
+
+function nudgeOverviewScrub(delta) {
+  if (!ovScrub || !overviewScrubPoints.length) return false;
+  const max = Math.max(0, overviewScrubPoints.length - 1);
+  const cur = parseInt(ovScrub.value, 10) || 0;
+  const next = Math.max(0, Math.min(max, cur + delta));
+  if (next === cur) return true;
+  ovScrub.value = String(next);
+  const p = overviewScrubPoints[next];
+  if (p) setOverviewPlayheadMs(Date.parse(p.t), { seekAudio: true });
+  return true;
+}
+
+function isTypingTarget(el) {
+  if (!el || el === ovScrub) return false;
+  const tag = (el.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!ANALYZE_RECORDING && !overviewSelectedName) return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (isTypingTarget(e.target)) return;
+  const panel = document.getElementById('panel-analyze');
+  if (panel && panel.hidden) return;
+  const step = e.shiftKey ? 10 : 1;
+  if (nudgeOverviewScrub(e.key === 'ArrowLeft' ? -step : step)) {
+    e.preventDefault();
+  }
+});
 
 if (ovLoudThr) {
   let thrTimer = null;

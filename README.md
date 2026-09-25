@@ -414,6 +414,9 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
   `yamnet_preprocess`), download sibling WAV, delete a recording (JSONL + WAV; blocked
   while that recording is active). **View** opens a per-recording analysis screen
   (`/analyze/<name>.jsonl`) with scrubbable loudness + optional synced WAV.
+  The Inspect chart loads a **full-resolution ~2 min window** on demand as you
+  scrub (so long overnight files stay dense in view); the scrubber itself may be
+  coarse on very long recordings.
   Multi-select recordings → **Generate report** opens `/report` with a three-zone
   dashboard: ambient L<sub>eq</sub> + peak LAFmax, a chronological hourly
   L<sub>eq</sub> timeline (optional **Typical day** clock-hour view; local time via

@@ -36,8 +36,12 @@ from core.report import DEFAULT_SITE_TIMEZONE, build_dashboard_report
 from core.report.timeutil import resolve_zone, to_local
 from core.recording_overview import (
     DEFAULT_LOUD_THRESHOLD_LAFMAX,
+    DEFAULT_SERIES_WINDOW_S,
+    build_overview_window_series,
     build_recording_overview,
+    created_at_to_ms,
     slim_event_point,
+    slim_points_from_events,
 )
 from core.yamnet_preprocess import DEFAULT_GATE_SENSITIVITY_DB
 
@@ -579,6 +583,67 @@ def _iter_jsonl_events(path: Path) -> list[dict]:
     return events
 
 
+# Soft cache of slim overview points keyed by resolved path + mtime (Inspect window series).
+_slim_points_cache: dict[str, tuple[float, list[dict]]] = {}
+_slim_points_cache_lock = threading.Lock()
+
+
+def _cached_slim_points(path: Path, *, events: list[dict] | None = None) -> list[dict]:
+    """Return slim chart points for ``path``, caching by mtime."""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    key = str(path.resolve())
+    with _slim_points_cache_lock:
+        hit = _slim_points_cache.get(key)
+        if hit is not None and hit[0] == mtime:
+            return hit[1]
+    src = events if events is not None else _iter_jsonl_events(path)
+    slim = slim_points_from_events(src, calib_offset=float(DEFAULT_CALIB_OFFSET))
+    with _slim_points_cache_lock:
+        _slim_points_cache[key] = (mtime, slim)
+        # Bound cache size on multi-recording Pis.
+        if len(_slim_points_cache) > 8:
+            oldest = next(iter(_slim_points_cache))
+            if oldest != key:
+                _slim_points_cache.pop(oldest, None)
+    return slim
+
+
+def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
+    wav_path = path.with_suffix(".wav")
+    has_wav = wav_path.is_file()
+    active = _active_output_path()
+    recording_active = active is not None and path.resolve() == active
+    events = _iter_jsonl_events(path)
+    # Warm slim cache so the first Inspect window fetch is cheap.
+    _cached_slim_points(path, events=events)
+    return build_recording_overview(
+        events,
+        name=path.name,
+        has_wav=has_wav,
+        wav_name=wav_path.name if has_wav else None,
+        recording_active=recording_active,
+        loud_threshold=loud_threshold,
+        calib_offset=float(DEFAULT_CALIB_OFFSET),
+    )
+
+
+def _recording_overview_series_payload(
+    path: Path,
+    *,
+    center_ms: float,
+    window_s: float,
+) -> dict:
+    slim = _cached_slim_points(path)
+    return build_overview_window_series(
+        slim,
+        center_ms=center_ms,
+        window_s=window_s,
+    )
+
+
 # Fields required for report aggregation (spectrum etc. are dropped to save RAM).
 _REPORT_EVENT_KEYS = (
     "created_at",
@@ -802,23 +867,6 @@ def _build_report_ndjson(
                 message=f"Unexpected error while building report: {exc}",
             )
         )
-
-
-def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
-    wav_path = path.with_suffix(".wav")
-    has_wav = wav_path.is_file()
-    active = _active_output_path()
-    recording_active = active is not None and path.resolve() == active
-    events = _iter_jsonl_events(path)
-    return build_recording_overview(
-        events,
-        name=path.name,
-        has_wav=has_wav,
-        wav_name=wav_path.name if has_wav else None,
-        recording_active=recording_active,
-        loud_threshold=loud_threshold,
-        calib_offset=float(DEFAULT_CALIB_OFFSET),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1243,6 +1291,48 @@ async def api_recording_overview(filename: str, request: Request):
         thr = DEFAULT_LOUD_THRESHOLD_LAFMAX
     thr = max(50.0, min(80.0, thr))
     return JSONResponse(_recording_overview_payload(path, loud_threshold=thr))
+
+
+@app.get("/api/recordings/{filename}/overview/series")
+async def api_recording_overview_series(filename: str, request: Request):
+    """Full-resolution slim points for a ~2 min window around ``t`` / ``t_ms``."""
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if not filename.lower().endswith(".jsonl"):
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    path = _safe_recordings_path(filename)
+    if path is None or not path.exists() or not path.is_file():
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+
+    raw_window = request.query_params.get("window_s", str(DEFAULT_SERIES_WINDOW_S))
+    try:
+        window_s = float(raw_window)
+    except (TypeError, ValueError):
+        window_s = float(DEFAULT_SERIES_WINDOW_S)
+    window_s = max(30.0, min(900.0, window_s))
+
+    center_ms: float | None = None
+    raw_ms = request.query_params.get("t_ms")
+    if raw_ms is not None and str(raw_ms).strip() != "":
+        try:
+            center_ms = float(raw_ms)
+        except (TypeError, ValueError):
+            center_ms = None
+    if center_ms is None:
+        raw_t = request.query_params.get("t")
+        center_ms = created_at_to_ms(raw_t) if raw_t else None
+    if center_ms is None or not (center_ms == center_ms):  # NaN guard
+        return JSONResponse(
+            {"ok": False, "error": "bad_request", "message": "Missing or invalid t / t_ms"},
+            status_code=400,
+        )
+
+    payload = _recording_overview_series_payload(
+        path,
+        center_ms=center_ms,
+        window_s=window_s,
+    )
+    return JSONResponse(payload)
 
 
 @app.post("/api/recordings/report")

@@ -186,5 +186,70 @@ class SpectrumSlimTests(unittest.TestCase):
         self.assertNotIn("spectrum_bands", point)
 
 
+class OverviewWindowSeriesTests(unittest.TestCase):
+    def _points(self, n: int = 300) -> list[dict]:
+        from core.recording_overview import slim_event_point
+
+        out: list[dict] = []
+        for i in range(n):
+            # 1 Hz points starting at midnight UTC
+            sec = i
+            p = slim_event_point(
+                {
+                    "created_at": f"2026-01-01T00:{sec // 60:02d}:{sec % 60:02d}.000Z",
+                    "dBA_spl": 50.0 + (i % 10),
+                    "LAFmax_dB": 55.0,
+                    "top_label": "Silence",
+                    "yamnet_preprocess": {
+                        "gated": False,
+                        "gate_open": True,
+                        "ambient_noise_floor_dbfs": -70.0,
+                    },
+                }
+            )
+            assert p is not None
+            out.append(p)
+        return out
+
+    def test_window_returns_about_two_minutes(self) -> None:
+        from core.recording_overview import build_overview_window_series, created_at_to_ms
+
+        points = self._points(400)
+        center = created_at_to_ms(points[200]["t"])
+        assert center is not None
+        payload = build_overview_window_series(points, center_ms=center, window_s=120)
+        self.assertTrue(payload["ok"])
+        # 120 s window ≈ 121 samples inclusive
+        self.assertGreaterEqual(len(payload["points"]), 115)
+        self.assertLessEqual(len(payload["points"]), 125)
+        first_ms = created_at_to_ms(payload["points"][0]["t"])
+        last_ms = created_at_to_ms(payload["points"][-1]["t"])
+        assert first_ms is not None and last_ms is not None
+        self.assertLessEqual(first_ms, center)
+        self.assertGreaterEqual(last_ms, center)
+
+    def test_overview_scrub_is_always_downsampled_for_long(self) -> None:
+        events = []
+        for i in range(2500):
+            events.append(
+                {
+                    "created_at": f"2026-01-01T{i // 3600:02d}:{(i // 60) % 60:02d}:{i % 60:02d}.000Z",
+                    "dBA_spl": 50.0,
+                    "LAFmax_dB": 55.0,
+                    "top_label": "Silence",
+                }
+            )
+        payload = build_recording_overview(
+            events,
+            name="long.jsonl",
+            has_wav=False,
+            wav_name=None,
+            recording_active=False,
+        )
+        self.assertEqual(len(payload["scrub_points"]), 1500)
+        self.assertFalse(payload["points_full"])
+        self.assertEqual(payload["series_window_s"], 120)
+
+
 if __name__ == "__main__":
     unittest.main()
