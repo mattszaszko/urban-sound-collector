@@ -333,6 +333,8 @@ def _get_status() -> dict:
     chunk_count = 0
     last_label = None
     last_dba = None
+    last_centroid_hz = None
+    last_spectrum_bands = None
     started_at = None
     recording_id = None
 
@@ -344,6 +346,10 @@ def _get_status() -> dict:
             last_label = last_event.get("top_label")
             last_dba = last_event.get("dBA_spl")
             recording_id = event_recording_id(last_event)
+            slim = slim_event_point(last_event, calib_offset=float(DEFAULT_CALIB_OFFSET))
+            if slim:
+                last_centroid_hz = slim.get("centroid_hz")
+                last_spectrum_bands = slim.get("spectrum_bands")
         first_event = _read_jsonl_event(output_path, last=False)
         if first_event:
             started_at = first_event.get("created_at")
@@ -368,6 +374,8 @@ def _get_status() -> dict:
         "chunk_count": chunk_count,
         "last_label": last_label,
         "last_dba": last_dba,
+        "last_centroid_hz": last_centroid_hz,
+        "last_spectrum_bands": last_spectrum_bands,
         "elapsed_s": elapsed_s,
         "started_at": started_at,
         "recording_id": recording_id,

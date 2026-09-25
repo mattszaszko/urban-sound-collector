@@ -129,5 +129,62 @@ class ClapEventSecondsTests(unittest.TestCase):
         self.assertEqual(markers[0]["label"], "siren")
 
 
+class SpectrumSlimTests(unittest.TestCase):
+    def test_extracts_a_weighted_centroid_and_dark_mid_bright(self) -> None:
+        point = slim_event_point(
+            {
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "dBA_spl": 55.0,
+                "spectrum": {
+                    "z": {
+                        "centroid_hz": 120.0,
+                        "energy_pct": {"low": 90.0, "mid": 8.0, "high": 2.0},
+                    },
+                    "a": {
+                        "centroid_hz": 890.0,
+                        "energy_pct": {"low": 35.0, "mid": 48.0, "high": 17.0},
+                    },
+                },
+            }
+        )
+        self.assertIsNotNone(point)
+        assert point is not None
+        self.assertEqual(point["centroid_hz"], 890.0)
+        self.assertEqual(
+            point["spectrum_bands"],
+            {"dark": 35.0, "mid": 48.0, "bright": 17.0},
+        )
+
+    def test_missing_spectrum_omits_fields(self) -> None:
+        point = slim_event_point(
+            {
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "dBA_spl": 55.0,
+            }
+        )
+        self.assertIsNotNone(point)
+        assert point is not None
+        self.assertNotIn("centroid_hz", point)
+        self.assertNotIn("spectrum_bands", point)
+
+    def test_z_only_spectrum_omits_fields(self) -> None:
+        point = slim_event_point(
+            {
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "dBA_spl": 55.0,
+                "spectrum": {
+                    "z": {
+                        "centroid_hz": 120.0,
+                        "energy_pct": {"low": 90.0, "mid": 8.0, "high": 2.0},
+                    },
+                },
+            }
+        )
+        self.assertIsNotNone(point)
+        assert point is not None
+        self.assertNotIn("centroid_hz", point)
+        self.assertNotIn("spectrum_bands", point)
+
+
 if __name__ == "__main__":
     unittest.main()

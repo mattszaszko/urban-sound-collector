@@ -237,7 +237,10 @@ One JSON object per line (~1 Hz):
 - **`spectrum.z`**: unweighted (physical) frequency content — use for hum/rumble
 - **`spectrum.a`**: A-weighted bands — aligns with human perception / `dBA_spl`
 - **`spectrum.*.levels_db`**: relative band levels (not absolute per-band SPL); Welch `nperseg` defaults to 16384 (Δf ≈ 2.93 Hz @ 48 kHz) so the lowest 1/3-octave (31.5 Hz) is resolved
-- **`spectrum.*.energy_pct`**: low 31.5–500 Hz, mid 500–2000 Hz, high 2–16 kHz
+- **`spectrum.*.energy_pct`**: low 31.5–500 Hz, mid 500–2000 Hz, high 2–16 kHz.
+  The web UI maps these A-weighted shares to **Dark / Mid / Bright** (timbre /
+  frequency balance — not YAMNet/CLAP sound-type labels) for the Spectrum status
+  widget and for coloring the live / Inspect dBA line by spectral centroid.
 
 Disable spectrum with **`--no-spectrum`** (Branch A + B only).
 
@@ -402,8 +405,10 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
     after 2 chunks below open or too cold
   - Optional **Record audio** — ungained mic WAV next to the JSONL (~330 MB/hour)
 - Stop an active recording
-- Live status: chunk count, elapsed time, last label, dBA, last CLAP (polls every 1 s)
-- Live **5‑minute loudness chart** (dBA + Gate L90 relative, YAMNet label-change markers, CLAP triggers)
+- Live status: chunk count, elapsed time, last label, dBA, last CLAP, Spectrum
+  Dark/Mid/Bright (A-weighted frequency balance; polls every 1 s)
+- Live **2‑minute loudness chart** (dBA colored by A-weighted spectral centroid +
+  Gate L90 relative, YAMNet label-change markers, CLAP triggers)
 - Live log tail via Server-Sent Events (no page refresh needed)
 - **Data** tab: download past JSONL (optional omit `spectrum` /
   `yamnet_preprocess`), download sibling WAV, delete a recording (JSONL + WAV; blocked

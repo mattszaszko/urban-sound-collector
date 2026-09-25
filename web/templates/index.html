@@ -131,6 +131,15 @@
   .stat{background:var(--bg);border-radius:8px;padding:.75rem}
   .stat-label{font-size:.7rem;color:var(--muted);margin-bottom:.2rem}
   .stat-value{font-size:1.1rem;font-weight:700;color:var(--text)}
+  .stat-hint{font-size:.65rem;color:var(--muted);margin-top:.25rem;line-height:1.3}
+  .spectrum-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:.4rem;
+                background:var(--border)}
+  .spectrum-bar > span{display:block;height:100%;transition:width .25s ease;min-width:0;flex:0 0 auto}
+  .spectrum-bar .band-dark{background:#6366F1}
+  .spectrum-bar .band-mid{background:#10B981}
+  .spectrum-bar .band-bright{background:#EAB308}
+  .overview-spectrum{display:inline-flex;align-items:center;gap:.45rem;margin-top:.35rem}
+  .overview-spectrum .spectrum-bar{width:7rem;margin-top:0;flex-shrink:0}
   .live-chart-wrap{margin-top:.25rem}
   .live-chart-meta{display:flex;flex-wrap:wrap;gap:.5rem .85rem;align-items:center;
                    justify-content:space-between;margin-bottom:.5rem}
@@ -142,6 +151,11 @@
   .swatch.dot{border-radius:50%}
   .swatch.band{width:14px;height:10px;border-radius:2px;background:var(--clap-window);
                border:1px solid var(--clap-point)}
+  .swatch.spectrum-grad{width:18px;height:3px;border-radius:1px;
+                        background:linear-gradient(90deg,#6366F1,#10B981,#EAB308)}
+  .swatch.spectrum-dark{background:#6366F1}
+  .swatch.spectrum-mid{background:#10B981}
+  .swatch.spectrum-bright{background:#EAB308}
   .status-card-head{display:flex;align-items:center;justify-content:space-between;
                     gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem}
   .status-card-head h2{margin:0}
@@ -536,7 +550,7 @@
   @media(min-width:640px){
     body{max-width:960px;margin:0 auto;padding:1.5rem}
     header h1{font-size:1.25rem}
-    .stat-grid{grid-template-columns:repeat(5,1fr)}
+    .stat-grid{grid-template-columns:repeat(3,1fr)}
     .trigger-settings{grid-template-columns:repeat(3,1fr)}
     .live-chart-canvas-box{height:280px}
     #log-box{height:240px}
@@ -544,6 +558,7 @@
 
   @media(min-width:960px){
     body{max-width:1180px;padding:1.75rem 2rem}
+    .stat-grid{grid-template-columns:repeat(6,1fr)}
     .live-chart-canvas-box{height:320px}
     #log-box{height:280px;font-size:.78rem}
     .export-options{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:1rem 1.5rem}
@@ -667,15 +682,29 @@
       <div class="stat-label">Last CLAP</div>
       <div class="stat-value" id="stat-clap" style="font-size:.85rem">—</div>
     </div>
+    <div class="stat">
+      <div class="stat-label">Spectrum</div>
+      <div class="stat-value" id="stat-spectrum">—</div>
+      <div class="spectrum-bar" id="stat-spectrum-bar" aria-hidden="true">
+        <span class="band-dark" style="width:0%"></span>
+        <span class="band-mid" style="width:0%"></span>
+        <span class="band-bright" style="width:0%"></span>
+      </div>
+      <div class="stat-hint">Frequency balance (A-weighted), not a sound type</div>
+    </div>
   </div>
 
   <div class="live-chart-wrap">
     <div class="live-chart-meta">
       <div class="live-chart-note">
-        Rolling 2&nbsp;min · Gate L90 is post-HPF unweighted dBFS + 120 (relative)
+        Rolling 2&nbsp;min · Gate L90 is post-HPF unweighted dBFS + 120 (relative) ·
+        dBA colored by spectrum (A-weighted)
       </div>
       <div class="live-chart-legend">
-        <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
+        <span><i class="swatch line spectrum-grad" aria-hidden="true"></i>dBA by spectrum</span>
+        <span><i class="swatch spectrum-dark" aria-hidden="true"></i>Dark</span>
+        <span><i class="swatch spectrum-mid" aria-hidden="true"></i>Mid</span>
+        <span><i class="swatch spectrum-bright" aria-hidden="true"></i>Bright</span>
         <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
         <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
         <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
@@ -884,9 +913,12 @@
     <div id="ov-status" class="inline-status"></div>
     <div class="impact-grid" id="ov-impact"></div>
     <div class="impact-grid" id="ov-labels" style="grid-template-columns:1fr 1fr"></div>
-    <div class="overview-chart-note">2&nbsp;min window · follows scrub / playback · local time ({{ site_timezone }})</div>
+    <div class="overview-chart-note">2&nbsp;min window · follows scrub / playback · local time ({{ site_timezone }}) · dBA colored by spectrum (A-weighted)</div>
     <div class="live-chart-legend" style="margin-bottom:.45rem">
-      <span><i class="swatch line" style="background:#0ea5e9"></i>dBA</span>
+      <span><i class="swatch line spectrum-grad" aria-hidden="true"></i>dBA by spectrum</span>
+      <span><i class="swatch spectrum-dark" aria-hidden="true"></i>Dark</span>
+      <span><i class="swatch spectrum-mid" aria-hidden="true"></i>Mid</span>
+      <span><i class="swatch spectrum-bright" aria-hidden="true"></i>Bright</span>
       <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
       <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
       <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
@@ -1226,6 +1258,7 @@ function applyLoudnessDatasetColors(chart) {
   if (!chart || !chart.data || !chart.data.datasets) return;
   const ds = chart.data.datasets;
   if (ds[0]) {
+    // Accent is fallback when a segment has no centroid; segment.borderColor wins per edge.
     ds[0].borderColor = cssVar('--accent');
     if (ds[0].backgroundColor) ds[0].backgroundColor = cssVar('--accent-soft');
   }
@@ -1240,6 +1273,94 @@ function applyLoudnessDatasetColors(chart) {
     ds[3].borderColor = cssVar('--clap-border');
     ds[3].pointLabelColor = cssVar('--clap-label');
   }
+}
+
+const SPECTRUM_COLORS = { dark: '#6366F1', mid: '#10B981', bright: '#EAB308' };
+const SPECTRUM_LABELS = { dark: 'Dark', mid: 'Mid', bright: 'Bright' };
+
+function _hexToRgb(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length !== 6) return null;
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+function lerpColor(a, b, t) {
+  const ca = _hexToRgb(a);
+  const cb = _hexToRgb(b);
+  if (!ca || !cb) return a;
+  const u = Math.max(0, Math.min(1, Number(t) || 0));
+  const r = Math.round(ca.r + (cb.r - ca.r) * u);
+  const g = Math.round(ca.g + (cb.g - ca.g) * u);
+  const bl = Math.round(ca.b + (cb.b - ca.b) * u);
+  return `#${[r, g, bl].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function hzToColor(centroidHz) {
+  const hz = Number(centroidHz);
+  if (!Number.isFinite(hz) || hz <= 0) return cssVar('--accent');
+  const lo = Math.log10(80);
+  const hi = Math.log10(8000);
+  const t = Math.max(0, Math.min(1, (Math.log10(Math.max(hz, 1)) - lo) / (hi - lo)));
+  if (t < 0.5) return lerpColor(SPECTRUM_COLORS.dark, SPECTRUM_COLORS.mid, t * 2);
+  return lerpColor(SPECTRUM_COLORS.mid, SPECTRUM_COLORS.bright, (t - 0.5) * 2);
+}
+
+function dominantSpectrumBand(bands) {
+  if (!bands || typeof bands !== 'object') return null;
+  let best = null;
+  let bestVal = -1;
+  for (const key of ['dark', 'mid', 'bright']) {
+    const v = Number(bands[key]);
+    if (!Number.isFinite(v)) continue;
+    if (v > bestVal) {
+      bestVal = v;
+      best = key;
+    }
+  }
+  return best;
+}
+
+function spectrumSegmentBorderColor(ctx) {
+  const p0 = ctx.p0 && ctx.p0.raw;
+  const p1 = ctx.p1 && ctx.p1.raw;
+  const hz = (p1 && p1.centroid_hz != null) ? p1.centroid_hz
+    : (p0 && p0.centroid_hz != null) ? p0.centroid_hz : null;
+  if (hz == null || !Number.isFinite(Number(hz))) return cssVar('--accent');
+  return hzToColor(hz);
+}
+
+function setSpectrumBarWidths(barEl, bands) {
+  if (!barEl) return;
+  const dark = Math.max(0, Number(bands && bands.dark) || 0);
+  const mid = Math.max(0, Number(bands && bands.mid) || 0);
+  const bright = Math.max(0, Number(bands && bands.bright) || 0);
+  const total = dark + mid + bright;
+  const darkEl = barEl.querySelector('.band-dark');
+  const midEl = barEl.querySelector('.band-mid');
+  const brightEl = barEl.querySelector('.band-bright');
+  if (!total) {
+    if (darkEl) darkEl.style.width = '0%';
+    if (midEl) midEl.style.width = '0%';
+    if (brightEl) brightEl.style.width = '0%';
+    return;
+  }
+  if (darkEl) darkEl.style.width = `${(100 * dark / total).toFixed(1)}%`;
+  if (midEl) midEl.style.width = `${(100 * mid / total).toFixed(1)}%`;
+  if (brightEl) brightEl.style.width = `${(100 * bright / total).toFixed(1)}%`;
+}
+
+function updateSpectrumWidget(bands) {
+  const valueEl = document.getElementById('stat-spectrum');
+  const barEl = document.getElementById('stat-spectrum-bar');
+  const dominant = dominantSpectrumBand(bands);
+  if (valueEl) {
+    valueEl.textContent = dominant ? SPECTRUM_LABELS[dominant].toUpperCase() : '—';
+  }
+  setSpectrumBarWidths(barEl, dominant ? bands : null);
 }
 
 function refreshChartsForColorMode() {
@@ -1780,6 +1901,7 @@ function ensureLoudnessChart() {
           pointRadius: 0,
           tension: 0.15,
           spanGaps: true,
+          segment: { borderColor: spectrumSegmentBorderColor },
         },
         {
           label: 'Gate L90 (rel.)',
@@ -1837,7 +1959,11 @@ function ensureLoudnessChart() {
               const raw = ctx.raw || {};
               const y = ctx.parsed.y;
               const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
-              return raw.label ? `${base} · ${raw.label}` : base;
+              if (raw.label) return `${base} · ${raw.label}`;
+              if (ctx.dataset.label === 'dBA' && raw.centroid_hz != null && Number.isFinite(Number(raw.centroid_hz))) {
+                return `${base} · ${Math.round(Number(raw.centroid_hz))} Hz`;
+              }
+              return base;
             },
           },
         },
@@ -1878,6 +2004,7 @@ function clearLoudnessChart() {
   chart.update('none');
   const clapEl = document.getElementById('stat-clap');
   if (clapEl) clapEl.textContent = '—';
+  updateSpectrumWidget(null);
 }
 
 function updateLoudnessChart(payload) {
@@ -1901,7 +2028,13 @@ function updateLoudnessChart(payload) {
   for (const p of points) {
     const x = Date.parse(p.t);
     if (!Number.isFinite(x)) continue;
-    if (p.dba != null) dba.push({ x, y: p.dba });
+    if (p.dba != null) {
+      const pt = { x, y: p.dba };
+      if (p.centroid_hz != null && Number.isFinite(Number(p.centroid_hz))) {
+        pt.centroid_hz = Number(p.centroid_hz);
+      }
+      dba.push(pt);
+    }
     if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
   }
   const yam = yamnetChangeMarkers(points);
@@ -1971,6 +2104,7 @@ async function pollStatus() {
       if (elapsedEl) elapsedEl.textContent = fmtElapsed(d.elapsed_s);
       if (labelEl) labelEl.textContent = d.last_label || '—';
       if (dbaEl) dbaEl.textContent = d.last_dba || '—';
+      updateSpectrumWidget(d.last_spectrum_bands || null);
       if (!d.recording) clearLoudnessChart();
     }
     if (seriesRes.ok) {
@@ -2287,6 +2421,7 @@ function ensureOverviewChart() {
           pointRadius: 0,
           tension: 0.15,
           spanGaps: true,
+          segment: { borderColor: spectrumSegmentBorderColor },
         },
         {
           label: 'Gate L90 (rel.)',
@@ -2347,7 +2482,11 @@ function ensureOverviewChart() {
               const raw = ctx.raw || {};
               const y = ctx.parsed.y;
               const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
-              return raw.label ? `${base} · ${raw.label}` : base;
+              if (raw.label) return `${base} · ${raw.label}`;
+              if (ctx.dataset.label === 'dBA' && raw.centroid_hz != null && Number.isFinite(Number(raw.centroid_hz))) {
+                return `${base} · ${Math.round(Number(raw.centroid_hz))} Hz`;
+              }
+              return base;
             },
           },
         },
@@ -2448,23 +2587,6 @@ function updateOverviewChartWindow(playheadMs) {
   }
 }
 
-function renderOverviewDetail(idx) {
-  const p = overviewScrubPoints[idx];
-  if (!p || !ovDetail) return;
-  const tMs = Date.parse(p.t);
-  const tLabel = Number.isFinite(tMs) ? fmtSiteDateTime(tMs) : (p.t || '—');
-  const bits = [
-    `<strong>${tLabel}</strong>`,
-    `dBA ${fmtNum(p.dba)}`,
-    `LAFmax ${fmtNum(p.lafmax)}`,
-    `L90 ${fmtNum(p.l90_rel)}`,
-    p.gated ? 'gated' : (p.yamnet || '—'),
-  ];
-  if (p.clap_status === 'triggered' && p.clap) bits.push(`CLAP ${p.clap}`);
-  else if (p.clap_status) bits.push(`clap:${p.clap_status}`);
-  ovDetail.innerHTML = bits.join(' · ');
-}
-
 function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}) {
   if (!overviewScrubPoints.length) return;
   const idx = nearestScrubIndex(ms);
@@ -2557,7 +2679,13 @@ function buildOverviewSeries(data) {
   for (const p of source) {
     const x = Date.parse(p.t);
     if (!Number.isFinite(x)) continue;
-    if (p.dba != null) dba.push({ x, y: p.dba });
+    if (p.dba != null) {
+      const pt = { x, y: p.dba };
+      if (p.centroid_hz != null && Number.isFinite(Number(p.centroid_hz))) {
+        pt.centroid_hz = Number(p.centroid_hz);
+      }
+      dba.push(pt);
+    }
     if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
   }
   const yam = (data.yamnet_markers || []).map((m) => ({
@@ -2570,6 +2698,35 @@ function buildOverviewSeries(data) {
     return marker;
   }).filter((m) => Number.isFinite(m.x));
   overviewSeries = { dba, l90, yam, clap };
+}
+
+function renderOverviewDetail(idx) {
+  const p = overviewScrubPoints[idx];
+  if (!p || !ovDetail) return;
+  const tMs = Date.parse(p.t);
+  const tLabel = Number.isFinite(tMs) ? fmtSiteDateTime(tMs) : (p.t || '—');
+  const bits = [
+    `<strong>${tLabel}</strong>`,
+    `dBA ${fmtNum(p.dba)}`,
+    `LAFmax ${fmtNum(p.lafmax)}`,
+    `L90 ${fmtNum(p.l90_rel)}`,
+    p.gated ? 'gated' : (p.yamnet || '—'),
+  ];
+  if (p.clap_status === 'triggered' && p.clap) bits.push(`CLAP ${p.clap}`);
+  else if (p.clap_status) bits.push(`clap:${p.clap_status}`);
+  const dominant = dominantSpectrumBand(p.spectrum_bands);
+  if (dominant) {
+    const bands = p.spectrum_bands;
+    bits.push(
+      `<span class="overview-spectrum">Spectrum <strong>${SPECTRUM_LABELS[dominant]}</strong>` +
+      `<span class="spectrum-bar" aria-hidden="true">` +
+      `<span class="band-dark" style="width:${Math.max(0, Number(bands.dark) || 0)}%"></span>` +
+      `<span class="band-mid" style="width:${Math.max(0, Number(bands.mid) || 0)}%"></span>` +
+      `<span class="band-bright" style="width:${Math.max(0, Number(bands.bright) || 0)}%"></span>` +
+      `</span></span>`
+    );
+  }
+  ovDetail.innerHTML = bits.join(' · ');
 }
 
 function setupOverviewAudio(data) {

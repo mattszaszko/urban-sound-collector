@@ -101,7 +101,7 @@ def slim_event_point(event: dict, *, calib_offset: float = DEFAULT_CALIB_OFFSET)
     except (TypeError, ValueError):
         chunk_i = None
 
-    return {
+    point: dict[str, Any] = {
         "t": created,
         "chunk_index": chunk_i,
         "dba": dba,
@@ -114,6 +114,32 @@ def slim_event_point(event: dict, *, calib_offset: float = DEFAULT_CALIB_OFFSET)
         "clap": clap_label,
         "clap_event_seconds": clap_event_seconds,
     }
+
+    # Compact A-weighted spectrum for chart coloring / Spectrum widget (timbre, not ML labels).
+    spectrum = event.get("spectrum")
+    if isinstance(spectrum, dict):
+        a_metrics = spectrum.get("a")
+        if isinstance(a_metrics, dict):
+            raw_centroid = a_metrics.get("centroid_hz")
+            try:
+                if raw_centroid is not None:
+                    point["centroid_hz"] = float(raw_centroid)
+            except (TypeError, ValueError):
+                pass
+            energy = a_metrics.get("energy_pct")
+            if isinstance(energy, dict):
+                bands: dict[str, float] = {}
+                for src_key, dest_key in (("low", "dark"), ("mid", "mid"), ("high", "bright")):
+                    raw_pct = energy.get(src_key)
+                    try:
+                        if raw_pct is not None:
+                            bands[dest_key] = float(raw_pct)
+                    except (TypeError, ValueError):
+                        continue
+                if bands:
+                    point["spectrum_bands"] = bands
+
+    return point
 
 
 def yamnet_change_markers(points: list[dict]) -> list[dict]:
