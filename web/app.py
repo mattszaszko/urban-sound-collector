@@ -1445,6 +1445,31 @@ async def api_recordings_report(request: Request):
     )
 
 
+def _delete_recording_by_name(filename: str) -> dict[str, str]:
+    """Delete a JSONL (+ sibling WAV). Returns {name, status} or {name, status, error}."""
+    name = (filename or "").strip()
+    if not name.lower().endswith(".jsonl"):
+        return {"name": name, "status": "error", "error": "bad_request"}
+    path = _safe_recordings_path(name)
+    if path is None:
+        return {"name": name, "status": "error", "error": "bad_request"}
+    if not path.exists() or not path.is_file():
+        return {"name": name, "status": "error", "error": "not_found"}
+
+    active = _active_output_path()
+    if active is not None and path.resolve() == active:
+        return {"name": name, "status": "error", "error": "recording_in_use"}
+
+    wav_path = path.with_suffix(".wav")
+    try:
+        path.unlink()
+        if wav_path.is_file():
+            wav_path.unlink()
+    except OSError:
+        return {"name": name, "status": "error", "error": "bad_request"}
+    return {"name": name, "status": "deleted"}
+
+
 @app.post("/api/recordings/delete")
 async def api_recordings_delete(
     request: Request,
@@ -1454,28 +1479,81 @@ async def api_recordings_delete(
     if blocked:
         return blocked
 
-    if not filename.lower().endswith(".jsonl"):
-        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+    result = _delete_recording_by_name(filename)
+    if result.get("status") == "deleted":
+        return RedirectResponse("/?tab=data", status_code=303)
+    err = result.get("error") or "bad_request"
+    return RedirectResponse(f"/?tab=data&error={err}", status_code=303)
 
-    path = _safe_recordings_path(filename)
-    if path is None:
-        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
-    if not path.exists() or not path.is_file():
-        return RedirectResponse("/?tab=data&error=not_found", status_code=303)
 
-    active = _active_output_path()
-    if active is not None and path.resolve() == active:
-        return RedirectResponse("/?tab=data&error=recording_in_use", status_code=303)
+@app.post("/api/recordings/delete-bulk")
+async def api_recordings_delete_bulk(request: Request):
+    """Admin-only bulk delete; requires re-typing the admin password."""
+    denied = _require_admin_json(request)
+    if denied:
+        return denied
 
-    wav_path = path.with_suffix(".wav")
     try:
-        path.unlink()
-        if wav_path.is_file():
-            wav_path.unlink()
-    except OSError:
-        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
 
-    return RedirectResponse("/?tab=data", status_code=303)
+    password = body.get("password")
+    if not isinstance(password, str) or verify_login("admin", password) is None:
+        return JSONResponse(
+            {"ok": False, "error": "bad_password", "message": "Incorrect admin password"},
+            status_code=403,
+        )
+
+    files_raw = body.get("files") or []
+    if not isinstance(files_raw, list) or not files_raw:
+        return JSONResponse(
+            {"ok": False, "error": "no_files", "message": "No recordings selected"},
+            status_code=400,
+        )
+    if len(files_raw) > 64:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "too_many_files",
+                "message": "Too many recordings (max 64). Select fewer files.",
+            },
+            status_code=400,
+        )
+
+    deleted: list[str] = []
+    failed: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw_name in files_raw:
+        if not isinstance(raw_name, str):
+            failed.append({"name": str(raw_name), "error": "bad_request"})
+            continue
+        name = raw_name.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        result = _delete_recording_by_name(name)
+        if result.get("status") == "deleted":
+            deleted.append(name)
+        else:
+            failed.append(
+                {
+                    "name": name,
+                    "error": str(result.get("error") or "bad_request"),
+                }
+            )
+
+    return JSONResponse(
+        {
+            "ok": len(failed) == 0,
+            "deleted": deleted,
+            "failed": failed,
+            "deleted_count": len(deleted),
+            "failed_count": len(failed),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------

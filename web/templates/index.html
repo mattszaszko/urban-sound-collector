@@ -405,6 +405,32 @@
   .data-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
                 margin-bottom:.85rem}
   .data-toolbar .btn{width:auto;margin:0;padding:.45rem .85rem;font-size:.8rem}
+  .data-toolbar .btn-danger-sm{background:transparent;color:var(--red);
+    border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:inherit;
+    font-weight:600;width:auto;margin:0;padding:.45rem .85rem;font-size:.8rem}
+  .data-toolbar .btn-danger-sm:hover:not(:disabled){border-color:var(--red)}
+  .data-toolbar .btn-danger-sm:disabled{opacity:.45;cursor:not-allowed}
+  #bulk-delete-overlay{display:none;position:fixed;inset:0;z-index:1000;
+    background:var(--overlay);align-items:center;justify-content:center;padding:1rem}
+  #bulk-delete-overlay.active{display:flex}
+  .bulk-delete-panel{background:var(--surface);border:1px solid var(--border);
+    border-radius:12px;padding:1.25rem 1.35rem;max-width:26rem;width:100%;
+    box-shadow:0 12px 36px rgba(0,0,0,.35)}
+  .bulk-delete-panel h3{font-size:1.05rem;margin-bottom:.55rem;color:var(--red)}
+  .bulk-delete-panel p{font-size:.85rem;color:var(--muted);line-height:1.45;margin-bottom:.85rem}
+  .bulk-delete-panel label{margin-top:.35rem}
+  .bulk-delete-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem}
+  .bulk-delete-actions .btn,
+  .bulk-delete-actions .btn-danger-sm{width:auto;margin:0;flex:1 1 8rem}
+  .bulk-delete-actions .btn-cancel{background:var(--bg);color:var(--text);
+    border:1px solid var(--border);border-radius:8px;padding:.65rem 1rem;
+    font-weight:600;cursor:pointer;font-family:inherit;font-size:.9rem}
+  .bulk-delete-actions .btn-cancel:hover{border-color:var(--accent)}
+  .bulk-delete-actions .btn-confirm-delete{background:var(--stop-bg);color:#fff;
+    border:none;border-radius:8px;padding:.65rem 1rem;font-weight:600;cursor:pointer;
+    font-family:inherit;font-size:.9rem}
+  .bulk-delete-actions .btn-confirm-delete:hover{background:var(--stop-bg-hover)}
+  .bulk-delete-actions .btn-confirm-delete:disabled{opacity:.55;cursor:not-allowed}
   .disk-meter{font-size:.78rem;color:var(--muted);margin:.15rem 0 .85rem;line-height:1.4}
   .disk-meter.ok{color:var(--muted)}
   .disk-meter.warn{color:var(--yellow)}
@@ -816,6 +842,20 @@
 
 </div><!-- /panel-record -->
 
+<div id="bulk-delete-overlay" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-title" hidden>
+  <div class="bulk-delete-panel">
+    <h3 id="bulk-delete-title">Delete selected recordings?</h3>
+    <p id="bulk-delete-summary">This permanently removes the selected JSONL files and any sibling WAVs.</p>
+    <label for="bulk-delete-password">Admin password</label>
+    <input type="password" id="bulk-delete-password" autocomplete="current-password" placeholder="Type admin password to confirm">
+    <div id="bulk-delete-error" class="inline-status err" style="margin-top:.55rem"></div>
+    <div class="bulk-delete-actions">
+      <button type="button" class="btn-cancel" id="bulk-delete-cancel">Cancel</button>
+      <button type="button" class="btn-confirm-delete" id="bulk-delete-confirm">Delete permanently</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── DATA TAB ── -->
 <div class="tab-panel" id="panel-data" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
 <div class="card">
@@ -834,6 +874,7 @@
       <div>Select all</div>
     </label>
     <button type="button" class="btn" id="generate-report-btn" disabled>Generate report</button>
+    <button type="button" class="btn-danger-sm" id="bulk-delete-btn" disabled>Delete selected</button>
   </div>
   <div class="report-options" id="report-options">
     <div class="export-title">Report options</div>
@@ -1708,6 +1749,8 @@ function applyViewerLocks() {
   document.querySelectorAll('.recording-actions form[action="/api/recordings/delete"] button').forEach((btn) => {
     lockForViewer(btn);
   });
+  const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+  if (bulkDeleteBtn) lockForViewer(bulkDeleteBtn);
 
   document.querySelectorAll('#prompts-tbody input, #prompts-tbody button').forEach((el) => {
     lockForViewer(el, { block: el.tagName === 'INPUT' });
@@ -3091,6 +3134,13 @@ if (ANALYZE_RECORDING) {
 
 // ── Multi-recording report dashboard ────────────────────────────────────
 const generateReportBtn = document.getElementById('generate-report-btn');
+const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+const bulkDeleteOverlay = document.getElementById('bulk-delete-overlay');
+const bulkDeleteSummary = document.getElementById('bulk-delete-summary');
+const bulkDeletePassword = document.getElementById('bulk-delete-password');
+const bulkDeleteError = document.getElementById('bulk-delete-error');
+const bulkDeleteCancel = document.getElementById('bulk-delete-cancel');
+const bulkDeleteConfirm = document.getElementById('bulk-delete-confirm');
 const recordingsSelectAll = document.getElementById('recordings-select-all');
 const REPORT_OPTIONS_KEY = 'usc-report-options';
 
@@ -3114,8 +3164,114 @@ function selectedRecordingNames() {
 }
 
 function syncReportButton() {
-  if (!generateReportBtn) return;
-  generateReportBtn.disabled = selectedRecordingNames().length === 0;
+  const n = selectedRecordingNames().length;
+  if (generateReportBtn) generateReportBtn.disabled = n === 0;
+  if (bulkDeleteBtn) bulkDeleteBtn.disabled = n === 0 || IS_VIEWER;
+}
+
+function closeBulkDeleteDialog() {
+  if (!bulkDeleteOverlay) return;
+  bulkDeleteOverlay.classList.remove('active');
+  bulkDeleteOverlay.hidden = true;
+  if (bulkDeletePassword) bulkDeletePassword.value = '';
+  if (bulkDeleteError) {
+    bulkDeleteError.textContent = '';
+    bulkDeleteError.classList.remove('ok', 'err');
+  }
+  if (bulkDeleteConfirm) {
+    bulkDeleteConfirm.disabled = false;
+    bulkDeleteConfirm.textContent = 'Delete permanently';
+  }
+}
+
+function openBulkDeleteDialog() {
+  if (guardViewerAction()) return;
+  const names = selectedRecordingNames();
+  if (!names.length || !bulkDeleteOverlay) return;
+  const wavCount = names.reduce((acc, name) => {
+    const row = document.querySelector(`.recording-row[data-recording-name="${CSS.escape(name)}"]`);
+    return acc + (row && row.getAttribute('data-has-wav') === '1' ? 1 : 0);
+  }, 0);
+  if (bulkDeleteSummary) {
+    bulkDeleteSummary.textContent =
+      `Permanently delete ${names.length} recording${names.length === 1 ? '' : 's'}` +
+      (wavCount ? ` (including ${wavCount} WAV file${wavCount === 1 ? '' : 's'})` : '') +
+      '. This cannot be undone.';
+  }
+  if (bulkDeletePassword) bulkDeletePassword.value = '';
+  if (bulkDeleteError) {
+    bulkDeleteError.textContent = '';
+    bulkDeleteError.classList.remove('ok', 'err');
+  }
+  bulkDeleteOverlay.hidden = false;
+  bulkDeleteOverlay.classList.add('active');
+  if (bulkDeletePassword) bulkDeletePassword.focus();
+}
+
+async function submitBulkDelete() {
+  if (guardViewerAction()) return;
+  const names = selectedRecordingNames();
+  const password = bulkDeletePassword ? bulkDeletePassword.value : '';
+  if (!names.length) {
+    closeBulkDeleteDialog();
+    return;
+  }
+  if (!password) {
+    if (bulkDeleteError) {
+      bulkDeleteError.textContent = 'Enter the admin password to confirm.';
+      bulkDeleteError.classList.add('err');
+    }
+    if (bulkDeletePassword) bulkDeletePassword.focus();
+    return;
+  }
+  if (bulkDeleteConfirm) {
+    bulkDeleteConfirm.disabled = true;
+    bulkDeleteConfirm.textContent = 'Deleting…';
+  }
+  if (bulkDeleteError) {
+    bulkDeleteError.textContent = '';
+    bulkDeleteError.classList.remove('ok', 'err');
+  }
+  const { ok, status, data } = await apiFetch('/api/recordings/delete-bulk', {
+    method: 'POST',
+    body: JSON.stringify({ files: names, password }),
+  });
+  if (ok && data && data.failed_count === 0) {
+    window.location.href = '/?tab=data';
+    return;
+  }
+  if (status === 403 && data && data.error === 'bad_password') {
+    if (bulkDeleteError) {
+      bulkDeleteError.textContent = 'Incorrect admin password.';
+      bulkDeleteError.classList.add('err');
+    }
+    if (bulkDeletePassword) {
+      bulkDeletePassword.value = '';
+      bulkDeletePassword.focus();
+    }
+  } else if (data && Array.isArray(data.failed) && data.failed.length) {
+    const bits = data.failed.slice(0, 4).map((f) => `${f.name}: ${f.error}`);
+    if (bulkDeleteError) {
+      bulkDeleteError.textContent =
+        `Deleted ${data.deleted_count || 0}. Failed: ${bits.join('; ')}` +
+        (data.failed.length > 4 ? '…' : '');
+      bulkDeleteError.classList.add('err');
+    }
+    if ((data.deleted_count || 0) > 0) {
+      // Partial success — refresh so removed rows disappear.
+      setTimeout(() => { window.location.href = '/?tab=data'; }, 1600);
+      return;
+    }
+  } else {
+    if (bulkDeleteError) {
+      bulkDeleteError.textContent = (data && (data.message || data.error)) || 'Bulk delete failed.';
+      bulkDeleteError.classList.add('err');
+    }
+  }
+  if (bulkDeleteConfirm) {
+    bulkDeleteConfirm.disabled = false;
+    bulkDeleteConfirm.textContent = 'Delete permanently';
+  }
 }
 
 function syncThresholdModeFields() {
@@ -3245,6 +3401,36 @@ if (generateReportBtn) {
     window.location.href = `/report?${params.toString()}`;
   });
 }
+if (bulkDeleteBtn) {
+  bulkDeleteBtn.addEventListener('click', () => openBulkDeleteDialog());
+}
+if (bulkDeleteCancel) {
+  bulkDeleteCancel.addEventListener('click', () => closeBulkDeleteDialog());
+}
+if (bulkDeleteConfirm) {
+  bulkDeleteConfirm.addEventListener('click', () => { submitBulkDelete(); });
+}
+if (bulkDeletePassword) {
+  bulkDeletePassword.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitBulkDelete();
+    } else if (e.key === 'Escape') {
+      closeBulkDeleteDialog();
+    }
+  });
+}
+if (bulkDeleteOverlay) {
+  bulkDeleteOverlay.addEventListener('click', (e) => {
+    if (e.target === bulkDeleteOverlay) closeBulkDeleteDialog();
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (bulkDeleteOverlay && bulkDeleteOverlay.classList.contains('active')) {
+    closeBulkDeleteDialog();
+  }
+});
 syncReportButton();
 
 function fmtReportDb(v) {
