@@ -53,6 +53,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 RECORDINGS_DIR = REPO_ROOT / "recordings"
 LOGS_DIR = REPO_ROOT / "logs"
+ENV_PATH = REPO_ROOT / ".env"
 MAIN_PY = REPO_ROOT / "main.py"
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 VENV_PYTHON_WIN = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
@@ -86,8 +87,19 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip()
 SITE_TIMEZONE = os.environ.get("SITE_TIMEZONE", DEFAULT_SITE_TIMEZONE).strip() or DEFAULT_SITE_TIMEZONE
 SHUTDOWN_GRACE_SEC = max(15, int(os.environ.get("SHUTDOWN_GRACE_SEC", "60")))
 
+
+def _parse_display_db_offset(raw: object) -> float:
+    try:
+        return max(-40.0, min(40.0, float(raw)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+DISPLAY_DB_OFFSET = _parse_display_db_offset(os.environ.get("DISPLAY_DB_OFFSET", "0"))
+
 os.environ["SECRET_KEY"] = SECRET_KEY
 os.environ["USC_PASSWORD"] = PASSWORD
+os.environ["DISPLAY_DB_OFFSET"] = str(DISPLAY_DB_OFFSET)
 if VIEWER_PASSWORD:
     os.environ["USC_VIEWER_PASSWORD"] = VIEWER_PASSWORD
 else:
@@ -239,7 +251,73 @@ def _parse_event_time(created_at: object) -> datetime | None:
 
 def _slim_series_point(event: dict, *, calib_offset: float) -> dict | None:
     """Project a JSONL event into a chart-friendly point."""
-    return slim_event_point(event, calib_offset=calib_offset)
+    return slim_event_point(
+        event,
+        calib_offset=calib_offset,
+        display_db_offset=float(DISPLAY_DB_OFFSET),
+    )
+
+
+def _shift_slim_db_levels(points: list[dict], offset: float) -> list[dict]:
+    """Return slim points with dba/lafmax shifted (raw cache stays unshifted)."""
+    if not offset or not points:
+        return points
+    out: list[dict] = []
+    for p in points:
+        q = dict(p)
+        if q.get("dba") is not None:
+            try:
+                q["dba"] = round(float(q["dba"]) + offset, 1)
+            except (TypeError, ValueError):
+                pass
+        if q.get("lafmax") is not None:
+            try:
+                q["lafmax"] = round(float(q["lafmax"]) + offset, 1)
+            except (TypeError, ValueError):
+                pass
+        out.append(q)
+    return out
+
+
+def _upsert_env_value(key: str, value: str) -> None:
+    """Create or replace ``key=value`` in the repo ``.env`` file."""
+    path = ENV_PATH
+    lines: list[str] = []
+    if path.is_file():
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        except OSError:
+            lines = []
+    prefix = f"{key}="
+    found = False
+    out: list[str] = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith(prefix) or stripped.startswith(f"{key} ="):
+            out.append(f"{key}={value}\n")
+            found = True
+        else:
+            out.append(line if line.endswith("\n") else f"{line}\n")
+    if not found:
+        if out and not out[-1].endswith("\n"):
+            out[-1] = f"{out[-1]}\n"
+        if out and out[-1].strip():
+            out.append("\n")
+        out.append(
+            f"# Display-only dBA/LAFmax offset (not written into JSONL)\n{key}={value}\n"
+        )
+    path.write_text("".join(out), encoding="utf-8")
+
+
+def _set_display_db_offset(value: float) -> float:
+    """Persist and activate a new display offset; returns the clamped value."""
+    global DISPLAY_DB_OFFSET
+    offset = _parse_display_db_offset(value)
+    DISPLAY_DB_OFFSET = offset
+    os.environ["DISPLAY_DB_OFFSET"] = str(offset)
+    _upsert_env_value("DISPLAY_DB_OFFSET", str(offset))
+    return offset
+
 
 def _status_series(*, window_s: int = 120) -> dict:
     """Build a slim rolling series for the live loudness chart."""
@@ -252,6 +330,7 @@ def _status_series(*, window_s: int = 120) -> dict:
             "recording": False,
             "window_s": window_s,
             "calib_offset": calib,
+            "display_db_offset": float(DISPLAY_DB_OFFSET),
             "points": [],
         }
 
@@ -273,6 +352,7 @@ def _status_series(*, window_s: int = 120) -> dict:
         "recording": True,
         "window_s": window_s,
         "calib_offset": calib,
+        "display_db_offset": float(DISPLAY_DB_OFFSET),
         "points": points,
     }
 
@@ -324,7 +404,10 @@ def _get_status() -> dict:
     """Return current collector status dict."""
     proc = _find_collector_process()
     if proc is None:
-        return {"recording": False}
+        return {
+            "recording": False,
+            "display_db_offset": float(DISPLAY_DB_OFFSET),
+        }
 
     # Find the output file from the cmdline
     cmd = proc.cmdline()
@@ -348,12 +431,26 @@ def _get_status() -> dict:
         if last_event:
             chunk_count = last_event.get("chunk_index", 0) + 1
             last_label = last_event.get("top_label")
-            last_dba = last_event.get("dBA_spl")
             recording_id = event_recording_id(last_event)
-            slim = slim_event_point(last_event, calib_offset=float(DEFAULT_CALIB_OFFSET))
+            slim = slim_event_point(
+                last_event,
+                calib_offset=float(DEFAULT_CALIB_OFFSET),
+                display_db_offset=float(DISPLAY_DB_OFFSET),
+            )
             if slim:
+                last_dba = slim.get("dba")
                 last_centroid_hz = slim.get("centroid_hz")
                 last_spectrum_bands = slim.get("spectrum_bands")
+            else:
+                raw_dba = last_event.get("dBA_spl")
+                try:
+                    last_dba = (
+                        round(float(raw_dba) + float(DISPLAY_DB_OFFSET), 1)
+                        if raw_dba is not None
+                        else None
+                    )
+                except (TypeError, ValueError):
+                    last_dba = raw_dba
         first_event = _read_jsonl_event(output_path, last=False)
         if first_event:
             started_at = first_event.get("created_at")
@@ -383,6 +480,7 @@ def _get_status() -> dict:
         "elapsed_s": elapsed_s,
         "started_at": started_at,
         "recording_id": recording_id,
+        "display_db_offset": float(DISPLAY_DB_OFFSET),
     }
 
 
@@ -600,7 +698,12 @@ def _cached_slim_points(path: Path, *, events: list[dict] | None = None) -> list
         if hit is not None and hit[0] == mtime:
             return hit[1]
     src = events if events is not None else _iter_jsonl_events(path)
-    slim = slim_points_from_events(src, calib_offset=float(DEFAULT_CALIB_OFFSET))
+    # Cache raw levels; display offset is applied at serve time so Settings changes apply immediately.
+    slim = slim_points_from_events(
+        src,
+        calib_offset=float(DEFAULT_CALIB_OFFSET),
+        display_db_offset=0.0,
+    )
     with _slim_points_cache_lock:
         _slim_points_cache[key] = (mtime, slim)
         # Bound cache size on multi-recording Pis.
@@ -627,6 +730,7 @@ def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
         recording_active=recording_active,
         loud_threshold=loud_threshold,
         calib_offset=float(DEFAULT_CALIB_OFFSET),
+        display_db_offset=float(DISPLAY_DB_OFFSET),
     )
 
 
@@ -636,12 +740,14 @@ def _recording_overview_series_payload(
     center_ms: float,
     window_s: float,
 ) -> dict:
-    slim = _cached_slim_points(path)
-    return build_overview_window_series(
+    slim = _shift_slim_db_levels(_cached_slim_points(path), float(DISPLAY_DB_OFFSET))
+    payload = build_overview_window_series(
         slim,
         center_ms=center_ms,
         window_s=window_s,
     )
+    payload["display_db_offset"] = float(DISPLAY_DB_OFFSET)
+    return payload
 
 
 # Fields required for report aggregation (spectrum etc. are dropped to save RAM).
@@ -812,6 +918,7 @@ def _build_report_ndjson(
                 threshold_mode=threshold_mode,
                 threshold_db=threshold_db,
                 l90_offset_db=l90_offset_db,
+                display_db_offset=float(DISPLAY_DB_OFFSET),
             )
         except MemoryError:
             yield _line(
@@ -931,6 +1038,7 @@ def _index_context(
         default_alsa_device=DEFAULT_ALSA_DEVICE,
         default_recording_name=_default_recording_name(),
         default_gate_sensitivity_db=DEFAULT_GATE_SENSITIVITY_DB,
+        display_db_offset=DISPLAY_DB_OFFSET,
         device_id=DEFAULT_DEVICE_ID,
         pi_hostname=hostname(),
         site_label=SITE_LABEL,
@@ -1151,6 +1259,37 @@ async def api_status_series(request: Request):
     except (TypeError, ValueError):
         window_s = 120
     return JSONResponse(_status_series(window_s=window_s))
+
+
+@app.get("/api/settings/display-db-offset")
+async def api_get_display_db_offset(request: Request):
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    return JSONResponse(
+        {"ok": True, "display_db_offset": float(DISPLAY_DB_OFFSET)}
+    )
+
+
+@app.put("/api/settings/display-db-offset")
+async def api_put_display_db_offset(request: Request):
+    denied = _require_admin_json(request)
+    if denied:
+        return denied
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    raw = body.get("display_db_offset", body.get("offset"))
+    try:
+        offset = _set_display_db_offset(float(raw))
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"ok": False, "error": "bad_request", "message": "Invalid offset"},
+            status_code=400,
+        )
+    return JSONResponse({"ok": True, "display_db_offset": offset})
 
 
 # ---------------------------------------------------------------------------

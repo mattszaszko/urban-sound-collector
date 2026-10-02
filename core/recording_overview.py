@@ -42,8 +42,17 @@ def loud_disturbance_stats(
     return loud, round(100.0 * loud / len(lafmax_values), 1)
 
 
-def slim_event_point(event: dict, *, calib_offset: float = DEFAULT_CALIB_OFFSET) -> dict | None:
-    """Project a JSONL event into a chart/detail point."""
+def slim_event_point(
+    event: dict,
+    *,
+    calib_offset: float = DEFAULT_CALIB_OFFSET,
+    display_db_offset: float = 0.0,
+) -> dict | None:
+    """Project a JSONL event into a chart/detail point.
+
+    ``display_db_offset`` shifts ``dba`` / ``lafmax`` for UI/analysis only
+    (does not mutate the underlying event). Gate L90 relative is unchanged.
+    """
     created = event.get("created_at")
     if not isinstance(created, str):
         return None
@@ -57,6 +66,11 @@ def slim_event_point(event: dict, *, calib_offset: float = DEFAULT_CALIB_OFFSET)
 
     dba = _f("dBA_spl")
     lafmax = _f("LAFmax_dB")
+    if display_db_offset:
+        if dba is not None:
+            dba = round(dba + float(display_db_offset), 1)
+        if lafmax is not None:
+            lafmax = round(lafmax + float(display_db_offset), 1)
 
     prep = event.get("yamnet_preprocess")
     l90_rel = None
@@ -228,11 +242,16 @@ def slim_points_from_events(
     events: list[dict],
     *,
     calib_offset: float = DEFAULT_CALIB_OFFSET,
+    display_db_offset: float = 0.0,
 ) -> list[dict]:
     """Project events to slim chart points (skip rows without ``created_at``)."""
     out: list[dict] = []
     for event in events:
-        slim = slim_event_point(event, calib_offset=calib_offset)
+        slim = slim_event_point(
+            event,
+            calib_offset=calib_offset,
+            display_db_offset=display_db_offset,
+        )
         if slim is not None:
             out.append(slim)
     return out
@@ -285,6 +304,7 @@ def build_recording_overview(
     recording_active: bool,
     loud_threshold: float = DEFAULT_LOUD_THRESHOLD_LAFMAX,
     calib_offset: float = DEFAULT_CALIB_OFFSET,
+    display_db_offset: float = 0.0,
 ) -> dict[str, Any]:
     """Build overview payload from in-memory events (spectrum ignored)."""
     points_full: list[dict] = []
@@ -299,7 +319,11 @@ def build_recording_overview(
     recording_id = None
 
     for event in events:
-        slim = slim_event_point(event, calib_offset=calib_offset)
+        slim = slim_event_point(
+            event,
+            calib_offset=calib_offset,
+            display_db_offset=display_db_offset,
+        )
         if slim is None:
             continue
         points_full.append(slim)
@@ -363,6 +387,7 @@ def build_recording_overview(
         "wav_name": wav_name if has_wav else None,
         "recording_active": bool(recording_active),
         "calib_offset": float(calib_offset),
+        "display_db_offset": float(display_db_offset),
         "summary": {
             "device_id": device_id,
             "recording_id": recording_id,

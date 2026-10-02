@@ -155,6 +155,27 @@ class SpectrumSlimTests(unittest.TestCase):
             {"dark": 35.0, "mid": 48.0, "bright": 17.0},
         )
 
+    def test_display_db_offset_shifts_dba_and_lafmax_only(self) -> None:
+        point = slim_event_point(
+            {
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "dBA_spl": 60.0,
+                "LAFmax_dB": 65.0,
+                "yamnet_preprocess": {
+                    "gated": False,
+                    "gate_open": True,
+                    "ambient_noise_floor_dbfs": -70.0,
+                },
+            },
+            display_db_offset=-5.4,
+        )
+        self.assertIsNotNone(point)
+        assert point is not None
+        self.assertEqual(point["dba"], 54.6)
+        self.assertEqual(point["lafmax"], 59.6)
+        # Gate L90 remains floor + calib, not shifted by display offset.
+        self.assertEqual(point["l90_rel"], 50.0)
+
     def test_missing_spectrum_omits_fields(self) -> None:
         point = slim_event_point(
             {

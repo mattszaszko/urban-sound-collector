@@ -76,15 +76,19 @@ def prepare_chunks(
     label_map: dict[str, Any] | None = None,
     theme_by_label: dict[str, str] | None = None,
     source_file: str | None = None,
+    display_db_offset: float = 0.0,
 ) -> list[AcousticChunk]:
     """Build acoustic timeline chunks (keep quiet/gated rows with valid dBA)."""
     cfg = label_map or load_label_map()
     themes = theme_by_label if theme_by_label is not None else load_display_theme_map()
+    offset = float(display_db_offset or 0.0)
     out: list[AcousticChunk] = []
     for event in events:
         dba = _f(event.get("dBA_spl"))
         if dba is None:
             continue
+        if offset:
+            dba = round(dba + offset, 1)
         created = event.get("created_at")
         dt_utc = parse_created_at_utc(created if isinstance(created, str) else None)
         if dt_utc is None:
@@ -92,13 +96,16 @@ def prepare_chunks(
         dt_local = to_local(dt_utc, zone)
         vote = vote_label_for_event(event, label_map=cfg, theme_by_label=themes)
         device = event.get("device_id")
+        lafmax = _f(event.get("LAFmax_dB"))
+        if lafmax is not None and offset:
+            lafmax = round(lafmax + offset, 1)
         out.append(
             AcousticChunk(
                 created_at=str(created),
                 dt_utc=dt_utc,
                 dt_local=dt_local,
                 dba=dba,
-                lafmax=_f(event.get("LAFmax_dB")),
+                lafmax=lafmax,
                 vote_label=vote,
                 gated=is_yamnet_gated(event),
                 device_id=device if isinstance(device, str) else None,

@@ -458,6 +458,7 @@ def build_dashboard_report(
     threshold_mode: str | None = None,
     threshold_db: float | None = None,
     l90_offset_db: float | None = None,
+    display_db_offset: float = 0.0,
 ) -> dict[str, Any]:
     """
     Build Zone A/B/C payload.
@@ -479,6 +480,7 @@ def build_dashboard_report(
             label_map=label_map,
             theme_by_label=themes,
             source_file=name,
+            display_db_offset=display_db_offset,
         )
         all_chunks.extend(prepared)
         duration_s: float | None = None
@@ -615,6 +617,7 @@ def build_dashboard_report(
         "report_options": seg_meta,
         "tire_hiss": dict(label_map.get("tire_hiss") or {}),
         "acoustic_event_count": len(acoustic_events),
+        "display_db_offset": float(display_db_offset or 0.0),
     }
 
     return {

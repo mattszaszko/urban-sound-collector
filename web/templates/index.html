@@ -732,6 +732,11 @@
     <div class="stat">
       <div class="stat-label">dBA SPL</div>
       <div class="stat-value" id="stat-dba">{{ status.last_dba or '—' }}</div>
+      <div class="stat-hint" id="stat-dba-cal"{% if not display_db_offset %} hidden{% endif %}>
+        {% if display_db_offset %}
+          {% if display_db_offset > 0 %}+{% endif %}{{ '%.1f'|format(display_db_offset) }} dB display cal
+        {% endif %}
+      </div>
     </div>
     <div class="stat">
       <div class="stat-label">Last CLAP</div>
@@ -1185,6 +1190,21 @@
       or when the signal is too cold. AGC tracks the L90 floor. Peak 200&nbsp;ms
       sub-windows and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
     </div>
+
+    <label for="settings-display-db-offset">Display dBA offset (dB)</label>
+    <input type="number" id="settings-display-db-offset" step="0.1" min="-40" max="40"
+           value="{{ display_db_offset }}">
+    <div class="field-note">
+      Added to dBA / LAFmax in the live UI, Inspect, and reports only — raw JSONL
+      values are unchanged. Use to align this Pi with another device
+      (e.g. <code>-5.4</code>). Range ±40. Saved to <code>.env</code> as
+      <code>DISPLAY_DB_OFFSET</code>.
+    </div>
+    <div class="btn-row" style="margin-top:.5rem">
+      <button type="button" class="btn btn-start" id="settings-display-offset-save"
+              style="width:auto;margin:0;max-width:16rem">Save display offset</button>
+    </div>
+    <div class="inline-status" id="settings-display-offset-status"></div>
   </div>
 
   <h2 class="settings-section-title">CLAP settings</h2>
@@ -1680,7 +1700,24 @@ const REPORT_RECORDINGS = {{ report_recordings | tojson }};
 const SITE_TIMEZONE = {{ site_timezone | tojson }};
 const USER_ROLE = {{ user_role | tojson }};
 const IS_VIEWER = USER_ROLE === 'viewer';
+let displayDbOffset = Number({{ display_db_offset | tojson }}) || 0;
 const VIEWER_LOCK_TIP = 'Disabled for viewers';
+
+function formatDisplayCalHint(offset) {
+  const v = Number(offset);
+  if (!Number.isFinite(v) || v === 0) return '';
+  const signed = v > 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
+  return `${signed} dB display cal`;
+}
+
+function syncDisplayCalHint(offset) {
+  displayDbOffset = Number(offset) || 0;
+  const el = document.getElementById('stat-dba-cal');
+  if (!el) return;
+  const text = formatDisplayCalHint(displayDbOffset);
+  el.textContent = text;
+  el.hidden = !text;
+}
 
 function lockForViewer(el, { block = false } = {}) {
   if (!IS_VIEWER || !el) return;
@@ -1723,6 +1760,8 @@ function applyViewerLocks() {
     'settings-device-id',
     'settings-alsa-device',
     'settings-gate-sensitivity',
+    'settings-display-db-offset',
+    'settings-display-offset-save',
     'trig-cooldown',
     'trig-dba',
     'trig-lookback',
@@ -2176,6 +2215,7 @@ async function pollStatus() {
       if (elapsedEl) elapsedEl.textContent = fmtElapsed(d.elapsed_s);
       if (labelEl) labelEl.textContent = d.last_label || '—';
       if (dbaEl) dbaEl.textContent = d.last_dba || '—';
+      if (d.display_db_offset != null) syncDisplayCalHint(d.display_db_offset);
       updateSpectrumWidget(d.last_spectrum_bands || null);
       if (!d.recording) clearLoudnessChart();
     }
@@ -3026,10 +3066,15 @@ async function loadRecordingOverview(name, { loudThreshold } = {}) {
   }
   setInlineStatus(
     ovStatus,
-    data.points_full
-      ? ''
-      : 'Long recording: scrubber is coarse; chart loads full resolution for the visible 2 min window.',
-    data.points_full ? '' : 'ok'
+    [
+      data.points_full
+        ? ''
+        : 'Long recording: scrubber is coarse; chart loads full resolution for the visible 2 min window.',
+      (data.display_db_offset
+        ? formatDisplayCalHint(data.display_db_offset)
+        : ''),
+    ].filter(Boolean).join(' · '),
+    data.points_full && !data.display_db_offset ? '' : 'ok'
   );
 }
 
@@ -5104,6 +5149,44 @@ document.getElementById('catalog-refresh-btn').addEventListener('click', async (
 // Prefetch prompts + triggers data on page load (silent)
 loadPrompts().catch(() => {});
 loadTriggersPanel().catch(() => {});
+
+const displayOffsetInput = document.getElementById('settings-display-db-offset');
+const displayOffsetSave = document.getElementById('settings-display-offset-save');
+const displayOffsetStatus = document.getElementById('settings-display-offset-status');
+if (displayOffsetSave) {
+  displayOffsetSave.addEventListener('click', async () => {
+    if (guardViewerAction()) return;
+    const raw = displayOffsetInput ? parseFloat(displayOffsetInput.value) : 0;
+    if (!Number.isFinite(raw)) {
+      setInlineStatus(displayOffsetStatus, 'Enter a number between -40 and 40.', 'err');
+      return;
+    }
+    setInlineStatus(displayOffsetStatus, 'Saving…');
+    displayOffsetSave.disabled = true;
+    const { ok, data } = await apiFetch('/api/settings/display-db-offset', {
+      method: 'PUT',
+      body: JSON.stringify({ display_db_offset: raw }),
+    });
+    displayOffsetSave.disabled = IS_VIEWER;
+    if (!ok || !data || !data.ok) {
+      setInlineStatus(
+        displayOffsetStatus,
+        (data && (data.message || data.error)) || 'Could not save display offset.',
+        'err'
+      );
+      return;
+    }
+    if (displayOffsetInput) displayOffsetInput.value = String(data.display_db_offset);
+    syncDisplayCalHint(data.display_db_offset);
+    setInlineStatus(
+      displayOffsetStatus,
+      `Saved display offset ${formatDisplayCalHint(data.display_db_offset) || '0.0 dB (off)'}.`,
+      'ok'
+    );
+  });
+}
+syncDisplayCalHint(displayDbOffset);
+
 applyViewerLocks();
 </script>
 </body>

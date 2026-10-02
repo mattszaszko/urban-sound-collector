@@ -18,6 +18,7 @@ noise-site-b.mattszaszko.com  →  tunnel B  →  Pi B  →  localhost:8080
 | **Same Git repo on every Pi** | Code is identical; `.env` differs per device |
 | **Unique `SITE_LABEL` + `PUBLIC_URL`** | So the web UI shows which Pi you are on |
 | **`SITE_TIMEZONE` (IANA)** | Hourly report profiles / night shading (default `Europe/Amsterdam`) |
+| **`DISPLAY_DB_OFFSET` (optional)** | Per-Pi display/analysis dBA offset so devices line up; raw JSONL unchanged |
 
 Data never mixes: each Pi writes only to its own `recordings/` and `logs/` folders.
 

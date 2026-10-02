@@ -241,6 +241,9 @@ One JSON object per line (~1 Hz):
   The web UI maps these A-weighted shares to **Dark / Mid / Bright** (timbre /
   frequency balance — not YAMNet/CLAP sound-type labels) for the Spectrum status
   widget and for coloring the live / Inspect dBA line by spectral centroid.
+- **`DISPLAY_DB_OFFSET`**: per-Pi display/analysis offset (dB) applied only in the
+  web UI (live status, Inspect, reports). Raw `dBA_spl` / `LAFmax_dB` in JSONL are
+  never modified. Use to align devices (e.g. `-5.4`).
 
 Disable spectrum with **`--no-spectrum`** (Branch A + B only).
 
@@ -555,6 +558,7 @@ Keep the page open until the countdown finishes and you see **Safe to unplug pow
 | `DEVICE_ID` | *(hostname)* | Logical id in JSONL; empty = Pi hostname |
 | `SITE_LABEL` | *(empty)* | Human label shown in web UI (set per Pi) |
 | `SITE_TIMEZONE` | `Europe/Amsterdam` | IANA zone for multi-recording report hours / night shading |
+| `DISPLAY_DB_OFFSET` | `0` | Display/analysis-only dBA offset (±40); not written into JSONL |
 | `PUBLIC_URL` | *(empty)* | This Pi's public URL (set per Pi) |
 | `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device in UI |
 | `SHUTDOWN_GRACE_SEC` | `60` | Countdown before poweroff from web UI |
