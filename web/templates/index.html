@@ -457,6 +457,31 @@
   .disk-meter.warn{color:var(--yellow)}
   .disk-meter.critical{color:var(--red)}
   .disk-meter.unknown{color:var(--muted)}
+  .sys-health-grid{display:grid;grid-template-columns:1fr;gap:.75rem;margin:.35rem 0 .25rem}
+  .sys-meter{padding:.65rem .75rem;border:1px solid var(--border);border-radius:10px;
+             background:var(--bg)}
+  .sys-meter-head{display:flex;justify-content:space-between;align-items:baseline;
+                  gap:.5rem;margin-bottom:.4rem;font-size:.78rem}
+  .sys-meter-label{color:var(--muted);font-weight:600;text-transform:uppercase;
+                   letter-spacing:.04em}
+  .sys-meter-value{color:var(--text);font-variant-numeric:tabular-nums;font-weight:600}
+  .sys-meter-track{height:8px;border-radius:999px;background:var(--border);overflow:hidden}
+  .sys-meter-fill{height:100%;width:0%;border-radius:999px;background:var(--green);
+                  transition:width .35s ease,background .2s ease}
+  .sys-meter.warn .sys-meter-fill{background:var(--yellow)}
+  .sys-meter.critical .sys-meter-fill{background:var(--red)}
+  .sys-meter.unknown .sys-meter-fill{background:var(--muted)}
+  .sys-meter-note{margin-top:.35rem;font-size:.72rem;color:var(--muted);line-height:1.35}
+  .sys-health-flags{margin-top:.65rem;font-size:.78rem;line-height:1.45}
+  .sys-health-flags.warn{color:var(--yellow)}
+  .sys-health-flags.critical{color:var(--red)}
+  .sys-health-meta{margin-top:.55rem;font-size:.75rem;color:var(--muted)}
+  @media(min-width:640px){
+    .sys-health-grid{grid-template-columns:1fr 1fr}
+  }
+  @media(min-width:960px){
+    .sys-health-grid{grid-template-columns:repeat(4,1fr)}
+  }
   .recording-check{width:auto;margin:0 .35rem 0 0;accent-color:var(--accent)}
   .analyze-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
                    justify-content:space-between;margin-bottom:.75rem}
@@ -1216,6 +1241,51 @@
 
 <!-- ── SETTINGS TAB ── -->
 <div class="tab-panel" id="panel-settings" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
+  <div class="card" id="system-health-card">
+    <h2>This Pi · system health</h2>
+    <div class="field-note" style="margin-bottom:.65rem">
+      Live CPU, memory, temperature, and storage. Warm colours mean the device is
+      under pressure — yellow ≈ watch it, red ≈ close to limits / throttling.
+      Updates while this tab is open.
+    </div>
+    <div class="sys-health-grid" id="sys-health-grid">
+      <div class="sys-meter unknown" id="sys-cpu">
+        <div class="sys-meter-head">
+          <span class="sys-meter-label">CPU</span>
+          <span class="sys-meter-value" id="sys-cpu-val">—</span>
+        </div>
+        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-cpu-fill"></div></div>
+        <div class="sys-meter-note" id="sys-cpu-note">Waiting…</div>
+      </div>
+      <div class="sys-meter unknown" id="sys-mem">
+        <div class="sys-meter-head">
+          <span class="sys-meter-label">Memory</span>
+          <span class="sys-meter-value" id="sys-mem-val">—</span>
+        </div>
+        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-mem-fill"></div></div>
+        <div class="sys-meter-note" id="sys-mem-note">Waiting…</div>
+      </div>
+      <div class="sys-meter unknown" id="sys-temp">
+        <div class="sys-meter-head">
+          <span class="sys-meter-label">CPU temp</span>
+          <span class="sys-meter-value" id="sys-temp-val">—</span>
+        </div>
+        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-temp-fill"></div></div>
+        <div class="sys-meter-note" id="sys-temp-note">Waiting…</div>
+      </div>
+      <div class="sys-meter unknown" id="sys-disk">
+        <div class="sys-meter-head">
+          <span class="sys-meter-label">Disk used</span>
+          <span class="sys-meter-value" id="sys-disk-val">—</span>
+        </div>
+        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-disk-fill"></div></div>
+        <div class="sys-meter-note" id="sys-disk-note">Waiting…</div>
+      </div>
+    </div>
+    <div class="sys-health-flags" id="sys-health-flags" hidden></div>
+    <div class="sys-health-meta" id="sys-health-meta"></div>
+  </div>
+
   <div class="card">
     <h2>Recording</h2>
     <div class="field-note" style="margin-bottom:.75rem">
@@ -1598,6 +1668,9 @@ function switchTab(name) {
   if (name === 'settings') {
     loadPrompts();
     loadTriggersPanel();
+    startSystemHealthPolling();
+  } else {
+    stopSystemHealthPolling();
   }
 }
 
@@ -5517,6 +5590,160 @@ if (displayOffsetSave) {
 }
 syncDisplayCalHint(displayDbOffset);
 wireConfInputs();
+
+// ── Settings: Pi system health ────────────────────────────────────
+let systemHealthTimer = null;
+
+function fmtUptime(totalSec) {
+  const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function setSysMeter(id, { level, valueText, fillPct, note }) {
+  const card = document.getElementById(id);
+  const val = document.getElementById(`${id}-val`);
+  const fill = document.getElementById(`${id}-fill`);
+  const noteEl = document.getElementById(`${id}-note`);
+  if (!card) return;
+  card.classList.remove('ok', 'warn', 'critical', 'unknown');
+  card.classList.add(level || 'unknown');
+  if (val) val.textContent = valueText || '—';
+  if (fill) {
+    const pct = Math.max(0, Math.min(100, Number(fillPct) || 0));
+    fill.style.width = `${pct}%`;
+  }
+  if (noteEl) noteEl.textContent = note || '';
+}
+
+function throttleFlagLabel(key) {
+  const map = {
+    under_voltage: 'low voltage',
+    freq_capped: 'CPU speed capped',
+    throttled: 'throttled',
+    soft_temp_limit: 'soft temperature limit',
+  };
+  return map[key] || key;
+}
+
+function renderSystemHealth(data) {
+  if (!data || !data.ok) {
+    setSysMeter('sys-cpu', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
+    setSysMeter('sys-mem', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
+    setSysMeter('sys-temp', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
+    setSysMeter('sys-disk', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
+    return;
+  }
+
+  const cpuNoteParts = [];
+  if (data.cpu_count) cpuNoteParts.push(`${data.cpu_count} cores`);
+  if (data.load_1 != null) cpuNoteParts.push(`load ${data.load_1} / ${data.load_5} / ${data.load_15}`);
+  setSysMeter('sys-cpu', {
+    level: data.cpu_level || 'unknown',
+    valueText: data.cpu_percent != null ? `${Number(data.cpu_percent).toFixed(0)}%` : '—',
+    fillPct: data.cpu_percent,
+    note: cpuNoteParts.join(' · ') || 'CPU use',
+  });
+
+  const memNote = (data.memory_used_label && data.memory_total_label)
+    ? `${data.memory_used_label} of ${data.memory_total_label}`
+      + (data.memory_available_label ? ` · ${data.memory_available_label} free` : '')
+    : 'Memory use';
+  setSysMeter('sys-mem', {
+    level: data.memory_level || 'unknown',
+    valueText: data.memory_percent != null ? `${Number(data.memory_percent).toFixed(0)}%` : '—',
+    fillPct: data.memory_percent,
+    note: memNote,
+  });
+
+  const tempC = data.temp_c;
+  // Map 40–85°C onto the bar so “full” ≈ hard throttle zone.
+  const tempFill = tempC == null ? 0 : Math.max(0, Math.min(100, ((tempC - 40) / 45) * 100));
+  let tempNote = 'SoC temperature';
+  if (tempC != null) {
+    if (tempC >= 80) tempNote = 'Hot — Pi may slow itself to cool down';
+    else if (tempC >= 70) tempNote = 'Warm — watch under sustained load';
+    else tempNote = 'Normal operating range';
+  } else {
+    tempNote = 'Temperature not available on this device';
+  }
+  setSysMeter('sys-temp', {
+    level: data.temp_level || 'unknown',
+    valueText: tempC != null ? `${Number(tempC).toFixed(1)}°C` : '—',
+    fillPct: tempFill,
+    note: tempNote,
+  });
+
+  const disk = data.disk || {};
+  const usedPct = (disk.ok && disk.total_bytes)
+    ? Math.max(0, Math.min(100, 100 - Number(disk.free_pct || 0)))
+    : null;
+  setSysMeter('sys-disk', {
+    level: disk.level || 'unknown',
+    valueText: usedPct != null ? `${usedPct.toFixed(0)}%` : '—',
+    fillPct: usedPct,
+    note: disk.line || 'Recordings storage',
+  });
+
+  const flagsEl = document.getElementById('sys-health-flags');
+  const throttle = data.throttle;
+  if (flagsEl) {
+    if (throttle && (throttle.active.length || throttle.historical.length)) {
+      const bits = [];
+      if (throttle.active.length) {
+        bits.push(`Right now: ${throttle.active.map(throttleFlagLabel).join(', ')}`);
+      }
+      if (throttle.historical.length) {
+        bits.push(`Since boot: ${throttle.historical.map(throttleFlagLabel).join(', ')}`);
+      }
+      flagsEl.hidden = false;
+      flagsEl.className = `sys-health-flags ${throttle.level || 'warn'}`;
+      flagsEl.textContent = bits.join(' · ');
+    } else {
+      flagsEl.hidden = true;
+      flagsEl.textContent = '';
+    }
+  }
+
+  const meta = document.getElementById('sys-health-meta');
+  if (meta) {
+    const parts = [];
+    if (data.hostname) parts.push(data.hostname);
+    if (data.uptime_s != null) parts.push(`up ${fmtUptime(data.uptime_s)}`);
+    parts.push('refreshes every 3 s');
+    meta.textContent = parts.join(' · ');
+  }
+}
+
+async function pollSystemHealth() {
+  const { ok, data } = await apiFetch('/api/system');
+  if (!ok || !data) {
+    renderSystemHealth(null);
+    return;
+  }
+  renderSystemHealth(data);
+}
+
+function startSystemHealthPolling() {
+  if (systemHealthTimer) return;
+  pollSystemHealth();
+  systemHealthTimer = setInterval(pollSystemHealth, 3000);
+}
+
+function stopSystemHealthPolling() {
+  if (!systemHealthTimer) return;
+  clearInterval(systemHealthTimer);
+  systemHealthTimer = null;
+}
+
+if (document.getElementById('panel-settings')?.classList.contains('active')) {
+  startSystemHealthPolling();
+}
+
 applyViewerLocks();
 </script>
 </body>

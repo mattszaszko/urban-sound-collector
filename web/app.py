@@ -642,6 +642,252 @@ def _disk_usage_summary(path: Path | None = None) -> dict:
     }
 
 
+def _level_from_pct(pct: float | None, *, warn: float, critical: float) -> str:
+    if pct is None:
+        return "unknown"
+    if pct >= critical:
+        return "critical"
+    if pct >= warn:
+        return "warn"
+    return "ok"
+
+
+def _level_from_temp_c(temp_c: float | None) -> str:
+    """Pi soft limit ~80°C; sustained ≥85°C is a hard throttle zone."""
+    if temp_c is None:
+        return "unknown"
+    if temp_c >= 80.0:
+        return "critical"
+    if temp_c >= 70.0:
+        return "warn"
+    return "ok"
+
+
+def _read_cpu_temp_c() -> float | None:
+    """Best-effort CPU/SoC temperature (°C). Prefer psutil, then sysfs, then vcgencmd."""
+    try:
+        sensors = psutil.sensors_temperatures(fahrenheit=False)
+    except (AttributeError, OSError):
+        sensors = None
+    if sensors:
+        preferred = (
+            "cpu_thermal",
+            "cpu-thermal",
+            "soc_thermal",
+            "rp1_adc",
+            "coretemp",
+            "k10temp",
+        )
+        for name in preferred:
+            entries = sensors.get(name) or []
+            for entry in entries:
+                current = getattr(entry, "current", None)
+                if current is not None:
+                    try:
+                        return round(float(current), 1)
+                    except (TypeError, ValueError):
+                        pass
+        for entries in sensors.values():
+            for entry in entries or []:
+                current = getattr(entry, "current", None)
+                if current is not None:
+                    try:
+                        return round(float(current), 1)
+                    except (TypeError, ValueError):
+                        pass
+
+    thermal_root = Path("/sys/class/thermal")
+    if thermal_root.is_dir():
+        for zone in sorted(thermal_root.glob("thermal_zone*")):
+            type_path = zone / "type"
+            temp_path = zone / "temp"
+            try:
+                zone_type = type_path.read_text(encoding="utf-8").strip().lower()
+            except OSError:
+                zone_type = ""
+            if zone_type and "thermal" not in zone_type and "cpu" not in zone_type and "soc" not in zone_type:
+                # Still try cpu_thermal-style names; otherwise read first zone later.
+                if zone_type not in {"cpu-thermal", "cpu_thermal", "soc-thermal", "soc_thermal"}:
+                    continue
+            try:
+                milli = float(temp_path.read_text(encoding="utf-8").strip())
+                if milli > 1000:
+                    return round(milli / 1000.0, 1)
+                return round(milli, 1)
+            except (OSError, ValueError):
+                continue
+        # Fallback: first readable zone.
+        for zone in sorted(thermal_root.glob("thermal_zone*")):
+            try:
+                milli = float((zone / "temp").read_text(encoding="utf-8").strip())
+                if milli > 1000:
+                    return round(milli / 1000.0, 1)
+                return round(milli, 1)
+            except (OSError, ValueError):
+                continue
+
+    vcgencmd = shutil.which("vcgencmd")
+    if vcgencmd:
+        try:
+            result = subprocess.run(
+                [vcgencmd, "measure_temp"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+            raw = (result.stdout or "").strip()
+            # e.g. temp=52.3'C
+            if "temp=" in raw:
+                num = raw.split("temp=", 1)[1].split("'", 1)[0]
+                return round(float(num), 1)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+    return None
+
+
+def _pi_throttle_status() -> dict[str, Any] | None:
+    """Parse ``vcgencmd get_throttled`` when available (Raspberry Pi)."""
+    vcgencmd = shutil.which("vcgencmd")
+    if not vcgencmd:
+        return None
+    try:
+        result = subprocess.run(
+            [vcgencmd, "get_throttled"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    raw = (result.stdout or "").strip()
+    # e.g. throttled=0x50000
+    if "throttled=" not in raw:
+        return None
+    hex_part = raw.split("throttled=", 1)[1].strip()
+    try:
+        flags = int(hex_part, 0)
+    except ValueError:
+        return None
+
+    def bit(n: int) -> bool:
+        return bool(flags & (1 << n))
+
+    now = {
+        "under_voltage": bit(0),
+        "freq_capped": bit(1),
+        "throttled": bit(2),
+        "soft_temp_limit": bit(3),
+    }
+    since_boot = {
+        "under_voltage": bit(16),
+        "freq_capped": bit(17),
+        "throttled": bit(18),
+        "soft_temp_limit": bit(19),
+    }
+    active = [k for k, v in now.items() if v]
+    historical = [k for k, v in since_boot.items() if v]
+    if active:
+        level = "critical"
+    elif historical:
+        level = "warn"
+    else:
+        level = "ok"
+    return {
+        "raw": hex_part,
+        "flags": flags,
+        "now": now,
+        "since_boot": since_boot,
+        "active": active,
+        "historical": historical,
+        "level": level,
+    }
+
+
+# Prime non-blocking CPU percent samples (first call is often 0.0).
+try:
+    psutil.cpu_percent(interval=None)
+    psutil.cpu_percent(interval=None, percpu=True)
+except Exception:  # noqa: BLE001
+    pass
+
+
+def _system_telemetry() -> dict[str, Any]:
+    """Snapshot CPU / RAM / temp / disk / throttle for the Settings health card."""
+    try:
+        cpu_pct = float(psutil.cpu_percent(interval=None))
+    except Exception:  # noqa: BLE001
+        cpu_pct = None
+    try:
+        per_cpu = [float(x) for x in psutil.cpu_percent(interval=None, percpu=True)]
+    except Exception:  # noqa: BLE001
+        per_cpu = []
+
+    mem_pct = None
+    mem_used_label = None
+    mem_total_label = None
+    mem_available_label = None
+    try:
+        mem = psutil.virtual_memory()
+        mem_pct = round(float(mem.percent), 1)
+        mem_used_label = _format_bytes(int(mem.used))
+        mem_total_label = _format_bytes(int(mem.total))
+        mem_available_label = _format_bytes(int(mem.available))
+    except Exception:  # noqa: BLE001
+        pass
+
+    load_1 = load_5 = load_15 = None
+    try:
+        load_1, load_5, load_15 = os.getloadavg()
+    except (AttributeError, OSError):
+        pass
+
+    uptime_s = None
+    try:
+        uptime_s = max(0, int(time.time() - psutil.boot_time()))
+    except Exception:  # noqa: BLE001
+        pass
+
+    temp_c = _read_cpu_temp_c()
+    throttle = _pi_throttle_status()
+    disk = _disk_usage_summary(RECORDINGS_DIR)
+
+    cpu_level = _level_from_pct(cpu_pct, warn=70.0, critical=90.0)
+    mem_level = _level_from_pct(mem_pct, warn=75.0, critical=90.0)
+    temp_level = _level_from_temp_c(temp_c)
+    throttle_level = (throttle or {}).get("level", "unknown")
+
+    rank = {"ok": 0, "unknown": 0, "warn": 1, "critical": 2}
+    overall = "ok"
+    for lvl in (cpu_level, mem_level, temp_level, disk.get("level"), throttle_level):
+        if rank.get(str(lvl), 0) > rank.get(overall, 0):
+            overall = str(lvl)
+
+    return {
+        "ok": True,
+        "hostname": hostname(),
+        "cpu_percent": round(cpu_pct, 1) if cpu_pct is not None else None,
+        "cpu_count": psutil.cpu_count() or None,
+        "cpu_per_core": [round(x, 1) for x in per_cpu],
+        "cpu_level": cpu_level,
+        "memory_percent": mem_pct,
+        "memory_used_label": mem_used_label,
+        "memory_total_label": mem_total_label,
+        "memory_available_label": mem_available_label,
+        "memory_level": mem_level,
+        "load_1": round(load_1, 2) if load_1 is not None else None,
+        "load_5": round(load_5, 2) if load_5 is not None else None,
+        "load_15": round(load_15, 2) if load_15 is not None else None,
+        "uptime_s": uptime_s,
+        "temp_c": temp_c,
+        "temp_level": temp_level,
+        "throttle": throttle,
+        "disk": disk,
+        "overall_level": overall,
+    }
+
+
 def _active_output_path() -> Path | None:
     """Return the collector ``-o`` path if a recording is active."""
     proc = _find_collector_process()
@@ -1265,6 +1511,13 @@ async def api_status(request: Request):
     if not is_authenticated(request):
         return HTMLResponse("", status_code=401)
     return JSONResponse(_get_status())
+
+
+@app.get("/api/system")
+async def api_system(request: Request):
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    return JSONResponse(_system_telemetry())
 
 
 @app.get("/api/status/series")
