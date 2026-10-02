@@ -28,6 +28,7 @@ from fastapi.responses import (
 from jinja2 import Environment, FileSystemLoader
 
 from core.audio_constants import CAPTURE_STARTUP_DISCARD_SECONDS
+from core.capture_alsa import CaptureDeviceError, check_capture_device_available
 from core.events import event_recording_id
 from core.export_filter import export_filename, iter_filtered_jsonl
 from core.host_identity import default_device_id, hostname
@@ -85,7 +86,6 @@ DEFAULT_ALSA_DEVICE = os.environ.get(
 SITE_LABEL = os.environ.get("SITE_LABEL", "").strip()
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip()
 SITE_TIMEZONE = os.environ.get("SITE_TIMEZONE", DEFAULT_SITE_TIMEZONE).strip() or DEFAULT_SITE_TIMEZONE
-SHUTDOWN_GRACE_SEC = max(15, int(os.environ.get("SHUTDOWN_GRACE_SEC", "60")))
 
 
 def _parse_display_db_offset(raw: object) -> float:
@@ -377,11 +377,15 @@ def _run_poweroff() -> None:
         subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
 
 
-def _schedule_poweroff_after(grace_seconds: int) -> None:
-    """Power off after a delay so the UI can show a countdown."""
+# Brief pause so the shutdown API response can reach the browser before poweroff.
+_POWEROFF_RESPONSE_FLUSH_SEC = 1.5
+
+
+def _schedule_immediate_poweroff() -> None:
+    """Issue poweroff almost immediately after the HTTP response can flush."""
 
     def _worker() -> None:
-        time.sleep(grace_seconds)
+        time.sleep(_POWEROFF_RESPONSE_FLUSH_SEC)
         _run_poweroff()
 
     threading.Thread(target=_worker, daemon=True).start()
@@ -1165,6 +1169,21 @@ async def api_start(
             )
         return RedirectResponse("/?error=already_recording", status_code=303)
 
+    try:
+        check_capture_device_available(alsa_device)
+    except CaptureDeviceError as exc:
+        message = str(exc)
+        if wants_json:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "code": "no_capture_device",
+                    "error": message,
+                },
+                status_code=400,
+            )
+        return RedirectResponse("/?error=no_capture_device", status_code=303)
+
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1226,17 +1245,16 @@ async def api_shutdown(request: Request):
         return denied
 
     stopped_recording = _stop_collector()
-    _schedule_poweroff_after(SHUTDOWN_GRACE_SEC)
+    _schedule_immediate_poweroff()
 
     return JSONResponse(
         {
             "ok": True,
-            "grace_seconds": SHUTDOWN_GRACE_SEC,
             "stopped_recording": stopped_recording,
             "hostname": hostname(),
             "message": (
-                "Shutdown scheduled. Keep this page open until the countdown "
-                "finishes, then unplug power."
+                "Shutdown started. Keep this page open until it reports the "
+                "Pi is offline, then unplug power."
             ),
         }
     )

@@ -99,6 +99,8 @@ def slim_event_point(
     clap_label = event.get("clap_top_label")
     if not isinstance(clap_label, str):
         clap_label = None
+    clap_conf = _f("clap_top_confidence")
+    yamnet_conf = _f("top_confidence")
 
     clap_event_seconds: float | None = None
     clap_meta = event.get("clap_meta")
@@ -125,10 +127,12 @@ def slim_event_point(
         "lafmax": lafmax,
         "l90_rel": l90_rel,
         "yamnet": yamnet,
+        "yamnet_conf": yamnet_conf,
         "gated": gated,
         "gate_open": gate_open,
         "clap_status": clap_status,
         "clap": clap_label,
+        "clap_conf": clap_conf,
         "clap_event_seconds": clap_event_seconds,
     }
 
@@ -159,28 +163,109 @@ def slim_event_point(
     return point
 
 
-def yamnet_change_markers(points: list[dict]) -> list[dict]:
-    """Sparse markers when non-gated YAMNet label changes."""
+def _point_confidence(point: dict, key: str) -> float | None:
+    raw = point.get(key)
+    try:
+        return float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def yamnet_label_spans(
+    points: list[dict],
+    *,
+    min_confidence: float = 0.0,
+) -> list[dict]:
+    """Consecutive non-gated same-label runs (for chart brackets).
+
+    Points without ``yamnet_conf`` (older JSONL) are kept so labels still show.
+    ``min_confidence`` hides runs whose confidence is known and below the floor.
+    """
     out: list[dict] = []
-    prev: str | None = None
+    run_label: str | None = None
+    run_start_t: str | None = None
+    run_end_t: str | None = None
+    run_dba: float | None = None
+    run_conf: float | None = None
+
+    def flush() -> None:
+        nonlocal run_label, run_start_t, run_end_t, run_dba, run_conf
+        if run_label and run_start_t and run_end_t and run_dba is not None:
+            span: dict[str, Any] = {
+                "t0": run_start_t,
+                "t1": run_end_t,
+                "dba": run_dba,
+                "label": run_label,
+            }
+            if run_conf is not None:
+                span["confidence"] = run_conf
+            out.append(span)
+        run_label = None
+        run_start_t = None
+        run_end_t = None
+        run_dba = None
+        run_conf = None
+
     for p in points:
         label = p.get("yamnet")
-        if p.get("gated") or not label or label == "gated" or p.get("dba") is None:
-            if label == "gated" or p.get("gated"):
-                prev = "gated"
+        conf = _point_confidence(p, "yamnet_conf")
+        below = conf is not None and conf < float(min_confidence)
+        if (
+            p.get("gated")
+            or not label
+            or label == "gated"
+            or p.get("dba") is None
+            or below
+        ):
+            flush()
             continue
-        if label != prev:
-            out.append({"t": p["t"], "dba": p["dba"], "label": label})
-            prev = label
+        if label != run_label:
+            flush()
+            run_label = str(label)
+            run_start_t = p["t"]
+            run_end_t = p["t"]
+            run_dba = p["dba"]
+            run_conf = conf
+        else:
+            run_end_t = p["t"]
+            # Keep first-chunk dBA as the bracket height (stable along the run).
+            if run_conf is None and conf is not None:
+                run_conf = conf
+            elif run_conf is not None and conf is not None:
+                run_conf = min(run_conf, conf)
+    flush()
     return out
 
 
-def clap_triggered_markers(points: list[dict]) -> list[dict]:
+def yamnet_change_markers(
+    points: list[dict],
+    *,
+    min_confidence: float = 0.0,
+) -> list[dict]:
+    """Start-of-run markers (compat); prefer ``yamnet_label_spans`` for charts."""
+    return [
+        {"t": s["t0"], "dba": s["dba"], "label": s["label"], **(
+            {"confidence": s["confidence"]} if "confidence" in s else {}
+        )}
+        for s in yamnet_label_spans(points, min_confidence=min_confidence)
+    ]
+
+
+def clap_triggered_markers(
+    points: list[dict],
+    *,
+    min_confidence: float = 0.0,
+) -> list[dict]:
     out: list[dict] = []
     for p in points:
         if p.get("clap_status") != "triggered" or not p.get("clap") or p.get("dba") is None:
             continue
+        conf = _point_confidence(p, "clap_conf")
+        if conf is not None and conf < float(min_confidence):
+            continue
         marker: dict[str, Any] = {"t": p["t"], "dba": p["dba"], "label": p["clap"]}
+        if conf is not None:
+            marker["confidence"] = conf
         secs = p.get("clap_event_seconds")
         try:
             if secs is not None and float(secs) > 0:
@@ -290,6 +375,7 @@ def build_overview_window_series(
         "t_min": filtered[0].get("t") if filtered else None,
         "t_max": filtered[-1].get("t") if filtered else None,
         "points": filtered,
+        "yamnet_spans": yamnet_label_spans(filtered),
         "yamnet_markers": yamnet_change_markers(filtered),
         "clap_markers": clap_triggered_markers(filtered),
     }
@@ -445,6 +531,7 @@ def build_recording_overview(
         # Coarse series for the scrubber only; Inspect chart loads a dense window via /overview/series.
         "points": points_chart,
         "points_full": points_full_flag,
+        "yamnet_spans": yamnet_label_spans(points_chart),
         "yamnet_markers": yamnet_change_markers(points_chart),
         "clap_markers": clap_triggered_markers(points_chart),
         "scrub_points": points_chart,

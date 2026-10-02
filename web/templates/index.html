@@ -180,6 +180,14 @@
   .swatch.dot{border-radius:50%}
   .swatch.band{width:14px;height:10px;border-radius:2px;background:var(--clap-window);
                border:1px solid var(--clap-point)}
+  .swatch.bracket{width:16px;height:8px;border:2px solid #22c55e;border-bottom:none;
+                  border-radius:2px 2px 0 0;background:transparent;box-sizing:border-box}
+  .chart-conf-row{display:flex;flex-wrap:wrap;gap:.55rem 1.1rem;align-items:center;
+                  margin:.35rem 0 .55rem;font-size:.75rem;color:var(--muted)}
+  .chart-conf-row label{display:inline-flex;align-items:center;gap:.4rem;margin:0;
+                        font-size:.75rem;text-transform:none;letter-spacing:0;color:var(--muted)}
+  .chart-conf-row input[type=number]{width:4.2rem;margin:0;padding:.25rem .4rem;
+                                     font-size:.75rem}
   .swatch.spectrum-grad{width:18px;height:3px;border-radius:1px;
                         background:linear-gradient(90deg,#6366F1,#10B981,#EAB308)}
   .swatch.spectrum-dark{background:#6366F1}
@@ -250,12 +258,25 @@
     text-align:center}
   .shutdown-panel h3{font-size:1.15rem;margin-bottom:.75rem;color:var(--yellow)}
   .shutdown-panel p{font-size:.9rem;color:var(--muted);line-height:1.5;margin-bottom:1rem}
-  .shutdown-countdown{font-size:2.5rem;font-weight:700;color:var(--text);
-    font-variant-numeric:tabular-nums;margin:.5rem 0 1rem}
+  .shutdown-loader{width:2.5rem;height:2.5rem;margin:.75rem auto 1.25rem;
+    border:3px solid var(--border);border-top-color:var(--yellow);
+    border-radius:50%;animation:shutdown-spin .8s linear infinite}
+  .shutdown-loader[hidden]{display:none}
+  @keyframes shutdown-spin{to{transform:rotate(360deg)}}
   .shutdown-safe{color:var(--green);font-size:1rem;font-weight:600;line-height:1.5}
   .shutdown-host{font-size:.8rem;color:var(--muted);margin-top:1rem}
 
-  /* Log */
+  /* Live log (collapsed by default) */
+  .live-log-details{margin:0;border:0;background:transparent}
+  .live-log-details > summary{cursor:pointer;list-style:none;user-select:none;
+    display:flex;flex-wrap:wrap;align-items:baseline;gap:.35rem .5rem}
+  .live-log-details > summary::-webkit-details-marker{display:none}
+  .live-log-details > summary::before{content:'▸';display:inline-block;width:.85rem;
+    color:var(--accent);font-size:1rem;line-height:1}
+  .live-log-details[open] > summary::before{content:'▾'}
+  .live-log-details > summary .live-log-title{font-size:1rem;font-weight:600;color:var(--text)}
+  .live-log-details > summary .live-log-hint{font-size:.7rem;font-weight:400;color:var(--muted)}
+  .live-log-details[open] > summary{margin-bottom:.75rem}
   #log-box{background:var(--bg);border-radius:8px;padding:.75rem;
            font-size:.72rem;font-family:monospace;color:var(--log-text);
            height:200px;overflow-y:auto;border:1px solid var(--border)}
@@ -685,6 +706,8 @@
 <div class="error-banner">Recording file not found.</div>
 {% elif error == 'bad_request' %}
 <div class="error-banner">Could not delete that file.</div>
+{% elif error == 'no_capture_device' %}
+<div class="error-banner">No working sound capture device. Connect the microphone HAT and check the ALSA device in Settings.</div>
 {% elif error == 'viewer_readonly' %}
 <div class="error-banner">That action is disabled for viewers.</div>
 {% endif %}
@@ -757,8 +780,8 @@
   <div class="live-chart-wrap">
     <div class="live-chart-meta">
       <div class="live-chart-note">
-        Rolling 2&nbsp;min · Gate L90 is post-HPF unweighted dBFS + 120 (relative) ·
-        dBA colored by spectrum (A-weighted)
+        Rolling 2&nbsp;min · local time ({{ site_timezone }}) · Gate L90 is post-HPF
+        unweighted dBFS + 120 (relative) · dBA colored by spectrum (A-weighted)
       </div>
       <div class="live-chart-legend">
         <span><i class="swatch line spectrum-grad" aria-hidden="true"></i>dBA by spectrum</span>
@@ -766,9 +789,19 @@
         <span><i class="swatch spectrum-mid" aria-hidden="true"></i>Mid</span>
         <span><i class="swatch spectrum-bright" aria-hidden="true"></i>Bright</span>
         <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
-        <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
+        <span><i class="swatch bracket" aria-hidden="true"></i>YAMNet label run</span>
         <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
         <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
+      </div>
+      <div class="chart-conf-row" id="live-chart-conf-row">
+        <label for="live-yam-conf-min">Hide YAMNet below
+          <input type="number" id="live-yam-conf-min" min="0" max="1" step="0.05" value="0.30">
+          conf
+        </label>
+        <label for="live-clap-conf-min" id="live-clap-conf-wrap" hidden>Hide CLAP below
+          <input type="number" id="live-clap-conf-min" min="0" max="1" step="0.05" value="0.55">
+          conf
+        </label>
       </div>
     </div>
     <div class="live-chart-canvas-box">
@@ -826,17 +859,21 @@
 </div>
 </div><!-- /record-layout -->
 
-<!-- ── LIVE LOG ── -->
 <div class="card">
-  <h2>Live log <span style="color:var(--muted);font-weight:400;font-size:.7rem">(auto-updates)</span></h2>
-  <div id="log-box"><p id="log-placeholder" style="color:var(--muted)">Connecting…</p></div>
+  <details class="live-log-details" id="live-log-details">
+    <summary>
+      <span class="live-log-title">Live log</span>
+      <span class="live-log-hint">(auto-updates when expanded)</span>
+    </summary>
+    <div id="log-box"><p id="log-placeholder" style="color:var(--muted)">Expand to connect…</p></div>
+  </details>
 </div>
 
 <div id="shutdown-overlay" aria-live="polite" aria-busy="true">
   <div class="shutdown-panel">
     <h3 id="shutdown-title">Shutting down…</h3>
     <p id="shutdown-message">Stopping services and preparing to power off.</p>
-    <div class="shutdown-countdown" id="shutdown-countdown">—</div>
+    <div class="shutdown-loader" id="shutdown-loader" role="status" aria-label="Waiting for Pi to go offline"></div>
     <p id="shutdown-safe" class="shutdown-safe" hidden>
       Safe to unplug power now.<br>
       Wait until the Pi’s activity LED is off, then disconnect USB power.
@@ -995,9 +1032,19 @@
       <span><i class="swatch spectrum-mid" aria-hidden="true"></i>Mid</span>
       <span><i class="swatch spectrum-bright" aria-hidden="true"></i>Bright</span>
       <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
-      <span><i class="swatch dot" style="background:#22c55e"></i>YAMNet</span>
+      <span><i class="swatch bracket" aria-hidden="true"></i>YAMNet label run</span>
       <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
       <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
+    </div>
+    <div class="chart-conf-row" id="ov-chart-conf-row">
+      <label for="ov-yam-conf-min">Hide YAMNet below
+        <input type="number" id="ov-yam-conf-min" min="0" max="1" step="0.05" value="0.30">
+        conf
+      </label>
+      <label for="ov-clap-conf-min" id="ov-clap-conf-wrap" hidden>Hide CLAP below
+        <input type="number" id="ov-clap-conf-min" min="0" max="1" step="0.05" value="0.55">
+        conf
+      </label>
     </div>
     <div class="overview-chart-box">
       <canvas id="overview-loudness-chart" aria-label="Recording loudness overview"></canvas>
@@ -1694,7 +1741,6 @@ function normalizeTriggersPayload(raw) {
   };
 }
 
-// ── Live log via SSE ──────────────────────────────────────────────
 const ANALYZE_RECORDING = {{ analyze_recording | tojson }};
 const REPORT_RECORDINGS = {{ report_recordings | tojson }};
 const SITE_TIMEZONE = {{ site_timezone | tojson }};
@@ -1843,24 +1889,38 @@ function fmtSiteDateTime(ms) {
     return d.toISOString().replace('T', ' ').replace('Z', ' UTC');
   }
 }
-const box = document.getElementById('log-box');
-const placeholder = document.getElementById('log-placeholder');
-let seenFirst = false;
 
-if (!ANALYZE_RECORDING && !REPORT_RECORDINGS.length && box) {
-  const es = new EventSource('/api/log-stream');
-  es.onmessage = (e) => {
-    if (!seenFirst) { placeholder.remove(); seenFirst = true; }
+// ── Live log via SSE (connects when the panel is expanded) ───────
+let liveLogEs = null;
+let liveLogSeenFirst = false;
+
+function ensureLiveLogStream() {
+  const box = document.getElementById('log-box');
+  const placeholder = document.getElementById('log-placeholder');
+  if (liveLogEs || !box) return;
+  if (placeholder) placeholder.textContent = 'Connecting…';
+  liveLogEs = new EventSource('/api/log-stream');
+  liveLogEs.onmessage = (e) => {
+    if (!liveLogSeenFirst && placeholder) {
+      placeholder.remove();
+      liveLogSeenFirst = true;
+    }
     const p = document.createElement('p');
     p.textContent = JSON.parse(e.data);
     box.appendChild(p);
-    // keep last 200 lines
     while (box.children.length > 200) box.firstChild.remove();
     box.scrollTop = box.scrollHeight;
   };
-  es.onerror = () => {
-    if (!seenFirst && placeholder) placeholder.textContent = 'Not connected.';
+  liveLogEs.onerror = () => {
+    if (!liveLogSeenFirst && placeholder) placeholder.textContent = 'Not connected.';
   };
+}
+
+const liveLogDetails = document.getElementById('live-log-details');
+if (liveLogDetails && !ANALYZE_RECORDING && !REPORT_RECORDINGS.length) {
+  liveLogDetails.addEventListener('toggle', () => {
+    if (liveLogDetails.open) ensureLiveLogStream();
+  });
 }
 
 // ── Status polling + live loudness chart (every 1 s) ──────────────
@@ -1894,33 +1954,176 @@ function truncateLabel(s, max) {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
-function yamnetChangeMarkers(points) {
+function yamnetLabelSpans(points, minConfidence) {
+  const floor = Number(minConfidence);
+  const minConf = Number.isFinite(floor) ? floor : 0;
   const out = [];
-  let prev = null;
+  let run = null;
+
+  const flush = () => {
+    if (!run) return;
+    const mid = (run.x0 + run.x1) / 2;
+    out.push({
+      x: mid,
+      y: run.y,
+      x0: run.x0,
+      x1: run.x1,
+      label: run.label,
+      confidence: run.conf,
+    });
+    run = null;
+  };
+
   for (const p of points) {
     const label = p.yamnet;
-    if (p.gated || !label || label === 'gated' || p.dba == null) {
-      if (label === 'gated' || p.gated) prev = 'gated';
+    const x = Date.parse(p.t);
+    const confRaw = p.yamnet_conf;
+    const conf = confRaw == null ? null : Number(confRaw);
+    const below = conf != null && Number.isFinite(conf) && conf < minConf;
+    if (
+      !Number.isFinite(x)
+      || p.gated
+      || !label
+      || label === 'gated'
+      || p.dba == null
+      || below
+    ) {
+      flush();
       continue;
     }
-    if (label !== prev) {
-      out.push({ x: Date.parse(p.t), y: p.dba, label });
-      prev = label;
+    if (!run || run.label !== label) {
+      flush();
+      run = {
+        label,
+        x0: x,
+        x1: x,
+        y: p.dba,
+        conf: Number.isFinite(conf) ? conf : null,
+      };
+    } else {
+      run.x1 = x;
+      if (run.conf == null && Number.isFinite(conf)) run.conf = conf;
+      else if (run.conf != null && Number.isFinite(conf)) run.conf = Math.min(run.conf, conf);
     }
   }
+  flush();
   return out;
 }
 
-function clapMarkers(points) {
+function clapMarkers(points, minConfidence) {
+  const floor = Number(minConfidence);
+  const minConf = Number.isFinite(floor) ? floor : 0;
   const out = [];
   for (const p of points) {
     if (p.clap_status !== 'triggered' || !p.clap || p.dba == null) continue;
+    const conf = p.clap_conf == null ? null : Number(p.clap_conf);
+    if (conf != null && Number.isFinite(conf) && conf < minConf) continue;
     const marker = { x: Date.parse(p.t), y: p.dba, label: p.clap };
+    if (!Number.isFinite(marker.x)) continue;
+    if (Number.isFinite(conf)) marker.confidence = conf;
     const secs = Number(p.clap_event_seconds ?? p.event_seconds);
     if (Number.isFinite(secs) && secs > 0) marker.event_seconds = secs;
     out.push(marker);
   }
   return out;
+}
+
+const DEFAULT_YAM_CONF_MIN = 0.30;
+const DEFAULT_CLAP_CONF_MIN = 0.55;
+const YAM_CONF_KEY = 'usc-yam-conf-min';
+const CLAP_CONF_KEY = 'usc-clap-conf-min';
+
+function readConfThreshold(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null || raw === '') return fallback;
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(0, Math.min(1, v));
+  } catch {
+    return fallback;
+  }
+}
+
+function writeConfThreshold(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch { /* ignore */ }
+}
+
+let yamConfMin = readConfThreshold(YAM_CONF_KEY, DEFAULT_YAM_CONF_MIN);
+let clapConfMin = readConfThreshold(CLAP_CONF_KEY, DEFAULT_CLAP_CONF_MIN);
+let liveSeriesPoints = [];
+let liveSeriesWindowS = 120;
+let overviewHasClap = false;
+
+function syncConfInputs() {
+  ['live-yam-conf-min', 'ov-yam-conf-min'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = String(yamConfMin);
+  });
+  ['live-clap-conf-min', 'ov-clap-conf-min'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = String(clapConfMin);
+  });
+}
+
+function setClapConfVisible(visible) {
+  ['live-clap-conf-wrap', 'ov-clap-conf-wrap'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !visible;
+  });
+}
+
+function refreshChartsForConf() {
+  if (liveSeriesPoints.length) {
+    updateLoudnessChart({
+      recording: true,
+      points: liveSeriesPoints,
+      window_s: liveSeriesWindowS,
+    });
+  }
+  if (overviewWindowPoints && overviewWindowPoints.length) {
+    rebuildOverviewLabelSeries();
+    updateOverviewChartWindow(overviewPlayheadMs);
+  }
+}
+
+function wireConfInputs() {
+  syncConfInputs();
+  const onYam = (ev) => {
+    const v = Number(ev.target.value);
+    if (!Number.isFinite(v)) return;
+    yamConfMin = Math.max(0, Math.min(1, v));
+    writeConfThreshold(YAM_CONF_KEY, yamConfMin);
+    syncConfInputs();
+    refreshChartsForConf();
+  };
+  const onClap = (ev) => {
+    const v = Number(ev.target.value);
+    if (!Number.isFinite(v)) return;
+    clapConfMin = Math.max(0, Math.min(1, v));
+    writeConfThreshold(CLAP_CONF_KEY, clapConfMin);
+    syncConfInputs();
+    refreshChartsForConf();
+  };
+  const liveYam = document.getElementById('live-yam-conf-min');
+  const ovYam = document.getElementById('ov-yam-conf-min');
+  const liveClap = document.getElementById('live-clap-conf-min');
+  const ovClap = document.getElementById('ov-clap-conf-min');
+  if (liveYam) liveYam.addEventListener('change', onYam);
+  if (ovYam) ovYam.addEventListener('change', onYam);
+  if (liveClap) liveClap.addEventListener('change', onClap);
+  if (ovClap) ovClap.addEventListener('change', onClap);
+
+  const clapCheck = document.querySelector('#start-recording-form [name="enable_clap"]');
+  if (clapCheck) {
+    const syncLiveClap = () => setClapConfVisible(!!clapCheck.checked || overviewHasClap);
+    clapCheck.addEventListener('change', syncLiveClap);
+    syncLiveClap();
+  } else {
+    setClapConfVisible(overviewHasClap);
+  }
 }
 
 const labelMarkerPlugin = {
@@ -1943,6 +2146,57 @@ const labelMarkerPlugin = {
         ctx.restore();
       });
     });
+  },
+};
+
+/** Draw ┌──┐ brackets over consecutive same YAMNet label runs. */
+const yamnetBracketPlugin = {
+  id: 'yamnetBrackets',
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.x || !scales.y) return;
+    const yamDs = chart.data.datasets.find((ds) => ds.label === 'YAMNet');
+    if (!yamDs || !Array.isArray(yamDs.data) || !yamDs.data.length) return;
+    const xScale = scales.x;
+    const yScale = scales.y;
+    const tick = 6;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+    ctx.clip();
+    ctx.strokeStyle = yamDs.borderColor || cssVar('--yam-border') || '#22c55e';
+    ctx.fillStyle = yamDs.pointLabelColor || cssVar('--yam-label');
+    ctx.lineWidth = 1.5;
+    ctx.font = '600 10px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    for (const pt of yamDs.data) {
+      const x0v = Number(pt && pt.x0);
+      const x1v = Number(pt && pt.x1);
+      const yv = Number(pt && pt.y);
+      if (!Number.isFinite(x0v) || !Number.isFinite(x1v) || !Number.isFinite(yv)) continue;
+      let x0 = xScale.getPixelForValue(x0v);
+      let x1 = xScale.getPixelForValue(Math.max(x1v, x0v + 400));
+      x0 = Math.max(chartArea.left, Math.min(chartArea.right, x0));
+      x1 = Math.max(chartArea.left, Math.min(chartArea.right, x1));
+      if (x1 - x0 < 4) {
+        x0 = Math.max(chartArea.left, x0 - 2);
+        x1 = Math.min(chartArea.right, x0 + 4);
+      }
+      const y = yScale.getPixelForValue(yv);
+      if (y < chartArea.top || y > chartArea.bottom) continue;
+      ctx.beginPath();
+      ctx.moveTo(x0, y + tick);
+      ctx.lineTo(x0, y);
+      ctx.lineTo(x1, y);
+      ctx.lineTo(x1, y + tick);
+      ctx.stroke();
+      if (pt.label) {
+        const midX = (x0 + x1) / 2;
+        ctx.fillText(truncateLabel(pt.label, 18), midX, y - 4);
+      }
+    }
+    ctx.restore();
   },
 };
 
@@ -1998,7 +2252,7 @@ function ensureLoudnessChart() {
   if (typeof Chart === 'undefined') return null;
   const canvas = document.getElementById('live-loudness-chart');
   if (!canvas) return null;
-  Chart.register(labelMarkerPlugin, clapWindowBandsPlugin);
+  Chart.register(labelMarkerPlugin, yamnetBracketPlugin, clapWindowBandsPlugin);
   loudnessChart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
@@ -2029,12 +2283,12 @@ function ensureLoudnessChart() {
           type: 'scatter',
           data: [],
           showLine: false,
-          pointRadius: 4,
-          pointHoverRadius: 5,
+          pointRadius: 0,
+          pointHoverRadius: 4,
           backgroundColor: cssVar('--yam-point'),
           borderColor: cssVar('--yam-border'),
           borderWidth: 1,
-          showPointLabels: true,
+          showPointLabels: false,
           pointLabelColor: cssVar('--yam-label'),
         },
         {
@@ -2064,13 +2318,18 @@ function ensureLoudnessChart() {
             title(items) {
               if (!items.length) return '';
               const x = items[0].parsed.x;
-              return Number.isFinite(x) ? new Date(x).toISOString().slice(11, 19) + 'Z' : '';
+              return Number.isFinite(x) ? fmtSiteClock(x, { withSeconds: true }) : '';
             },
             label(ctx) {
               const raw = ctx.raw || {};
               const y = ctx.parsed.y;
               const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
-              if (raw.label) return `${base} · ${raw.label}`;
+              if (raw.label) {
+                const conf = raw.confidence != null && Number.isFinite(Number(raw.confidence))
+                  ? ` · ${Number(raw.confidence).toFixed(2)}`
+                  : '';
+                return `${base} · ${raw.label}${conf}`;
+              }
               if (ctx.dataset.label === 'dBA' && raw.centroid_hz != null && Number.isFinite(Number(raw.centroid_hz))) {
                 return `${base} · ${Math.round(Number(raw.centroid_hz))} Hz`;
               }
@@ -2088,9 +2347,7 @@ function ensureLoudnessChart() {
             autoSkip: true,
             maxTicksLimit: 6,
             callback(v) {
-              const d = new Date(v);
-              if (Number.isNaN(d.getTime())) return '';
-              return d.toISOString().slice(11, 16);
+              return fmtSiteClock(v);
             },
           },
           grid: { color: cssVar('--chart-grid') },
@@ -2122,9 +2379,12 @@ function updateLoudnessChart(payload) {
   const empty = document.getElementById('live-chart-empty');
   const points = (payload && payload.points) || [];
   if (!payload || !payload.recording || !points.length) {
+    liveSeriesPoints = [];
     clearLoudnessChart();
     return;
   }
+  liveSeriesPoints = points;
+  liveSeriesWindowS = payload.window_s || 120;
   if (empty) empty.hidden = true;
   const chart = ensureLoudnessChart();
   if (!chart) return;
@@ -2148,8 +2408,11 @@ function updateLoudnessChart(payload) {
     }
     if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
   }
-  const yam = yamnetChangeMarkers(points);
-  const clap = clapMarkers(points);
+  const yam = yamnetLabelSpans(points, yamConfMin);
+  const clap = clapMarkers(points, clapConfMin);
+  const clapEnabled = !!(document.querySelector('#start-recording-form [name="enable_clap"]') || {}).checked
+    || points.some((p) => p.clap_status || p.clap);
+  setClapConfVisible(clapEnabled || overviewHasClap);
 
   chart.data.datasets[0].data = dba;
   chart.data.datasets[1].data = l90;
@@ -2175,6 +2438,8 @@ function updateLoudnessChart(payload) {
     let lastClap = '—';
     for (let i = points.length - 1; i >= 0; i -= 1) {
       if (points[i].clap_status === 'triggered' && points[i].clap) {
+        const conf = points[i].clap_conf == null ? null : Number(points[i].clap_conf);
+        if (conf != null && Number.isFinite(conf) && conf < clapConfMin) continue;
         lastClap = points[i].clap;
         break;
       }
@@ -2238,7 +2503,8 @@ if (!ANALYZE_RECORDING && !REPORT_RECORDINGS.length) {
 const START_ERROR_HINTS = {
   unauthorized: 'Sign in again, then retry.',
   already_recording: 'Stop the active recording before starting another.',
-  start_timeout: 'Collector did not produce a first chunk in time. Check Live log and ALSA device.',
+  no_capture_device: 'No capture hardware or the configured ALSA device could not be opened.',
+  start_timeout: 'Collector did not produce a first chunk in time. Expand Live log and check ALSA device.',
   start_failed: 'Collector process exited before the first chunk.',
   network: 'Network/tunnel error while starting.',
   bad_response: 'Unexpected response from the start API.',
@@ -2528,7 +2794,7 @@ function ensureOverviewChart() {
   if (typeof Chart === 'undefined') return null;
   const canvas = document.getElementById('overview-loudness-chart');
   if (!canvas) return null;
-  Chart.register(labelMarkerPlugin, clapWindowBandsPlugin, overviewPlayheadPlugin);
+  Chart.register(labelMarkerPlugin, yamnetBracketPlugin, clapWindowBandsPlugin, overviewPlayheadPlugin);
   overviewChart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
@@ -2558,11 +2824,12 @@ function ensureOverviewChart() {
           type: 'scatter',
           data: [],
           showLine: false,
-          pointRadius: 4,
+          pointRadius: 0,
+          pointHoverRadius: 4,
           backgroundColor: cssVar('--yam-point'),
           borderColor: cssVar('--yam-border'),
           borderWidth: 1,
-          showPointLabels: true,
+          showPointLabels: false,
           pointLabelColor: cssVar('--yam-label'),
         },
         {
@@ -2602,7 +2869,12 @@ function ensureOverviewChart() {
               const raw = ctx.raw || {};
               const y = ctx.parsed.y;
               const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
-              if (raw.label) return `${base} · ${raw.label}`;
+              if (raw.label) {
+                const conf = raw.confidence != null && Number.isFinite(Number(raw.confidence))
+                  ? ` · ${Number(raw.confidence).toFixed(2)}`
+                  : '';
+                return `${base} · ${raw.label}${conf}`;
+              }
               if (ctx.dataset.label === 'dBA' && raw.centroid_hz != null && Number.isFinite(Number(raw.centroid_hz))) {
                 return `${base} · ${Math.round(Number(raw.centroid_hz))} Hz`;
               }
@@ -2677,7 +2949,12 @@ function overviewWindowBounds(playheadMs) {
 function filterSeriesInWindow(series, min, max, padMs = 2000) {
   const lo = min - padMs;
   const hi = max + padMs;
-  return series.filter((p) => p.x >= lo && p.x <= hi);
+  return series.filter((p) => {
+    if (p.x0 != null && p.x1 != null) {
+      return Number(p.x1) >= lo && Number(p.x0) <= hi;
+    }
+    return p.x >= lo && p.x <= hi;
+  });
 }
 
 function updateOverviewChartWindow(playheadMs) {
@@ -2794,6 +3071,17 @@ function renderOverviewSummary(data) {
   ].join('');
 }
 
+function rebuildOverviewLabelSeries() {
+  const source = overviewWindowPoints || [];
+  overviewSeries.yam = yamnetLabelSpans(source, yamConfMin);
+  overviewSeries.clap = clapMarkers(source, clapConfMin);
+  overviewHasClap = source.some((p) => p.clap_status || p.clap);
+  setClapConfVisible(
+    overviewHasClap
+    || !!(document.querySelector('#start-recording-form [name="enable_clap"]') || {}).checked
+  );
+}
+
 function buildOverviewSeriesFromWindow(data) {
   const source = (data && data.points) || [];
   const dba = [];
@@ -2810,17 +3098,9 @@ function buildOverviewSeriesFromWindow(data) {
     }
     if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
   }
-  const yam = (data.yamnet_markers || []).map((m) => ({
-    x: Date.parse(m.t), y: m.dba, label: m.label,
-  })).filter((m) => Number.isFinite(m.x));
-  const clap = (data.clap_markers || []).map((m) => {
-    const marker = { x: Date.parse(m.t), y: m.dba, label: m.label };
-    const secs = Number(m.event_seconds);
-    if (Number.isFinite(secs) && secs > 0) marker.event_seconds = secs;
-    return marker;
-  }).filter((m) => Number.isFinite(m.x));
-  overviewSeries = { dba, l90, yam, clap };
   overviewWindowPoints = source;
+  overviewSeries = { dba, l90, yam: [], clap: [] };
+  rebuildOverviewLabelSeries();
 
   let min = null;
   let max = null;
@@ -2948,8 +3228,13 @@ function renderOverviewDetailForPoint(p) {
     `L90 ${fmtNum(p.l90_rel)}`,
     p.gated ? 'gated' : (p.yamnet || '—'),
   ];
-  if (p.clap_status === 'triggered' && p.clap) bits.push(`CLAP ${p.clap}`);
-  else if (p.clap_status) bits.push(`clap:${p.clap_status}`);
+  if (!p.gated && p.yamnet && p.yamnet_conf != null) {
+    bits[bits.length - 1] = `${p.yamnet} (${Number(p.yamnet_conf).toFixed(2)})`;
+  }
+  if (p.clap_status === 'triggered' && p.clap) {
+    const c = p.clap_conf != null ? ` (${Number(p.clap_conf).toFixed(2)})` : '';
+    bits.push(`CLAP ${p.clap}${c}`);
+  } else if (p.clap_status) bits.push(`clap:${p.clap_status}`);
   const dominant = dominantSpectrumBand(p.spectrum_bands);
   if (dominant) {
     const bands = p.spectrum_bands;
@@ -4529,19 +4814,53 @@ const shutdownBtn = document.getElementById('shutdown-btn');
 const shutdownOverlay = document.getElementById('shutdown-overlay');
 const shutdownTitle = document.getElementById('shutdown-title');
 const shutdownMessage = document.getElementById('shutdown-message');
-const shutdownCountdown = document.getElementById('shutdown-countdown');
+const shutdownLoader = document.getElementById('shutdown-loader');
 const shutdownSafe = document.getElementById('shutdown-safe');
 const shutdownHost = document.getElementById('shutdown-host');
 
-function fmtCountdown(totalSec) {
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+let shutdownProbeTimer = null;
+let shutdownFinished = false;
+
+async function probePiReachable() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2500);
+  try {
+    await fetch('/api/status', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: ctrl.signal,
+    });
+    // Any HTTP response means the Pi web process is still up.
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-let countdownTimer = null;
+function clearShutdownWatchers() {
+  if (shutdownProbeTimer) {
+    clearInterval(shutdownProbeTimer);
+    shutdownProbeTimer = null;
+  }
+}
+
+function markShutdownSafe() {
+  if (shutdownFinished) return;
+  shutdownFinished = true;
+  clearShutdownWatchers();
+  shutdownTitle.textContent = 'Pi is offline';
+  shutdownMessage.textContent =
+    'This page can no longer reach the Pi — power off has completed.';
+  if (shutdownLoader) shutdownLoader.hidden = true;
+  shutdownSafe.hidden = false;
+  shutdownOverlay.setAttribute('aria-busy', 'false');
+}
 
 function showShutdownOverlay(data) {
+  shutdownFinished = false;
+  clearShutdownWatchers();
   shutdownOverlay.classList.add('active');
   shutdownBtn.disabled = true;
   shutdownBtn.classList.add('btn-disabled');
@@ -4549,34 +4868,45 @@ function showShutdownOverlay(data) {
 
   if (data.stopped_recording) {
     shutdownMessage.textContent =
-      'Recording stopped. Shutting down in…';
+      'Recording stopped. Powering off now — keep this page open until the Pi goes offline.';
   } else {
     shutdownMessage.textContent =
-      'Shutdown requested. Power off in…';
+      'Powering off now — keep this page open until the Pi goes offline.';
   }
 
-  let remaining = data.grace_seconds;
-  shutdownCountdown.textContent = fmtCountdown(remaining);
-  shutdownCountdown.hidden = false;
+  let failStreak = 0;
+  const FAIL_NEEDED = 2;
+  const startedAt = Date.now();
+  const giveUpMs = 120 * 1000;
+  if (shutdownLoader) shutdownLoader.hidden = false;
   shutdownSafe.hidden = true;
   shutdownTitle.textContent = 'Shutting down…';
+  shutdownOverlay.setAttribute('aria-busy', 'true');
 
-  if (countdownTimer) clearInterval(countdownTimer);
-  countdownTimer = setInterval(() => {
-    remaining -= 1;
-    if (remaining > 0) {
-      shutdownCountdown.textContent = fmtCountdown(remaining);
+  const poll = async () => {
+    if (shutdownFinished) return;
+    const up = await probePiReachable();
+    if (shutdownFinished) return;
+    if (up) {
+      failStreak = 0;
+      if (Date.now() - startedAt >= giveUpMs) {
+        clearShutdownWatchers();
+        shutdownTitle.textContent = 'Still reachable';
+        shutdownMessage.textContent =
+          'The Pi is still responding. Power off may have failed — check sudoers setup, or watch the activity LED before unplugging.';
+        if (shutdownLoader) shutdownLoader.hidden = true;
+        shutdownOverlay.setAttribute('aria-busy', 'false');
+        shutdownFinished = true;
+      }
       return;
     }
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-    shutdownTitle.textContent = 'Shutdown complete';
-    shutdownMessage.textContent =
-      'The Pi should now be powering off. You can close this page.';
-    shutdownCountdown.hidden = true;
-    shutdownSafe.hidden = false;
-    shutdownOverlay.setAttribute('aria-busy', 'false');
-  }, 1000);
+    failStreak += 1;
+    if (failStreak >= FAIL_NEEDED) markShutdownSafe();
+  };
+
+  // First probe after a short delay so the shutdown response is not raced.
+  shutdownProbeTimer = setInterval(poll, 1500);
+  setTimeout(poll, 800);
 }
 
 shutdownBtn.addEventListener('click', async () => {
@@ -5186,7 +5516,7 @@ if (displayOffsetSave) {
   });
 }
 syncDisplayCalHint(displayDbOffset);
-
+wireConfInputs();
 applyViewerLocks();
 </script>
 </body>

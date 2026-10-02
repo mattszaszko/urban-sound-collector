@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
@@ -109,6 +110,94 @@ def resolve_backend(requested: str) -> str:
         return "pyalsa"
     except ImportError:
         return "arecord"
+
+
+class CaptureDeviceError(RuntimeError):
+    """ALSA capture hardware missing or configured device cannot open."""
+
+
+def _arecord_lists_capture_cards(listing: str) -> bool:
+    return bool(re.search(r"^card \d+:", listing or "", re.MULTILINE))
+
+
+def _probe_arecord_device(device: str, *, timeout_sec: float = 2.5) -> str | None:
+    """Return an error detail if ``device`` cannot be opened, else ``None``."""
+    proc = subprocess.Popen(
+        [
+            "arecord",
+            "-D",
+            device,
+            "-f",
+            "S32_LE",
+            "-r",
+            str(CAPTURE_SAMPLE_RATE),
+            "-c",
+            "1",
+            "-t",
+            "raw",
+            "-q",
+            "-",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        _, stderr = proc.communicate(timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=1)
+        return None
+    if proc.returncode == 0:
+        return None
+    detail = (stderr or "").strip()
+    if detail:
+        last = detail.splitlines()[-1].strip()
+        if last:
+            return last
+    return f"arecord exited with code {proc.returncode}"
+
+
+def check_capture_device_available(device: str) -> None:
+    """Raise ``CaptureDeviceError`` when no capture hardware or device won't open."""
+    dev = (device or "").strip()
+    if not dev:
+        raise CaptureDeviceError("ALSA device name is empty.")
+
+    if not shutil.which("arecord"):
+        raise CaptureDeviceError(
+            "arecord not found. Install ALSA utils: sudo apt install alsa-utils"
+        )
+
+    try:
+        listed = subprocess.run(
+            ["arecord", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CaptureDeviceError("Could not list ALSA capture hardware.") from exc
+
+    if listed.returncode != 0:
+        raise CaptureDeviceError("Could not list ALSA capture hardware.")
+
+    if not _arecord_lists_capture_cards(listed.stdout):
+        raise CaptureDeviceError(
+            "No sound capture device detected. Connect the microphone HAT "
+            "and run arecord -l on the Pi to verify."
+        )
+
+    open_err = _probe_arecord_device(dev)
+    if open_err:
+        raise CaptureDeviceError(
+            f"Cannot open ALSA capture device {dev!r}: {open_err}"
+        )
 
 
 def open_capture_backend(

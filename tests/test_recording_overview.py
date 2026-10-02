@@ -10,6 +10,7 @@ from core.recording_overview import (
     loud_disturbance_stats,
     percentile_nearest,
     slim_event_point,
+    yamnet_label_spans,
 )
 
 
@@ -270,6 +271,67 @@ class OverviewWindowSeriesTests(unittest.TestCase):
         self.assertEqual(len(payload["scrub_points"]), 1500)
         self.assertFalse(payload["points_full"])
         self.assertEqual(payload["series_window_s"], 120)
+
+
+class YamnetLabelSpanTests(unittest.TestCase):
+    def _pt(self, t: str, label: str, conf: float, dba: float = 60.0) -> dict:
+        point = slim_event_point(
+            {
+                "created_at": t,
+                "dBA_spl": dba,
+                "top_label": label,
+                "top_confidence": conf,
+                "yamnet_preprocess": {"gated": False, "gate_open": True},
+            }
+        )
+        assert point is not None
+        return point
+
+    def test_merges_consecutive_same_label(self) -> None:
+        points = [
+            self._pt("2026-01-01T00:00:00.000Z", "Vehicle", 0.4),
+            self._pt("2026-01-01T00:00:01.000Z", "Vehicle", 0.35),
+            self._pt("2026-01-01T00:00:02.000Z", "Speech", 0.5),
+        ]
+        spans = yamnet_label_spans(points)
+        self.assertEqual(len(spans), 2)
+        self.assertEqual(spans[0]["label"], "Vehicle")
+        self.assertEqual(spans[0]["t0"], "2026-01-01T00:00:00.000Z")
+        self.assertEqual(spans[0]["t1"], "2026-01-01T00:00:01.000Z")
+        self.assertEqual(spans[1]["label"], "Speech")
+
+    def test_confidence_threshold_hides_weak_labels(self) -> None:
+        points = [
+            self._pt("2026-01-01T00:00:00.000Z", "Vehicle", 0.1),
+            self._pt("2026-01-01T00:00:01.000Z", "Speech", 0.4),
+        ]
+        spans = yamnet_label_spans(points, min_confidence=0.2)
+        self.assertEqual(len(spans), 1)
+        self.assertEqual(spans[0]["label"], "Speech")
+
+    def test_clap_confidence_threshold(self) -> None:
+        weak = slim_event_point(
+            {
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "dBA_spl": 70.0,
+                "clap_status": "triggered",
+                "clap_top_label": "siren",
+                "clap_top_confidence": 0.4,
+            }
+        )
+        strong = slim_event_point(
+            {
+                "created_at": "2026-01-01T00:00:01.000Z",
+                "dBA_spl": 72.0,
+                "clap_status": "triggered",
+                "clap_top_label": "siren",
+                "clap_top_confidence": 0.7,
+            }
+        )
+        assert weak is not None and strong is not None
+        markers = clap_triggered_markers([weak, strong], min_confidence=0.55)
+        self.assertEqual(len(markers), 1)
+        self.assertEqual(markers[0]["confidence"], 0.7)
 
 
 if __name__ == "__main__":

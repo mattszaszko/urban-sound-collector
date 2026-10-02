@@ -412,7 +412,7 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
   Dark/Mid/Bright (A-weighted frequency balance; polls every 1 s)
 - Live **2‑minute loudness chart** (dBA colored by A-weighted spectral centroid +
   Gate L90 relative, YAMNet label-change markers, CLAP triggers)
-- Live log tail via Server-Sent Events (no page refresh needed)
+- **Live log** (collapsed by default; expands to tail collector output via SSE)
 - **Data** tab: download past JSONL (optional omit `spectrum` /
   `yamnet_preprocess`), download sibling WAV, delete a recording (JSONL + WAV; blocked
   while that recording is active). **View** opens a per-recording analysis screen
@@ -537,13 +537,11 @@ After reboot you should have:
 | `urban-sound-web` | Auto-starts (uvicorn on :8080) |
 | Collector recording | Manual via web UI when you want |
 
-**Shut down from the web UI:** the **Power** section has a **Shut down Pi** button. It stops any active recording, waits one minute (configurable), then powers off. One-time setup so the web user can power off without a password:
+**Shut down from the web UI:** the **Power** section has a **Shut down Pi** button. It stops any active recording and powers off immediately. Keep the page open until it detects the Pi is offline and you see **Safe to unplug power now**. One-time setup so the web user can power off without a password:
 
 ```bash
 sudo bash ~/urban-sound-collector/web/setup-shutdown-sudoers.sh
 ```
-
-Keep the page open until the countdown finishes and you see **Safe to unplug power now**.
 
 ---
 
@@ -561,7 +559,6 @@ Keep the page open until the countdown finishes and you see **Safe to unplug pow
 | `DISPLAY_DB_OFFSET` | `0` | Display/analysis-only dBA offset (±40); not written into JSONL |
 | `PUBLIC_URL` | *(empty)* | This Pi's public URL (set per Pi) |
 | `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device in UI |
-| `SHUTDOWN_GRACE_SEC` | `60` | Countdown before poweroff from web UI |
 
 The `.env` file is gitignored — never commit it. Copy `.env.example` on each Pi.
 
