@@ -1654,6 +1654,7 @@ const tabPanels = {
 };
 let promptsLoaded = false;
 let triggersLoaded = false;
+let systemHealthTimer = null;
 
 function switchTab(name) {
   tabBtns.forEach((btn) => {
@@ -1665,13 +1666,16 @@ function switchTab(name) {
     if (!panel) return;
     panel.classList.toggle('active', key === name);
   });
-  if (name === 'settings') {
-    loadPrompts();
-    loadTriggersPanel();
-    startSystemHealthPolling();
-  } else {
-    stopSystemHealthPolling();
-  }
+  // Defer so mid-script tab init (and early clicks) don't touch lets declared later.
+  queueMicrotask(() => {
+    if (name === 'settings') {
+      if (typeof loadPrompts === 'function') loadPrompts();
+      if (typeof loadTriggersPanel === 'function') loadTriggersPanel();
+      if (typeof startSystemHealthPolling === 'function') startSystemHealthPolling();
+    } else if (typeof stopSystemHealthPolling === 'function') {
+      stopSystemHealthPolling();
+    }
+  });
 }
 
 tabBtns.forEach((btn) => {
@@ -5592,8 +5596,6 @@ syncDisplayCalHint(displayDbOffset);
 wireConfInputs();
 
 // ── Settings: Pi system health ────────────────────────────────────
-let systemHealthTimer = null;
-
 function fmtUptime(totalSec) {
   const s = Math.max(0, Math.floor(Number(totalSec) || 0));
   const d = Math.floor(s / 86400);
