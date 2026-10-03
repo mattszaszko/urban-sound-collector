@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -836,6 +837,257 @@ def _pi_throttle_status() -> dict[str, Any] | None:
     }
 
 
+def _default_network_iface() -> str | None:
+    """Return the interface used by the default IPv4 route, if known."""
+    try:
+        result = subprocess.run(
+            ["ip", "-4", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+            timeout=1.5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    if result is not None and result.returncode == 0:
+        match = re.search(r"\bdev\s+(\S+)", result.stdout or "")
+        if match:
+            return match.group(1)
+
+    # /proc/net/route: destination 00000000 = default
+    try:
+        text = Path("/proc/net/route").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "00000000":
+            return parts[0]
+    return None
+
+
+def _signal_pct_from_dbm(dbm: float) -> float:
+    """Map typical Wi‑Fi RSSI (−90…−30 dBm) onto 0–100 for the meter bar."""
+    return round(max(0.0, min(100.0, (float(dbm) + 90.0) / 60.0 * 100.0)), 1)
+
+
+def _level_from_wifi_dbm(dbm: float | None) -> str:
+    if dbm is None:
+        return "unknown"
+    if dbm < -70.0:
+        return "critical"
+    if dbm < -60.0:
+        return "warn"
+    return "ok"
+
+
+def _level_from_ping_ms(ping_ms: float | None, *, ping_ok: bool) -> str:
+    if not ping_ok or ping_ms is None:
+        return "critical"
+    if ping_ms >= 200.0:
+        return "critical"
+    if ping_ms >= 80.0:
+        return "warn"
+    return "ok"
+
+
+def _wifi_link_info(iface: str) -> dict[str, Any]:
+    """Best-effort SSID + RSSI for a wireless interface."""
+    info: dict[str, Any] = {
+        "ssid": None,
+        "signal_dbm": None,
+        "kind": "wifi",
+    }
+    iw = shutil.which("iw")
+    if iw:
+        try:
+            result = subprocess.run(
+                [iw, "dev", iface, "link"],
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                check=False,
+            )
+            out = result.stdout or ""
+            ssid_m = re.search(r"^\s*SSID:\s*(.+)\s*$", out, re.MULTILINE)
+            if ssid_m:
+                info["ssid"] = ssid_m.group(1).strip() or None
+            sig_m = re.search(r"signal:\s*(-?\d+(?:\.\d+)?)\s*dBm", out, re.I)
+            if sig_m:
+                info["signal_dbm"] = round(float(sig_m.group(1)), 1)
+            if "Not connected" in out:
+                info["kind"] = "wifi"
+            if info["signal_dbm"] is not None or info["ssid"] is not None:
+                return info
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+
+    # /proc/net/wireless — level is often dBm (negative) on modern kernels.
+    try:
+        text = Path("/proc/net/wireless").read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    for line in text.splitlines():
+        if not line.strip().startswith(f"{iface}:"):
+            continue
+        # wlan0: 0000  60.  -50.  -256  ...
+        nums = re.findall(r"-?\d+(?:\.\d+)?", line.split(":", 1)[1])
+        if len(nums) >= 2:
+            level = float(nums[1])
+            # Some drivers report level as quality-like positive; prefer dBm.
+            if level < 0:
+                info["signal_dbm"] = round(level, 1)
+            elif info["signal_dbm"] is None and level <= 100:
+                # Treat 0–100 quality as a pseudo percentage later via signal_pct.
+                info["signal_pct_hint"] = round(level, 1)
+        break
+
+    iwconfig = shutil.which("iwconfig")
+    if iwconfig and info["ssid"] is None:
+        try:
+            result = subprocess.run(
+                [iwconfig, iface],
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                check=False,
+            )
+            out = (result.stdout or "") + (result.stderr or "")
+            essid_m = re.search(r'ESSID:"([^"]*)"', out)
+            if essid_m:
+                info["ssid"] = essid_m.group(1) or None
+            if info["signal_dbm"] is None:
+                sig_m = re.search(
+                    r"Signal level[=:](-?\d+(?:\.\d+)?)\s*dBm", out, re.I
+                )
+                if sig_m:
+                    info["signal_dbm"] = round(float(sig_m.group(1)), 1)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+    return info
+
+
+def _iface_kind(iface: str | None) -> str:
+    if not iface:
+        return "unknown"
+    name = iface.lower()
+    if name.startswith(("wl", "wlan", "wifi")):
+        return "wifi"
+    if name.startswith(("en", "eth", "usb")):
+        return "ethernet"
+    # sysfs type: 1 = ethernet, 801 = wifi
+    try:
+        type_raw = Path(f"/sys/class/net/{iface}/type").read_text(encoding="utf-8")
+        type_n = int(type_raw.strip())
+        if type_n == 801:
+            return "wifi"
+        if type_n == 1:
+            return "ethernet"
+    except (OSError, ValueError):
+        pass
+    return "unknown"
+
+
+def _ping_rtt_ms(host: str = "1.1.1.1") -> tuple[bool, float | None]:
+    """One ICMP echo; returns (ok, rtt_ms)."""
+    if os.name == "nt":
+        cmd = ["ping", "-n", "1", "-w", "1000", host]
+    else:
+        cmd = ["ping", "-c", "1", "-W", "1", host]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False, None
+    out = (result.stdout or "") + (result.stderr or "")
+    match = re.search(r"time[=<](\d+(?:\.\d+)?)\s*ms", out, re.I)
+    if match:
+        return True, round(float(match.group(1)), 1)
+    return result.returncode == 0, None
+
+
+def _network_status() -> dict[str, Any]:
+    """Wi‑Fi RSSI when available, plus a quick public ping for internet reachability."""
+    iface = _default_network_iface()
+    kind = _iface_kind(iface)
+    ssid = None
+    signal_dbm = None
+    signal_pct: float | None = None
+
+    if iface and kind == "wifi":
+        link = _wifi_link_info(iface)
+        ssid = link.get("ssid")
+        signal_dbm = link.get("signal_dbm")
+        if signal_dbm is not None:
+            signal_pct = _signal_pct_from_dbm(float(signal_dbm))
+        elif link.get("signal_pct_hint") is not None:
+            signal_pct = float(link["signal_pct_hint"])
+
+    ping_ok, ping_ms = _ping_rtt_ms()
+
+    wifi_level = _level_from_wifi_dbm(signal_dbm if signal_dbm is not None else None)
+    ping_level = _level_from_ping_ms(ping_ms, ping_ok=ping_ok)
+
+    # Prefer radio strength when on Wi‑Fi; otherwise judge by internet RTT.
+    if kind == "wifi" and signal_dbm is not None:
+        level = wifi_level
+        # Offline internet still marks critical even with a strong AP signal.
+        if not ping_ok:
+            level = "critical"
+        elif ping_level == "warn" and level == "ok":
+            level = "warn"
+    else:
+        level = ping_level
+
+    if signal_pct is None and ping_ok and ping_ms is not None:
+        # Invert latency onto the bar (0 ms → full, 200 ms+ → empty).
+        signal_pct = round(max(0.0, min(100.0, (1.0 - min(ping_ms, 200.0) / 200.0) * 100.0)), 1)
+    elif signal_pct is None and not ping_ok:
+        signal_pct = 0.0
+
+    note_bits: list[str] = []
+    if iface:
+        note_bits.append(iface)
+    if kind == "wifi" and ssid:
+        note_bits.append(ssid)
+    elif kind == "ethernet":
+        note_bits.append("ethernet")
+    if signal_dbm is not None:
+        note_bits.append(f"{signal_dbm:.0f} dBm")
+    if ping_ok and ping_ms is not None:
+        note_bits.append(f"{ping_ms:.0f} ms to net")
+    elif not ping_ok:
+        note_bits.append("no internet reply")
+
+    if signal_dbm is not None:
+        value_text = f"{signal_dbm:.0f} dBm"
+    elif ping_ok and ping_ms is not None:
+        value_text = f"{ping_ms:.0f} ms"
+    elif not ping_ok:
+        value_text = "Offline"
+    else:
+        value_text = "—"
+
+    return {
+        "ok": bool(ping_ok or signal_dbm is not None),
+        "iface": iface,
+        "kind": kind,
+        "ssid": ssid,
+        "signal_dbm": signal_dbm,
+        "signal_pct": signal_pct,
+        "ping_ms": ping_ms,
+        "ping_ok": ping_ok,
+        "level": level,
+        "value_text": value_text,
+        "note": " · ".join(note_bits) if note_bits else "Network status unavailable",
+    }
+
+
 # Prime non-blocking CPU percent samples (first call is often 0.0).
 try:
     psutil.cpu_percent(interval=None)
@@ -845,7 +1097,7 @@ except Exception:  # noqa: BLE001
 
 
 def _system_telemetry() -> dict[str, Any]:
-    """Snapshot CPU / RAM / temp / disk / throttle for the Settings health card."""
+    """Snapshot CPU / RAM / temp / disk / network / throttle for the Settings health card."""
     try:
         cpu_pct = float(psutil.cpu_percent(interval=None))
     except Exception:  # noqa: BLE001
@@ -883,15 +1135,24 @@ def _system_telemetry() -> dict[str, Any]:
     temp_c = _read_cpu_temp_c()
     throttle = _pi_throttle_status()
     disk = _disk_usage_summary(RECORDINGS_DIR)
+    network = _network_status()
 
     cpu_level = _level_from_pct(cpu_pct, warn=70.0, critical=90.0)
     mem_level = _level_from_pct(mem_pct, warn=75.0, critical=90.0)
     temp_level = _level_from_temp_c(temp_c)
     throttle_level = (throttle or {}).get("level", "unknown")
+    network_level = network.get("level", "unknown")
 
     rank = {"ok": 0, "unknown": 0, "warn": 1, "critical": 2}
     overall = "ok"
-    for lvl in (cpu_level, mem_level, temp_level, disk.get("level"), throttle_level):
+    for lvl in (
+        cpu_level,
+        mem_level,
+        temp_level,
+        disk.get("level"),
+        throttle_level,
+        network_level,
+    ):
         if rank.get(str(lvl), 0) > rank.get(overall, 0):
             overall = str(lvl)
 
@@ -915,6 +1176,7 @@ def _system_telemetry() -> dict[str, Any]:
         "temp_level": temp_level,
         "throttle": throttle,
         "disk": disk,
+        "network": network,
         "overall_level": overall,
     }
 

@@ -416,7 +416,8 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
 - Live status: chunk count, elapsed time, last label, dBA, last CLAP, Spectrum
   Dark/Mid/Bright (A-weighted frequency balance; polls every 1 s)
 - Settings **system health** card: CPU, memory, SoC temperature (when available),
-  disk, and Raspberry Pi throttle / low-voltage flags (polls while Settings is open)
+  disk, internet (Wi‑Fi dBm when available + ping RTT), and Raspberry Pi
+  throttle / low-voltage flags (polls while Settings is open)
 - Live **2‑minute loudness chart** (dBA colored by A-weighted spectral centroid +
   Gate L90 relative, YAMNet label-change markers, CLAP triggers)
 - **Live log** (collapsed by default; expands to tail collector output via SSE)

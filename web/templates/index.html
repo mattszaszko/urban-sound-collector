@@ -479,8 +479,8 @@
   @media(min-width:640px){
     .sys-health-grid{grid-template-columns:1fr 1fr}
   }
-  @media(min-width:960px){
-    .sys-health-grid{grid-template-columns:repeat(4,1fr)}
+  @media(min-width:1100px){
+    .sys-health-grid{grid-template-columns:repeat(3,1fr)}
   }
   .recording-check{width:auto;margin:0 .35rem 0 0;accent-color:var(--accent)}
   .analyze-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
@@ -1264,9 +1264,9 @@
   <div class="card" id="system-health-card">
     <h2>This Pi · system health</h2>
     <div class="field-note" style="margin-bottom:.65rem">
-      Live CPU, memory, temperature, and storage. Warm colours mean the device is
-      under pressure — yellow ≈ watch it, red ≈ close to limits / throttling.
-      Updates while this tab is open.
+      Live CPU, memory, temperature, storage, and internet. Warm colours mean the
+      device is under pressure — yellow ≈ watch it, red ≈ close to limits /
+      throttling / weak link. Updates while this tab is open.
     </div>
     <div class="sys-health-grid" id="sys-health-grid">
       <div class="sys-meter unknown" id="sys-cpu">
@@ -1300,6 +1300,14 @@
         </div>
         <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-disk-fill"></div></div>
         <div class="sys-meter-note" id="sys-disk-note">Waiting…</div>
+      </div>
+      <div class="sys-meter unknown" id="sys-net">
+        <div class="sys-meter-head">
+          <span class="sys-meter-label">Internet</span>
+          <span class="sys-meter-value" id="sys-net-val">—</span>
+        </div>
+        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-net-fill"></div></div>
+        <div class="sys-meter-note" id="sys-net-note">Waiting…</div>
       </div>
     </div>
     <div class="sys-health-flags" id="sys-health-flags" hidden></div>
@@ -5926,6 +5934,7 @@ function renderSystemHealth(data) {
     setSysMeter('sys-mem', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
     setSysMeter('sys-temp', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
     setSysMeter('sys-disk', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
+    setSysMeter('sys-net', { level: 'unknown', valueText: '—', fillPct: 0, note: 'Unavailable' });
     return;
   }
 
@@ -5979,6 +5988,13 @@ function renderSystemHealth(data) {
     note: disk.line || 'Recordings storage',
   });
 
+  const net = data.network || {};
+  setSysMeter('sys-net', {
+    level: net.level || 'unknown',
+    valueText: net.value_text || '—',
+    fillPct: net.signal_pct,
+    note: net.note || 'Wi‑Fi signal and internet reply time',
+  });
   const flagsEl = document.getElementById('sys-health-flags');
   const throttle = data.throttle;
   if (flagsEl) {
