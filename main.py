@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import os
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -557,8 +558,6 @@ def stream_live(
             if events_written == 0:
                 logger.info("First audio chunk received; pipeline is live.")
             pcm = int32_frames_to_float32(raw_chunk)
-            if audio_writer is not None:
-                audio_writer.write_float32(pcm)
 
             # Branch A — human loudness @ capture rate (no classifier gain).
             metrics = loudness.analyse(pcm)
@@ -580,6 +579,10 @@ def stream_live(
                 logger.warning("Chunk %s classification failed: %s", chunk_index, exc)
                 chunk_index += 1
                 continue
+
+            # Write audio only for chunks that produce a JSONL event (keeps Inspect sync).
+            if audio_writer is not None:
+                audio_writer.write_float32(pcm)
 
             clap_payload = None
             event_created_at = utc_now_iso()
@@ -840,6 +843,15 @@ def main(argv: List[str] | None = None) -> int:
 
     setup_logging(log_path)
     logger.info("Logging to: %s", log_path.resolve())
+
+    # Web UI stop sends SIGTERM; convert to KeyboardInterrupt so finally: closes FLAC/WAV.
+    def _stop_handler(signum: int, _frame: object) -> None:
+        raise KeyboardInterrupt
+
+    try:
+        signal.signal(signal.SIGTERM, _stop_handler)
+    except (ValueError, OSError):
+        pass
 
     logger.info("Loading YAMNet TFLite from %s ...", args.model_path)
     try:

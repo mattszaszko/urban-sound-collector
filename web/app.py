@@ -27,9 +27,10 @@ from fastapi.responses import (
 )
 from jinja2 import Environment, FileSystemLoader
 
-from core.audio_constants import CAPTURE_STARTUP_DISCARD_SECONDS
+from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_STARTUP_DISCARD_SECONDS
 from core.audio_writer import (
     DEFAULT_AUDIO_FORMAT,
+    ensure_flac_seekable,
     normalize_audio_format,
     sibling_audio_path,
 )
@@ -992,6 +993,14 @@ def _cached_slim_points(path: Path, *, events: list[dict] | None = None) -> list
 def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
     audio_path = sibling_audio_path(path)
     has_audio = audio_path is not None
+    if has_audio and audio_path is not None and audio_path.suffix.lower() == ".flac":
+        try:
+            with path.open("rb") as f:
+                n_lines = sum(1 for line in f if line.strip())
+            fallback = int(n_lines) * int(CAPTURE_CHUNK_SAMPLES) if n_lines else None
+        except OSError:
+            fallback = None
+        ensure_flac_seekable(audio_path, fallback_samples=fallback)
     active = _active_output_path()
     recording_active = active is not None and path.resolve() == active
     events = _iter_jsonl_events(path)
@@ -1701,10 +1710,23 @@ async def download_recording(filename: str, request: Request):
     # Audio (or any non-JSONL) — serve for playback or download.
     if path.suffix.lower() != ".jsonl":
         suffix = path.suffix.lower()
-        if suffix == ".wav":
-            media = "audio/wav"
-        elif suffix == ".flac":
+        if suffix == ".flac":
+            # Unfinalized FLACs (hard stop) have total_samples=0 and won't seek in browsers.
+            jsonl_sibling = path.with_suffix(".jsonl")
+            fallback = None
+            if jsonl_sibling.is_file():
+                try:
+                    # Cheap line count ≈ event/chunk count for sync repair.
+                    with jsonl_sibling.open("rb") as f:
+                        n_lines = sum(1 for line in f if line.strip())
+                    if n_lines > 0:
+                        fallback = int(n_lines) * int(CAPTURE_CHUNK_SAMPLES)
+                except OSError:
+                    fallback = None
+            ensure_flac_seekable(path, fallback_samples=fallback)
             media = "audio/flac"
+        elif suffix == ".wav":
+            media = "audio/wav"
         else:
             media = "application/octet-stream"
         force_download = _query_flag(request, "download", default=False)

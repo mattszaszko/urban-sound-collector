@@ -11,8 +11,11 @@ import numpy as np
 
 from core.audio_constants import CAPTURE_SAMPLE_RATE
 from core.audio_writer import (
+    ensure_flac_seekable,
     normalize_audio_format,
     open_audio_writer,
+    patch_flac_total_samples,
+    read_flac_total_samples,
     sibling_audio_path,
 )
 
@@ -69,6 +72,40 @@ class OpenAudioWriterTests(unittest.TestCase):
             data, rate = sf.read(str(path), dtype="float32")
             self.assertEqual(rate, CAPTURE_SAMPLE_RATE)
             self.assertEqual(data.shape[0], 2400)
+            self.assertEqual(read_flac_total_samples(path), 2400)
+
+
+class FlacStreaminfoRepairTests(unittest.TestCase):
+    def test_patch_total_samples(self) -> None:
+        try:
+            import soundfile as sf  # type: ignore[import-untyped]
+        except ImportError:
+            self.skipTest("soundfile not installed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "broken.flac"
+            writer = open_audio_writer(
+                path, audio_format="flac", sample_rate=CAPTURE_SAMPLE_RATE
+            )
+            writer.write_float32(np.zeros(4800, dtype=np.float32))
+            writer.close()
+            # Simulate hard-stop: zero STREAMINFO total_samples.
+            data = bytearray(path.read_bytes())
+            packed = int.from_bytes(data[18:26], "big")
+            packed &= ~((1 << 36) - 1)
+            data[18:26] = packed.to_bytes(8, "big")
+            path.write_bytes(data)
+            self.assertEqual(read_flac_total_samples(path), 0)
+
+            self.assertTrue(ensure_flac_seekable(path, fallback_samples=4800))
+            self.assertEqual(read_flac_total_samples(path), 4800)
+            # Already valid — no-op.
+            self.assertFalse(ensure_flac_seekable(path, fallback_samples=4800))
+            # Absurd fallback must not be applied once the header is valid.
+            self.assertFalse(ensure_flac_seekable(path, fallback_samples=2**62))
+            self.assertEqual(read_flac_total_samples(path), 4800)
+            frames, _rate = sf.read(str(path), dtype="float32")
+            self.assertEqual(len(frames), 4800)
 
 
 if __name__ == "__main__":

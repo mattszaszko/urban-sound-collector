@@ -2871,6 +2871,8 @@ const ovAudio = document.getElementById('ov-audio');
 const ovAudioNote = document.getElementById('ov-audio-note');
 
 const OVERVIEW_WINDOW_MS = 120_000;
+/** Capture chunk length written to sibling audio (matches YAMNet window). */
+const AUDIO_CHUNK_SECONDS = 0.975;
 
 let overviewData = null;
 let overviewScrubPoints = [];
@@ -3108,6 +3110,59 @@ function updateOverviewChartWindow(playheadMs) {
   }
 }
 
+function overviewPointsForAudioSync() {
+  if (overviewWindowPoints && overviewWindowPoints.length) return overviewWindowPoints;
+  return overviewScrubPoints || [];
+}
+
+function nearestOverviewPoint(ms) {
+  const pts = overviewPointsForAudioSync();
+  if (!pts.length || !Number.isFinite(ms)) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for (const p of pts) {
+    const t = Date.parse(p.t);
+    if (!Number.isFinite(t)) continue;
+    const d = Math.abs(t - ms);
+    if (d < bestDist) {
+      bestDist = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+function audioSecondsForPlayheadMs(ms) {
+  const p = nearestOverviewPoint(ms);
+  if (p && p.chunk_index != null && Number.isFinite(Number(p.chunk_index))) {
+    return Math.max(0, Number(p.chunk_index) * AUDIO_CHUNK_SECONDS);
+  }
+  if (!Number.isFinite(overviewStartedMs)) return 0;
+  return Math.max(0, (ms - overviewStartedMs) / 1000);
+}
+
+function playheadMsForAudioSeconds(sec) {
+  const t = Math.max(0, Number(sec) || 0);
+  const idx = Math.round(t / AUDIO_CHUNK_SECONDS);
+  const pts = overviewPointsForAudioSync();
+  let best = null;
+  let bestDist = Infinity;
+  for (const p of pts) {
+    if (p.chunk_index == null) continue;
+    const d = Math.abs(Number(p.chunk_index) - idx);
+    if (d < bestDist) {
+      bestDist = d;
+      best = p;
+    }
+  }
+  if (best) {
+    const ms = Date.parse(best.t);
+    if (Number.isFinite(ms)) return ms;
+  }
+  if (Number.isFinite(overviewStartedMs)) return overviewStartedMs + t * 1000;
+  return null;
+}
+
 function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}) {
   if (!Number.isFinite(ms)) return;
   if (!overviewScrubPoints.length && overviewStartedMs == null) return;
@@ -3125,15 +3180,15 @@ function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}
     seekAudio &&
     !fromAudio &&
     ovAudio &&
-    overviewStartedMs != null &&
     ovAudio.getAttribute('src') &&
     ovAudioWrap &&
     !ovAudioWrap.hidden
   ) {
-    const offset = Math.max(0, (overviewPlayheadMs - overviewStartedMs) / 1000);
+    const offset = audioSecondsForPlayheadMs(overviewPlayheadMs);
     try {
-      if (Number.isFinite(ovAudio.duration) && ovAudio.duration > 0) {
-        ovAudio.currentTime = Math.min(offset, Math.max(0, ovAudio.duration - 0.05));
+      const dur = ovAudio.duration;
+      if (Number.isFinite(dur) && dur > 0 && dur < 1e7) {
+        ovAudio.currentTime = Math.min(offset, Math.max(0, dur - 0.05));
       } else {
         ovAudio.currentTime = offset;
       }
@@ -3415,13 +3470,16 @@ function stopOverviewAudioLoop() {
 }
 
 function tickOverviewAudioSync() {
-  if (!ovAudio || ovAudio.paused || overviewStartedMs == null) {
+  if (!ovAudio || ovAudio.paused) {
     overviewRaf = 0;
     return;
   }
-  overviewSyncFromAudio = true;
-  setOverviewPlayheadMs(overviewStartedMs + ovAudio.currentTime * 1000, { fromAudio: true });
-  overviewSyncFromAudio = false;
+  const ms = playheadMsForAudioSeconds(ovAudio.currentTime);
+  if (ms != null) {
+    overviewSyncFromAudio = true;
+    setOverviewPlayheadMs(ms, { fromAudio: true });
+    overviewSyncFromAudio = false;
+  }
   overviewRaf = requestAnimationFrame(tickOverviewAudioSync);
 }
 
@@ -3577,8 +3635,9 @@ if (ovAudio) {
   });
   ovAudio.addEventListener('pause', () => stopOverviewAudioLoop());
   ovAudio.addEventListener('seeked', () => {
-    if (overviewSyncFromAudio || overviewStartedMs == null) return;
-    setOverviewPlayheadMs(overviewStartedMs + ovAudio.currentTime * 1000, { fromAudio: true });
+    if (overviewSyncFromAudio) return;
+    const ms = playheadMsForAudioSeconds(ovAudio.currentTime);
+    if (ms != null) setOverviewPlayheadMs(ms, { fromAudio: true });
   });
 }
 
