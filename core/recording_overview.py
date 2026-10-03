@@ -391,6 +391,8 @@ def build_recording_overview(
     loud_threshold: float = DEFAULT_LOUD_THRESHOLD_LAFMAX,
     calib_offset: float = DEFAULT_CALIB_OFFSET,
     display_db_offset: float = 0.0,
+    audio_duration_s: float | None = None,
+    audio_chunk_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Build overview payload from in-memory events (spectrum ignored)."""
     points_full: list[dict] = []
@@ -536,4 +538,15 @@ def build_recording_overview(
         "clap_markers": clap_triggered_markers(points_chart),
         "scrub_points": points_chart,
         "series_window_s": DEFAULT_SERIES_WINDOW_S,
+        # Sibling audio is one capture chunk per JSONL event (uniform timeline).
+        "audio_chunk_seconds": (
+            float(audio_chunk_seconds)
+            if audio_chunk_seconds is not None and float(audio_chunk_seconds) > 0
+            else 0.975
+        ),
+        "audio_duration_s": (
+            float(audio_duration_s)
+            if audio_duration_s is not None and float(audio_duration_s) > 0
+            else (float(chunks) * 0.975 if has_wav and chunks else None)
+        ),
     }

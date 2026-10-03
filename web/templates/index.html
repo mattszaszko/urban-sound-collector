@@ -514,7 +514,15 @@
                    padding:.65rem .75rem;margin-bottom:.65rem}
   .overview-detail strong{color:var(--text);font-weight:600}
   .overview-audio-wrap{margin-top:.5rem}
-  .overview-audio-wrap audio{width:100%;margin-top:.35rem}
+  .overview-audio-wrap audio{display:none}
+  .overview-audio-transport{display:flex;align-items:center;gap:.55rem;margin-top:.35rem}
+  .overview-audio-play{
+    flex:0 0 auto;width:2.1rem;height:2.1rem;border-radius:8px;border:1px solid var(--border);
+    background:var(--surface);color:var(--text);font-size:.85rem;line-height:1;cursor:pointer;
+  }
+  .overview-audio-play:hover{border-color:var(--accent)}
+  .overview-audio-scrub{flex:1 1 auto;accent-color:var(--accent);margin:0}
+  .overview-audio-time{flex:0 0 auto;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums;min-width:5.5rem;text-align:right}
   .overview-audio-note{font-size:.72rem;color:var(--yellow);margin-top:.35rem}
   @media(min-width:640px){
     .impact-grid{grid-template-columns:repeat(3,1fr)}
@@ -1085,9 +1093,14 @@
     <div class="overview-detail" id="ov-detail">Select a point on the timeline.</div>
     <div class="overview-audio-wrap" id="ov-audio-wrap" hidden>
       <div class="overview-sub">Listen (synced to scrubber)</div>
-      <audio id="ov-audio" controls preload="metadata"></audio>
+      <div class="overview-audio-transport" id="ov-audio-transport">
+        <button type="button" class="overview-audio-play" id="ov-audio-play" aria-label="Play">▶</button>
+        <input type="range" class="overview-audio-scrub" id="ov-audio-scrub" min="0" max="1000" value="0" step="1" aria-label="Audio position">
+        <span class="overview-audio-time" id="ov-audio-time">0:00 / 0:00</span>
+      </div>
+      <audio id="ov-audio" preload="auto"></audio>
       <div class="overview-audio-note" id="ov-audio-note" hidden>
-        Playback disabled while this recording is still active (WAV may be incomplete).
+        Playback disabled while this recording is still active (file may be incomplete).
       </div>
     </div>
   </div>
@@ -2869,14 +2882,20 @@ const ovLoudThr = document.getElementById('ov-loud-thr');
 const ovAudioWrap = document.getElementById('ov-audio-wrap');
 const ovAudio = document.getElementById('ov-audio');
 const ovAudioNote = document.getElementById('ov-audio-note');
+const ovAudioTransport = document.getElementById('ov-audio-transport');
+const ovAudioPlay = document.getElementById('ov-audio-play');
+const ovAudioScrub = document.getElementById('ov-audio-scrub');
+const ovAudioTime = document.getElementById('ov-audio-time');
 
 const OVERVIEW_WINDOW_MS = 120_000;
 /** Capture chunk length written to sibling audio (matches YAMNet window). */
-const AUDIO_CHUNK_SECONDS = 0.975;
+let AUDIO_CHUNK_SECONDS = 0.975;
 
 let overviewData = null;
 let overviewScrubPoints = [];
 let overviewWindowPoints = [];
+let overviewAudioDurationS = null;
+let overviewAudioScrubbing = false;
 let overviewSeries = { dba: [], l90: [], yam: [], clap: [] };
 let overviewPlayheadMs = null;
 let overviewStartedMs = null;
@@ -3111,58 +3130,122 @@ function updateOverviewChartWindow(playheadMs) {
 }
 
 function overviewPointsForAudioSync() {
+  // Prefer dense window (has every chunk_index); fall back to coarse scrub points.
   if (overviewWindowPoints && overviewWindowPoints.length) return overviewWindowPoints;
   return overviewScrubPoints || [];
 }
 
-function nearestOverviewPoint(ms) {
-  const pts = overviewPointsForAudioSync();
-  if (!pts.length || !Number.isFinite(ms)) return null;
-  let best = null;
-  let bestDist = Infinity;
-  for (const p of pts) {
-    const t = Date.parse(p.t);
-    if (!Number.isFinite(t)) continue;
-    const d = Math.abs(t - ms);
-    if (d < bestDist) {
-      bestDist = d;
-      best = p;
-    }
-  }
-  return best;
+function overviewChunkPointsSorted() {
+  const pts = overviewPointsForAudioSync().filter(
+    (p) => p && p.chunk_index != null && Number.isFinite(Number(p.chunk_index))
+  );
+  pts.sort((a, b) => Number(a.chunk_index) - Number(b.chunk_index));
+  return pts;
 }
 
-function audioSecondsForPlayheadMs(ms) {
-  const p = nearestOverviewPoint(ms);
-  if (p && p.chunk_index != null && Number.isFinite(Number(p.chunk_index))) {
-    return Math.max(0, Number(p.chunk_index) * AUDIO_CHUNK_SECONDS);
+function knownAudioDurationS() {
+  if (Number.isFinite(overviewAudioDurationS) && overviewAudioDurationS > 0) {
+    return overviewAudioDurationS;
   }
-  if (!Number.isFinite(overviewStartedMs)) return 0;
-  return Math.max(0, (ms - overviewStartedMs) / 1000);
-}
-
-function playheadMsForAudioSeconds(sec) {
-  const t = Math.max(0, Number(sec) || 0);
-  const idx = Math.round(t / AUDIO_CHUNK_SECONDS);
-  const pts = overviewPointsForAudioSync();
-  let best = null;
-  let bestDist = Infinity;
-  for (const p of pts) {
-    if (p.chunk_index == null) continue;
-    const d = Math.abs(Number(p.chunk_index) - idx);
-    if (d < bestDist) {
-      bestDist = d;
-      best = p;
-    }
+  const pts = overviewChunkPointsSorted();
+  if (pts.length) {
+    const last = Number(pts[pts.length - 1].chunk_index);
+    if (Number.isFinite(last)) return (last + 1) * AUDIO_CHUNK_SECONDS;
   }
-  if (best) {
-    const ms = Date.parse(best.t);
-    if (Number.isFinite(ms)) return ms;
-  }
-  if (Number.isFinite(overviewStartedMs)) return overviewStartedMs + t * 1000;
+  const browserDur = ovAudio && ovAudio.duration;
+  if (Number.isFinite(browserDur) && browserDur > 0 && browserDur < 1e7) return browserDur;
   return null;
 }
 
+function fmtAudioClock(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+function updateOverviewAudioTransport(sec) {
+  const dur = knownAudioDurationS();
+  const t = Math.max(0, Number(sec) || 0);
+  if (ovAudioTime) {
+    ovAudioTime.textContent = `${fmtAudioClock(t)} / ${fmtAudioClock(dur || 0)}`;
+  }
+  if (ovAudioScrub && !overviewAudioScrubbing && dur && dur > 0) {
+    ovAudioScrub.value = String(Math.round((t / dur) * 1000));
+  }
+  if (ovAudioPlay) {
+    const playing = ovAudio && !ovAudio.paused && !ovAudio.ended;
+    ovAudioPlay.textContent = playing ? '❚❚' : '▶';
+    ovAudioPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  }
+}
+
+function seekOverviewAudioSeconds(sec, { syncTransport = true } = {}) {
+  if (!ovAudio || !ovAudio.getAttribute('src')) return;
+  const dur = knownAudioDurationS();
+  let t = Math.max(0, Number(sec) || 0);
+  if (dur != null) t = Math.min(t, Math.max(0, dur - 0.05));
+  try {
+    ovAudio.currentTime = t;
+  } catch { /* ignore seek errors before metadata */ }
+  if (syncTransport) updateOverviewAudioTransport(t);
+}
+
+/** Chart wall-time → audio seconds via chunk_index (not wall clock; ML delay skews created_at). */
+function audioSecondsForPlayheadMs(ms) {
+  const pts = overviewChunkPointsSorted();
+  if (!pts.length || !Number.isFinite(ms)) {
+    if (!Number.isFinite(overviewStartedMs)) return 0;
+    return Math.max(0, (ms - overviewStartedMs) / 1000);
+  }
+  let lo = 0;
+  let hi = pts.length - 1;
+  if (ms <= Date.parse(pts[0].t)) {
+    return Math.max(0, Number(pts[0].chunk_index) * AUDIO_CHUNK_SECONDS);
+  }
+  if (ms >= Date.parse(pts[hi].t)) {
+    return Math.max(0, Number(pts[hi].chunk_index) * AUDIO_CHUNK_SECONDS);
+  }
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (Date.parse(pts[mid].t) <= ms) lo = mid;
+    else hi = mid;
+  }
+  const p0 = pts[lo];
+  const p1 = pts[hi];
+  const t0 = Date.parse(p0.t);
+  const t1 = Date.parse(p1.t);
+  const c0 = Number(p0.chunk_index);
+  const c1 = Number(p1.chunk_index);
+  if (!(t1 > t0) || c1 === c0) return Math.max(0, c0 * AUDIO_CHUNK_SECONDS);
+  const frac = Math.min(1, Math.max(0, (ms - t0) / (t1 - t0)));
+  // Stay on the earlier chunk's audio until the next event stamp (created_at is after classify).
+  return Math.max(0, (c0 + frac * (c1 - c0)) * AUDIO_CHUNK_SECONDS);
+}
+
+/** Audio seconds → chart playhead; floor chunk so labels don't lead the sound. */
+function playheadMsForAudioSeconds(sec) {
+  const t = Math.max(0, Number(sec) || 0);
+  const pts = overviewChunkPointsSorted();
+  if (!pts.length) {
+    if (Number.isFinite(overviewStartedMs)) return overviewStartedMs + t * 1000;
+    return null;
+  }
+  const idx = Math.floor(t / AUDIO_CHUNK_SECONDS + 1e-9);
+  let best = null;
+  for (const p of pts) {
+    const c = Number(p.chunk_index);
+    if (c === idx) {
+      best = p;
+      break;
+    }
+    if (c < idx) best = p;
+    if (c > idx) break;
+  }
+  if (!best) best = pts[0];
+  const ms = Date.parse(best.t);
+  return Number.isFinite(ms) ? ms : null;
+}
 function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}) {
   if (!Number.isFinite(ms)) return;
   if (!overviewScrubPoints.length && overviewStartedMs == null) return;
@@ -3184,18 +3267,9 @@ function setOverviewPlayheadMs(ms, { seekAudio = false, fromAudio = false } = {}
     ovAudioWrap &&
     !ovAudioWrap.hidden
   ) {
-    const offset = audioSecondsForPlayheadMs(overviewPlayheadMs);
-    try {
-      const dur = ovAudio.duration;
-      if (Number.isFinite(dur) && dur > 0 && dur < 1e7) {
-        ovAudio.currentTime = Math.min(offset, Math.max(0, dur - 0.05));
-      } else {
-        ovAudio.currentTime = offset;
-      }
-    } catch { /* ignore seek errors before metadata */ }
+    seekOverviewAudioSeconds(audioSecondsForPlayheadMs(overviewPlayheadMs));
   }
 }
-
 function impactCard(k, v, hint) {
   return `<div class="impact-card"><div class="k">${k}</div><div class="v">${v}</div>` +
     (hint ? `<div class="hint">${hint}</div>` : '') + '</div>';
@@ -3442,24 +3516,37 @@ function renderOverviewDetailForMs(ms) {
 
 function setupOverviewAudio(data) {
   if (!ovAudioWrap || !ovAudio) return;
+  stopOverviewAudioLoop();
   ovAudio.pause();
   ovAudio.removeAttribute('src');
   ovAudio.load();
+  overviewAudioDurationS = null;
+  overviewAudioScrubbing = false;
+  if (data.audio_chunk_seconds != null && Number(data.audio_chunk_seconds) > 0) {
+    AUDIO_CHUNK_SECONDS = Number(data.audio_chunk_seconds);
+  }
+  if (data.audio_duration_s != null && Number(data.audio_duration_s) > 0) {
+    overviewAudioDurationS = Number(data.audio_duration_s);
+  }
   if (!data.has_wav || !data.wav_name) {
     ovAudioWrap.hidden = true;
-    ovAudioNote.hidden = true;
+    if (ovAudioNote) ovAudioNote.hidden = true;
+    if (ovAudioTransport) ovAudioTransport.hidden = true;
+    updateOverviewAudioTransport(0);
     return;
   }
   ovAudioWrap.hidden = false;
   if (data.recording_active) {
-    ovAudioNote.hidden = false;
-    ovAudio.controls = false;
+    if (ovAudioNote) ovAudioNote.hidden = false;
+    if (ovAudioTransport) ovAudioTransport.hidden = true;
+    updateOverviewAudioTransport(0);
     return;
   }
-  ovAudioNote.hidden = true;
-  ovAudio.controls = true;
+  if (ovAudioNote) ovAudioNote.hidden = true;
+  if (ovAudioTransport) ovAudioTransport.hidden = false;
   ovAudio.src = `/recordings/${encodeURIComponent(data.wav_name)}`;
   ovAudio.load();
+  updateOverviewAudioTransport(0);
 }
 
 function stopOverviewAudioLoop() {
@@ -3472,9 +3559,12 @@ function stopOverviewAudioLoop() {
 function tickOverviewAudioSync() {
   if (!ovAudio || ovAudio.paused) {
     overviewRaf = 0;
+    updateOverviewAudioTransport(ovAudio ? ovAudio.currentTime : 0);
     return;
   }
-  const ms = playheadMsForAudioSeconds(ovAudio.currentTime);
+  const t = ovAudio.currentTime || 0;
+  updateOverviewAudioTransport(t);
+  const ms = playheadMsForAudioSeconds(t);
   if (ms != null) {
     overviewSyncFromAudio = true;
     setOverviewPlayheadMs(ms, { fromAudio: true });
@@ -3632,12 +3722,68 @@ if (ovAudio) {
   ovAudio.addEventListener('play', () => {
     stopOverviewAudioLoop();
     overviewRaf = requestAnimationFrame(tickOverviewAudioSync);
+    updateOverviewAudioTransport(ovAudio.currentTime || 0);
   });
-  ovAudio.addEventListener('pause', () => stopOverviewAudioLoop());
+  ovAudio.addEventListener('pause', () => {
+    stopOverviewAudioLoop();
+    updateOverviewAudioTransport(ovAudio.currentTime || 0);
+  });
+  ovAudio.addEventListener('ended', () => {
+    stopOverviewAudioLoop();
+    updateOverviewAudioTransport(knownAudioDurationS() || ovAudio.currentTime || 0);
+  });
+  ovAudio.addEventListener('loadedmetadata', () => {
+    const browserDur = ovAudio.duration;
+    if (
+      (!Number.isFinite(overviewAudioDurationS) || overviewAudioDurationS <= 0) &&
+      Number.isFinite(browserDur) &&
+      browserDur > 0 &&
+      browserDur < 1e7
+    ) {
+      overviewAudioDurationS = browserDur;
+    }
+    updateOverviewAudioTransport(ovAudio.currentTime || 0);
+  });
   ovAudio.addEventListener('seeked', () => {
-    if (overviewSyncFromAudio) return;
+    updateOverviewAudioTransport(ovAudio.currentTime || 0);
+    if (overviewSyncFromAudio || overviewAudioScrubbing) return;
     const ms = playheadMsForAudioSeconds(ovAudio.currentTime);
     if (ms != null) setOverviewPlayheadMs(ms, { fromAudio: true });
+  });
+}
+
+if (ovAudioPlay && ovAudio) {
+  ovAudioPlay.addEventListener('click', () => {
+    if (!ovAudio.getAttribute('src')) return;
+    if (ovAudio.paused) {
+      const p = ovAudio.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } else {
+      ovAudio.pause();
+    }
+  });
+}
+
+if (ovAudioScrub && ovAudio) {
+  const onAudioScrub = () => {
+    const dur = knownAudioDurationS();
+    if (!dur) return;
+    overviewAudioScrubbing = true;
+    const t = (Number(ovAudioScrub.value) / 1000) * dur;
+    seekOverviewAudioSeconds(t, { syncTransport: false });
+    if (ovAudioTime) ovAudioTime.textContent = `${fmtAudioClock(t)} / ${fmtAudioClock(dur)}`;
+    const ms = playheadMsForAudioSeconds(t);
+    if (ms != null) {
+      overviewSyncFromAudio = true;
+      setOverviewPlayheadMs(ms, { fromAudio: true });
+      overviewSyncFromAudio = false;
+    }
+  };
+  ovAudioScrub.addEventListener('input', onAudioScrub);
+  ovAudioScrub.addEventListener('change', () => {
+    onAudioScrub();
+    overviewAudioScrubbing = false;
+    updateOverviewAudioTransport(ovAudio.currentTime || 0);
   });
 }
 

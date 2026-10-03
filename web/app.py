@@ -27,11 +27,16 @@ from fastapi.responses import (
 )
 from jinja2 import Environment, FileSystemLoader
 
-from core.audio_constants import CAPTURE_CHUNK_SAMPLES, CAPTURE_STARTUP_DISCARD_SECONDS
+from core.audio_constants import (
+    CAPTURE_CHUNK_SAMPLES,
+    CAPTURE_SAMPLE_RATE,
+    CAPTURE_STARTUP_DISCARD_SECONDS,
+)
 from core.audio_writer import (
     DEFAULT_AUDIO_FORMAT,
     ensure_flac_seekable,
     normalize_audio_format,
+    read_flac_total_samples,
     sibling_audio_path,
 )
 from core.capture_alsa import CaptureDeviceError, check_capture_device_available
@@ -993,17 +998,19 @@ def _cached_slim_points(path: Path, *, events: list[dict] | None = None) -> list
 def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
     audio_path = sibling_audio_path(path)
     has_audio = audio_path is not None
+    events = _iter_jsonl_events(path)
+    chunk_seconds = float(CAPTURE_CHUNK_SAMPLES) / float(CAPTURE_SAMPLE_RATE)
+    audio_duration_s = None
     if has_audio and audio_path is not None and audio_path.suffix.lower() == ".flac":
-        try:
-            with path.open("rb") as f:
-                n_lines = sum(1 for line in f if line.strip())
-            fallback = int(n_lines) * int(CAPTURE_CHUNK_SAMPLES) if n_lines else None
-        except OSError:
-            fallback = None
+        fallback = len(events) * int(CAPTURE_CHUNK_SAMPLES) if events else None
         ensure_flac_seekable(audio_path, fallback_samples=fallback)
+        total = read_flac_total_samples(audio_path)
+        if total is not None and total > 0:
+            audio_duration_s = float(total) / float(CAPTURE_SAMPLE_RATE)
+    if audio_duration_s is None and has_audio and events:
+        audio_duration_s = float(len(events)) * chunk_seconds
     active = _active_output_path()
     recording_active = active is not None and path.resolve() == active
-    events = _iter_jsonl_events(path)
     # Warm slim cache so the first Inspect window fetch is cheap.
     _cached_slim_points(path, events=events)
     return build_recording_overview(
@@ -1015,6 +1022,8 @@ def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
         loud_threshold=loud_threshold,
         calib_offset=float(DEFAULT_CALIB_OFFSET),
         display_db_offset=float(DISPLAY_DB_OFFSET),
+        audio_duration_s=audio_duration_s,
+        audio_chunk_seconds=chunk_seconds,
     )
 
 
