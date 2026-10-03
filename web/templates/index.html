@@ -857,6 +857,7 @@
     <input type="hidden" name="alsa_device" id="start-alsa-device" value="{{ default_alsa_device }}">
     <input type="hidden" name="gate_sensitivity_db" id="start-gate-sensitivity"
            value="{{ default_gate_sensitivity_db }}">
+    <input type="hidden" name="audio_format" id="start-audio-format" value="{{ audio_format }}">
 
     <label class="check-row" style="margin-top:1rem">
       <input type="checkbox" name="enable_clap" value="on">
@@ -870,7 +871,10 @@
       <input type="checkbox" name="record_audio" value="on">
       <div>
         Record audio
-        <span>Saves ungained mic WAV next to the JSONL (~330&nbsp;MB/hour @ 48&nbsp;kHz mono 16-bit). Download from the Data tab.</span>
+        <span id="record-audio-hint">
+          Saves ungained mic audio next to the JSONL. Format is set in Settings
+          (default FLAC — lossless, usually much smaller than WAV).
+        </span>
       </div>
     </label>
 
@@ -1005,7 +1009,10 @@
             {{ recording.started_display }}
             {% if recording.duration_label %} · {{ recording.duration_label }}{% endif %}
             · {{ recording.lines }} events · {{ recording.size_label }}
-            {% if recording.has_wav %} · audio {{ recording.wav_size_label }}{% endif %}
+            {% if recording.has_audio or recording.has_wav %}
+              · audio{% if recording.audio_format %} {{ recording.audio_format|upper }}{% endif %}
+              {{ recording.audio_size_label or recording.wav_size_label }}
+            {% endif %}
           </div>
         </div>
       </div>
@@ -1013,11 +1020,11 @@
         <a class="view-btn" href="/analyze/{{ recording.name }}">Inspect</a>
         <a class="dl-btn" href="/recordings/{{ recording.name }}"
            data-filename="{{ recording.name }}" download>↓ JSONL</a>
-        {% if recording.has_wav %}
-        <a class="dl-btn" href="/recordings/{{ recording.wav_name }}?download=1" download>↓ Audio</a>
+        {% if recording.has_audio or recording.has_wav %}
+        <a class="dl-btn" href="/recordings/{{ recording.audio_name or recording.wav_name }}?download=1" download>↓ Audio</a>
         {% endif %}
         <form method="post" action="/api/recordings/delete" style="display:inline;margin:0"
-              onsubmit="return confirm('Delete {{ recording.name }}{% if recording.has_wav %} and its WAV{% endif %}? This cannot be undone.');">
+              onsubmit="return confirm('Delete {{ recording.name }}{% if recording.has_audio or recording.has_wav %} and its audio file{% endif %}? This cannot be undone.');">
           <input type="hidden" name="filename" value="{{ recording.name }}">
           <button class="del-btn" type="submit">Delete</button>
         </form>
@@ -1322,6 +1329,24 @@
               style="width:auto;margin:0;max-width:16rem">Save display offset</button>
     </div>
     <div class="inline-status" id="settings-display-offset-status"></div>
+
+    <label for="settings-audio-format" style="margin-top:1.1rem">Recorded audio format</label>
+    <select id="settings-audio-format">
+      <option value="flac"{% if audio_format == 'flac' %} selected{% endif %}>FLAC (lossless, smaller — default)</option>
+      <option value="wav"{% if audio_format == 'wav' %} selected{% endif %}>WAV (uncompressed PCM)</option>
+    </select>
+    <div class="field-note">
+      Used when <strong>Record audio</strong> is checked on the Record tab.
+      Both are ungained mono 16-bit @ 48&nbsp;kHz — FLAC is lossless compression
+      (often ~40–60% of WAV size). Saved to <code>.env</code> as
+      <code>AUDIO_FORMAT</code>. Requires <code>soundfile</code> +
+      <code>libsndfile1</code> on the Pi for FLAC.
+    </div>
+    <div class="btn-row" style="margin-top:.5rem">
+      <button type="button" class="btn btn-start" id="settings-audio-format-save"
+              style="width:auto;margin:0;max-width:16rem">Save audio format</button>
+    </div>
+    <div class="inline-status" id="settings-audio-format-status"></div>
   </div>
 
   <h2 class="settings-section-title">CLAP settings</h2>
@@ -1694,15 +1719,35 @@ function syncStartSettingsFromForm() {
   const device = document.getElementById('settings-device-id');
   const alsa = document.getElementById('settings-alsa-device');
   const gate = document.getElementById('settings-gate-sensitivity');
+  const audioFmt = document.getElementById('settings-audio-format');
   const startDevice = document.getElementById('start-device-id');
   const startAlsa = document.getElementById('start-alsa-device');
   const startGate = document.getElementById('start-gate-sensitivity');
+  const startAudioFmt = document.getElementById('start-audio-format');
   if (device && startDevice) startDevice.value = device.value;
   if (alsa && startAlsa) startAlsa.value = alsa.value;
   if (gate && startGate) startGate.value = gate.value;
+  if (audioFmt && startAudioFmt) startAudioFmt.value = audioFmt.value;
+  updateRecordAudioHint();
 }
 
-['settings-device-id', 'settings-alsa-device', 'settings-gate-sensitivity'].forEach((id) => {
+function updateRecordAudioHint() {
+  const hint = document.getElementById('record-audio-hint');
+  const fmtEl = document.getElementById('settings-audio-format')
+    || document.getElementById('start-audio-format');
+  if (!hint || !fmtEl) return;
+  const fmt = String(fmtEl.value || 'flac').toLowerCase();
+  if (fmt === 'wav') {
+    hint.textContent =
+      'Saves ungained mic WAV next to the JSONL (~330 MB/hour @ 48 kHz mono 16-bit). Download from the Data tab.';
+  } else {
+    hint.textContent =
+      'Saves ungained mic FLAC next to the JSONL (lossless; typically much smaller than WAV). Download from the Data tab.';
+  }
+}
+
+
+['settings-device-id', 'settings-alsa-device', 'settings-gate-sensitivity', 'settings-audio-format'].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', syncStartSettingsFromForm);
   if (el) el.addEventListener('input', syncStartSettingsFromForm);
@@ -1885,6 +1930,8 @@ function applyViewerLocks() {
     'settings-gate-sensitivity',
     'settings-display-db-offset',
     'settings-display-offset-save',
+    'settings-audio-format',
+    'settings-audio-format-save',
     'trig-cooldown',
     'trig-dba',
     'trig-lookback',
@@ -5594,6 +5641,42 @@ if (displayOffsetSave) {
 }
 syncDisplayCalHint(displayDbOffset);
 wireConfInputs();
+
+const audioFormatSelect = document.getElementById('settings-audio-format');
+const audioFormatSave = document.getElementById('settings-audio-format-save');
+const audioFormatStatus = document.getElementById('settings-audio-format-status');
+if (audioFormatSave) {
+  audioFormatSave.addEventListener('click', async () => {
+    if (guardViewerAction()) return;
+    const fmt = audioFormatSelect ? String(audioFormatSelect.value || '').toLowerCase() : '';
+    if (fmt !== 'flac' && fmt !== 'wav') {
+      setInlineStatus(audioFormatStatus, 'Choose FLAC or WAV.', 'err');
+      return;
+    }
+    setInlineStatus(audioFormatStatus, 'Saving…');
+    audioFormatSave.disabled = true;
+    const { ok, data } = await apiFetch('/api/settings/audio-format', {
+      method: 'PUT',
+      body: JSON.stringify({ audio_format: fmt }),
+    });
+    audioFormatSave.disabled = IS_VIEWER;
+    if (!ok || !data || !data.ok) {
+      setInlineStatus(
+        audioFormatStatus,
+        (data && (data.message || data.error)) || 'Could not save audio format.',
+        'err'
+      );
+      return;
+    }
+    if (audioFormatSelect) audioFormatSelect.value = data.audio_format;
+    syncStartSettingsFromForm();
+    setInlineStatus(
+      audioFormatStatus,
+      `Saved audio format ${String(data.audio_format || '').toUpperCase()}.`,
+      'ok'
+    );
+  });
+}
 
 // ── Settings: Pi system health ────────────────────────────────────
 function fmtUptime(totalSec) {

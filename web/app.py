@@ -28,6 +28,11 @@ from fastapi.responses import (
 from jinja2 import Environment, FileSystemLoader
 
 from core.audio_constants import CAPTURE_STARTUP_DISCARD_SECONDS
+from core.audio_writer import (
+    DEFAULT_AUDIO_FORMAT,
+    normalize_audio_format,
+    sibling_audio_path,
+)
 from core.capture_alsa import CaptureDeviceError, check_capture_device_available
 from core.events import event_recording_id
 from core.export_filter import export_filename, iter_filtered_jsonl
@@ -96,10 +101,14 @@ def _parse_display_db_offset(raw: object) -> float:
 
 
 DISPLAY_DB_OFFSET = _parse_display_db_offset(os.environ.get("DISPLAY_DB_OFFSET", "0"))
+AUDIO_FORMAT = normalize_audio_format(
+    os.environ.get("AUDIO_FORMAT", DEFAULT_AUDIO_FORMAT)
+)
 
 os.environ["SECRET_KEY"] = SECRET_KEY
 os.environ["USC_PASSWORD"] = PASSWORD
 os.environ["DISPLAY_DB_OFFSET"] = str(DISPLAY_DB_OFFSET)
+os.environ["AUDIO_FORMAT"] = AUDIO_FORMAT
 if VIEWER_PASSWORD:
     os.environ["USC_VIEWER_PASSWORD"] = VIEWER_PASSWORD
 else:
@@ -303,9 +312,7 @@ def _upsert_env_value(key: str, value: str) -> None:
             out[-1] = f"{out[-1]}\n"
         if out and out[-1].strip():
             out.append("\n")
-        out.append(
-            f"# Display-only dBA/LAFmax offset (not written into JSONL)\n{key}={value}\n"
-        )
+        out.append(f"{key}={value}\n")
     path.write_text("".join(out), encoding="utf-8")
 
 
@@ -317,6 +324,16 @@ def _set_display_db_offset(value: float) -> float:
     os.environ["DISPLAY_DB_OFFSET"] = str(offset)
     _upsert_env_value("DISPLAY_DB_OFFSET", str(offset))
     return offset
+
+
+def _set_audio_format(value: object) -> str:
+    """Persist and activate WAV/FLAC preference; returns normalized format."""
+    global AUDIO_FORMAT
+    fmt = normalize_audio_format(value, default=DEFAULT_AUDIO_FORMAT)
+    AUDIO_FORMAT = fmt
+    os.environ["AUDIO_FORMAT"] = fmt
+    _upsert_env_value("AUDIO_FORMAT", fmt)
+    return fmt
 
 
 def _status_series(*, window_s: int = 120) -> dict:
@@ -570,18 +587,26 @@ def _list_recordings() -> list[dict]:
             tz_name = local.tzname() or SITE_TIMEZONE
             started_display = f"{local.strftime('%Y-%m-%d %H:%M')} {tz_name}"
 
-        wav_path = p.with_suffix(".wav")
-        has_wav = wav_path.is_file()
-        wav_size = wav_path.stat().st_size if has_wav else 0
+        audio_path = sibling_audio_path(p)
+        has_audio = audio_path is not None
+        audio_size = audio_path.stat().st_size if has_audio else 0
+        audio_format = (
+            audio_path.suffix.lower().lstrip(".") if has_audio and audio_path else None
+        )
         entry: dict = {
             "name": p.name,
             "size_label": _format_bytes(size),
             "lines": lines,
             "started_display": started_display,
             "duration_label": _format_duration(duration_s),
-            "has_wav": has_wav,
-            "wav_name": wav_path.name if has_wav else None,
-            "wav_size_label": _format_bytes(wav_size) if has_wav else None,
+            "has_audio": has_audio,
+            "audio_name": audio_path.name if has_audio and audio_path else None,
+            "audio_format": audio_format,
+            "audio_size_label": _format_bytes(audio_size) if has_audio else None,
+            # Legacy keys kept for older UI/clients.
+            "has_wav": has_audio,
+            "wav_name": audio_path.name if has_audio and audio_path else None,
+            "wav_size_label": _format_bytes(audio_size) if has_audio else None,
         }
         recordings.append(entry)
     return recordings
@@ -965,8 +990,8 @@ def _cached_slim_points(path: Path, *, events: list[dict] | None = None) -> list
 
 
 def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
-    wav_path = path.with_suffix(".wav")
-    has_wav = wav_path.is_file()
+    audio_path = sibling_audio_path(path)
+    has_audio = audio_path is not None
     active = _active_output_path()
     recording_active = active is not None and path.resolve() == active
     events = _iter_jsonl_events(path)
@@ -975,8 +1000,8 @@ def _recording_overview_payload(path: Path, *, loud_threshold: float) -> dict:
     return build_recording_overview(
         events,
         name=path.name,
-        has_wav=has_wav,
-        wav_name=wav_path.name if has_wav else None,
+        has_wav=has_audio,
+        wav_name=audio_path.name if has_audio and audio_path else None,
         recording_active=recording_active,
         loud_threshold=loud_threshold,
         calib_offset=float(DEFAULT_CALIB_OFFSET),
@@ -1289,6 +1314,7 @@ def _index_context(
         default_recording_name=_default_recording_name(),
         default_gate_sensitivity_db=DEFAULT_GATE_SENSITIVITY_DB,
         display_db_offset=DISPLAY_DB_OFFSET,
+        audio_format=AUDIO_FORMAT,
         device_id=DEFAULT_DEVICE_ID,
         pi_hostname=hostname(),
         site_label=SITE_LABEL,
@@ -1382,6 +1408,7 @@ async def api_start(
     gate_sensitivity_db: float = Form(DEFAULT_GATE_SENSITIVITY_DB),
     enable_clap: str = Form(""),
     record_audio: str = Form(""),
+    audio_format: str = Form(""),
 ):
     wants_json = _wants_json(request)
     if not is_authenticated(request):
@@ -1437,7 +1464,8 @@ async def api_start(
     output = RECORDINGS_DIR / f"{safe_name}-{_utc_now()}.jsonl"
     duration = _hours_to_timeout(hours)
     clap_on = enable_clap in {"1", "true", "on", "yes"}
-    wav_on = record_audio in {"1", "true", "on", "yes"}
+    audio_on = record_audio in {"1", "true", "on", "yes"}
+    fmt = normalize_audio_format(audio_format or AUDIO_FORMAT)
     cmd = [
         PYTHON, str(MAIN_PY),
         "--device-id", device_id,
@@ -1449,8 +1477,8 @@ async def api_start(
     ]
     if clap_on:
         cmd.append("--enable-clap")
-    if wav_on:
-        cmd.append("--record-wav")
+    if audio_on:
+        cmd.extend(["--record-audio", "--audio-format", fmt])
     full_cmd = ["timeout", duration] + cmd
 
     subprocess.Popen(
@@ -1467,7 +1495,8 @@ async def api_start(
                 "message": "Collector process started",
                 "output_file": str(output),
                 "enable_clap": clap_on,
-                "record_audio": wav_on,
+                "record_audio": audio_on,
+                "audio_format": fmt if audio_on else None,
                 "startup_discard_s": float(CAPTURE_STARTUP_DISCARD_SECONDS),
             }
         )
@@ -1563,6 +1592,39 @@ async def api_put_display_db_offset(request: Request):
     return JSONResponse({"ok": True, "display_db_offset": offset})
 
 
+@app.get("/api/settings/audio-format")
+async def api_get_audio_format(request: Request):
+    if not is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    return JSONResponse({"ok": True, "audio_format": AUDIO_FORMAT})
+
+
+@app.put("/api/settings/audio-format")
+async def api_put_audio_format(request: Request):
+    denied = _require_admin_json(request)
+    if denied:
+        return denied
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
+    raw = body.get("audio_format", body.get("format"))
+    text = str(raw or "").strip().lower()
+    if text not in {"flac", "wav"}:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "bad_request",
+                "message": "audio_format must be flac or wav",
+            },
+            status_code=400,
+        )
+    fmt = _set_audio_format(text)
+    return JSONResponse({"ok": True, "audio_format": fmt})
+
+
 # ---------------------------------------------------------------------------
 # Live log tail via Server-Sent Events
 # ---------------------------------------------------------------------------
@@ -1638,7 +1700,13 @@ async def download_recording(filename: str, request: Request):
 
     # Audio (or any non-JSONL) — serve for playback or download.
     if path.suffix.lower() != ".jsonl":
-        media = "audio/wav" if path.suffix.lower() == ".wav" else "application/octet-stream"
+        suffix = path.suffix.lower()
+        if suffix == ".wav":
+            media = "audio/wav"
+        elif suffix == ".flac":
+            media = "audio/flac"
+        else:
+            media = "application/octet-stream"
         force_download = _query_flag(request, "download", default=False)
         # Omit filename= so browsers can stream/play inline (Range seeks work).
         if force_download:
@@ -1856,7 +1924,7 @@ async def api_recordings_report(request: Request):
 
 
 def _delete_recording_by_name(filename: str) -> dict[str, str]:
-    """Delete a JSONL (+ sibling WAV). Returns {name, status} or {name, status, error}."""
+    """Delete a JSONL (+ sibling FLAC/WAV). Returns {name, status} or {name, status, error}."""
     name = (filename or "").strip()
     if not name.lower().endswith(".jsonl"):
         return {"name": name, "status": "error", "error": "bad_request"}
@@ -1870,11 +1938,27 @@ def _delete_recording_by_name(filename: str) -> dict[str, str]:
     if active is not None and path.resolve() == active:
         return {"name": name, "status": "error", "error": "recording_in_use"}
 
-    wav_path = path.with_suffix(".wav")
+    audio_path = sibling_audio_path(path)
+    # Also clean up the other extension if both somehow exist.
+    extras = [
+        path.with_suffix(".flac"),
+        path.with_suffix(".wav"),
+    ]
     try:
         path.unlink()
-        if wav_path.is_file():
-            wav_path.unlink()
+        deleted: set[Path] = set()
+        if audio_path is not None and audio_path.is_file():
+            audio_path.unlink()
+            deleted.add(audio_path.resolve())
+        for extra in extras:
+            try:
+                resolved = extra.resolve()
+            except OSError:
+                continue
+            if resolved in deleted:
+                continue
+            if extra.is_file():
+                extra.unlink()
     except OSError:
         return {"name": name, "status": "error", "error": "bad_request"}
     return {"name": name, "status": "deleted"}

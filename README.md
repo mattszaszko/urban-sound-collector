@@ -101,6 +101,7 @@ urban-sound-collector/
 │   ├── loudness.py             # A-weighting + relative dBA SPL
 │   ├── spectrum.py             # Z + A 1/3-octave spectral summaries
 │   ├── wav_writer.py           # Optional ungained mono WAV recorder
+│   ├── audio_writer.py         # WAV/FLAC factory for optional mic audio
 │   ├── yamnet_preprocess.py    # HPF, dynamic normalize, silence gate
 │   ├── resampler.py            # 48 kHz → 16 kHz for YAMNet
 │   ├── classifier_tflite.py    # Bundled YAMNet TFLite inference
@@ -261,7 +262,7 @@ Disable spectrum with **`--no-spectrum`** (Branch A + B only).
 
 ```bash
 sudo apt update
-sudo apt install -y python3-venv python3-dev libasound2-dev alsa-utils
+sudo apt install -y python3-venv python3-dev libasound2-dev alsa-utils libsndfile1
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -343,8 +344,11 @@ tail -n 20 logs/*.log
 | `-o` | `recordings/<device>_<recording_id>.jsonl` | JSONL output (append + fsync) |
 | `--no-spectrum` | off | Disable Branch C spectral analysis |
 | `--enable-clap` | off | Event-driven CLAP zero-shot; dynamic energy slice + repeatpad, same HPF as YAMNet + peak-norm (requires ONNX + rebuilt embeddings) |
-| `--record-wav` | off | Write ungained mono 16-bit WAV @ 48 kHz (sibling of `-o` by default) |
-| `--wav-path` | (from `-o`) | Explicit WAV path (implies recording) |
+| `--record-audio` | off | Write ungained mono 16-bit PCM @ 48 kHz (sibling of `-o`) |
+| `--audio-format` | `flac` | `flac` (lossless, smaller) or `wav` when recording audio |
+| `--audio-path` | (from `-o`) | Explicit audio path (implies recording) |
+| `--record-wav` | off | Deprecated alias for `--record-audio --audio-format wav` |
+| `--wav-path` | (from `-o`) | Deprecated alias for `--audio-path` (forces WAV) |
 | `--log-dir` | `logs` | Per-recording log directory |
 
 Stop with **Ctrl+C**, or let `timeout` end the recording.
@@ -406,7 +410,8 @@ device — phone, PC, anywhere on the internet — via a **Cloudflare Tunnel**
     when `gate_level + max_gain` can reach within 12 dB of target; ΔRMS (with
     absolute floor) and 200 ms peak sub-windows catch short impulses; gate closes
     after 2 chunks below open or too cold
-  - Optional **Record audio** — ungained mic WAV next to the JSONL (~330 MB/hour)
+  - Optional **Record audio** — ungained mic FLAC (default) or WAV next to the JSONL
+    (WAV ~330 MB/hour; FLAC usually much smaller, lossless)
 - Stop an active recording
 - Live status: chunk count, elapsed time, last label, dBA, last CLAP, Spectrum
   Dark/Mid/Bright (A-weighted frequency balance; polls every 1 s)
@@ -559,6 +564,7 @@ sudo bash ~/urban-sound-collector/web/setup-shutdown-sudoers.sh
 | `SITE_LABEL` | *(empty)* | Human label shown in web UI (set per Pi) |
 | `SITE_TIMEZONE` | `Europe/Amsterdam` | IANA zone for multi-recording report hours / night shading |
 | `DISPLAY_DB_OFFSET` | `0` | Display/analysis-only dBA offset (±40); not written into JSONL |
+| `AUDIO_FORMAT` | `flac` | Container when Record audio is on (`flac` or `wav`) |
 | `PUBLIC_URL` | *(empty)* | This Pi's public URL (set per Pi) |
 | `ALSA_DEVICE` | `plughw:CARD=sndrpigooglevoi,DEV=0` | Default ALSA device in UI |
 

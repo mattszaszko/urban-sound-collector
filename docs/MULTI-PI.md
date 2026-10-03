@@ -54,7 +54,7 @@ Assumes **Raspberry Pi OS 64-bit (Bookworm)**, user **`matt`**, Google Voice HAT
 
 ```bash
 sudo apt update
-sudo apt install -y git python3-venv python3-dev libasound2-dev alsa-utils curl
+sudo apt install -y git python3-venv python3-dev libasound2-dev alsa-utils libsndfile1 curl
 python3 --version
 ```
 

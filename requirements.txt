@@ -1,7 +1,7 @@
 # Collector
 numpy>=1.26.0
 scipy>=1.11.0
-pyalsaaudio>=0.10.0
+soundfile>=0.12.1
 # tflite-runtime: use on Python 3.11 Pi (piwheels). No 3.13 wheel on PyPI.
 # ai-edge-litert: Google's LiteRT successor — try on Python 3.12/3.13:
 #   pip install ai-edge-litert
