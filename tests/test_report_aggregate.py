@@ -5,9 +5,19 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from core.report.aggregate import build_dashboard_report, sound_diet_from_events
+from core.audio_constants import YAMNET_CHUNK_DURATION_SECONDS
+from core.report.aggregate import (
+    MIN_HOUR_COVERAGE_SECONDS,
+    build_dashboard_report,
+    sound_diet_from_events,
+)
 from core.report.segment import AcousticEvent, energetic_leq
 from core.report.votes import clear_label_map_cache
+
+# Enough 1 Hz chunks for ≥ half an hour of nominal capture duration.
+_CHUNKS_PER_COVERED_HOUR = int(
+    MIN_HOUR_COVERAGE_SECONDS / YAMNET_CHUNK_DURATION_SECONDS
+) + 1
 
 
 def _evt(
@@ -29,6 +39,17 @@ def _evt(
         "yamnet_preprocess": {"gated": False},
         "device_id": "pi-ams",
     }
+
+
+def _covered_hour_events(
+    base: datetime,
+    *,
+    dba: float = 50.0,
+    label: str = "Vehicle",
+    n: int = _CHUNKS_PER_COVERED_HOUR,
+) -> list[dict]:
+    """Build one calendar hour with enough chunks to pass the half-hour filter."""
+    return [_evt(i, dba=dba, label=label, base=base) for i in range(n)]
 
 
 class AggregateTests(unittest.TestCase):
@@ -101,11 +122,12 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(report["zone_b"]["hourly"], report["zone_b"]["typical_day"])
 
     def test_timeline_crosses_midnight(self) -> None:
-        # 21:30 UTC in mid-Sep = 23:30 Europe/Amsterdam (CEST).
-        base = datetime(2026, 9, 15, 21, 30, tzinfo=timezone.utc)
-        events = []
-        for i in range(0, 10 * 3600, 60):  # 10 hours of minute samples
-            events.append(_evt(i, dba=50.0, base=base))
+        # Start at local 23:00 Amsterdam (CEST = UTC+2) → 21:00 UTC.
+        base = datetime(2026, 9, 15, 21, 0, tzinfo=timezone.utc)
+        events: list[dict] = []
+        for hour_i in range(10):
+            hour_base = base + timedelta(hours=hour_i)
+            events.extend(_covered_hour_events(hour_base, dba=50.0))
         report = build_dashboard_report(
             [("overnight.jsonl", events)],
             timezone_name="Europe/Amsterdam",
@@ -125,8 +147,8 @@ class AggregateTests(unittest.TestCase):
         # 09:00 UTC = 10:00 Europe/Amsterdam (CET); 14:00 UTC = 15:00 local.
         early = datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
         later = datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc)
-        events_a = [_evt(i, dba=50.0, base=early) for i in range(5)]
-        events_b = [_evt(i, dba=58.0, base=later) for i in range(5)]
+        events_a = _covered_hour_events(early, dba=50.0)
+        events_b = _covered_hour_events(later, dba=58.0)
         report = build_dashboard_report(
             [("morning.jsonl", events_a), ("afternoon.jsonl", events_b)],
             timezone_name="Europe/Amsterdam",
@@ -145,6 +167,24 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(len(budget_hours), 3)
         self.assertTrue(budget_hours[1].get("is_gap"))
         self.assertEqual(budget_hours[1]["gap_hours"], 4)
+
+    def test_thin_trailing_hour_omitted_from_timeline_and_budget(self) -> None:
+        full = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        thin = datetime(2026, 1, 15, 13, 0, tzinfo=timezone.utc)
+        events = _covered_hour_events(full, dba=50.0)
+        events.extend(_evt(i, dba=90.0, base=thin) for i in range(20))  # ~20 s
+        report = build_dashboard_report(
+            [("thin-tail.jsonl", events)],
+            timezone_name="UTC",
+        )
+        timeline = report["zone_b"]["timeline"]
+        self.assertEqual(len(timeline), 1)
+        self.assertEqual(timeline[0]["hour"], 12)
+        budget_hours = [
+            h for h in report["zone_c"]["time_budget"]["hourly"] if not h.get("is_gap")
+        ]
+        self.assertEqual(len(budget_hours), 1)
+        self.assertEqual(budget_hours[0]["hour"], 12)
 
     def test_gated_still_in_leq_not_in_votes(self) -> None:
         events = [
@@ -230,28 +270,29 @@ class AggregateTests(unittest.TestCase):
 
     def test_hourly_gated_pct(self) -> None:
         base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
-        events = [
-            _evt(0, dba=40.0, label="gated", base=base),
-            {
-                **_evt(1, dba=40.0, base=base),
-                "yamnet_preprocess": {"gated": True},
-                "top_label": "gated",
-            },
-            _evt(2, dba=55.0, label="Vehicle", base=base),
-            _evt(3, dba=56.0, label="Vehicle", base=base),
-        ]
-        # Force first event gated via top_label
-        events[0]["top_label"] = "gated"
-        events[0]["yamnet_preprocess"] = {"gated": True}
+        n = _CHUNKS_PER_COVERED_HOUR
+        events: list[dict] = []
+        for i in range(n):
+            if i % 2 == 0:
+                events.append(
+                    {
+                        **_evt(i, dba=40.0, base=base),
+                        "yamnet_preprocess": {"gated": True},
+                        "top_label": "gated",
+                    }
+                )
+            else:
+                events.append(_evt(i, dba=55.0 + (i % 3), label="Vehicle", base=base))
         report = build_dashboard_report(
             [("gated.jsonl", events)],
             timezone_name="Europe/Amsterdam",
         )
         # 12:00 UTC = 13:00 Amsterdam in January
         hour13 = next(h for h in report["zone_b"]["typical_day"] if h["hour"] == 13)
-        self.assertEqual(hour13["chunk_count"], 4)
-        self.assertEqual(hour13["gated_count"], 2)
-        self.assertEqual(hour13["gated_pct"], 50.0)
+        expected_gated = (n + 1) // 2  # i % 2 == 0 for i in range(n)
+        self.assertEqual(hour13["chunk_count"], n)
+        self.assertEqual(hour13["gated_count"], expected_gated)
+        self.assertAlmostEqual(hour13["gated_pct"], 100.0 * expected_gated / n, places=1)
         self.assertIsNotNone(hour13["l90_db"])
         self.assertIsNotNone(hour13["l10_db"])
         self.assertLessEqual(hour13["l90_db"], hour13["l10_db"])
@@ -288,7 +329,8 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(budget["categories"][-1], "Relative silence")
         self.assertEqual(budget["categories"][0], "Traffic & Transit")
         self.assertTrue(budget["day"] or budget["night"])
-        self.assertTrue(budget["hourly"])
+        # Sparse selection: By-hour series drops under-covered hours; pies still work.
+        self.assertEqual(budget["hourly"], [])
 
     def test_l90_offset_threshold_mode(self) -> None:
         base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)

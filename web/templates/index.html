@@ -515,6 +515,15 @@
                                  color:var(--text);text-decoration:none;white-space:nowrap}
   .disturbance-row .dist-inspect:hover{border-color:var(--accent);color:var(--accent)}
   .disturbance-row .dist-inspect[aria-disabled="true"]{opacity:.45;pointer-events:none}
+  .report-summary{
+    display:grid;grid-template-columns:1fr;gap:.65rem;margin-top:.35rem;align-items:start;
+  }
+  .report-summary-aside{display:flex;flex-direction:column;gap:.65rem;min-width:0}
+  .report-summary-aside .impact-card,
+  .report-summary .disturbance-card{margin:0}
+  @media(min-width:720px){
+    .report-summary{grid-template-columns:minmax(14rem,0.95fr) minmax(0,1.35fr)}
+  }
   .label-chips{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.35rem}
   .label-chip{font-size:.7rem;padding:.2rem .45rem;border-radius:999px;background:var(--surface);
               border:1px solid var(--border);color:var(--text)}
@@ -547,39 +556,20 @@
     .impact-grid{grid-template-columns:repeat(4,1fr)}
     .overview-chart-box{height:340px}
   }
-  .report-top-row{display:flex;flex-direction:column;gap:.85rem;margin-bottom:1.1rem}
-  #report-zone-a{display:flex;flex-direction:column}
-  #report-zone-a #rpt-impact{margin-bottom:0}
-  @media(min-width:860px){
-    .report-top-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(18rem,1fr);
-                    align-items:stretch;gap:1rem}
-    .report-top-row #report-zone-a,
-    .report-top-row #report-zone-comfort{margin-bottom:0;min-width:0;height:100%;align-self:stretch}
-    #report-zone-a #rpt-impact{
-      width:100%;
-      flex:1;
-      grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important;
-      gap:.65rem;
-      align-content:stretch;
-    }
-    #report-zone-a #rpt-impact .impact-card{height:100%;display:flex;flex-direction:column;
-                                           justify-content:center}
-  }
-  #report-zone-comfort{display:flex;flex-direction:column}
-  #rpt-comfort{display:flex;flex-direction:column;flex:1;justify-content:center}
-  .comfort-nutri{display:flex;flex-direction:column;align-items:center;gap:.75rem;
-                 margin:auto 0;width:100%;max-width:22rem}
+  #report-zone-a{display:flex;flex-direction:column;margin-bottom:1.1rem}
+  .comfort-card .comfort-nutri{display:flex;flex-direction:column;align-items:stretch;gap:.55rem;
+                               width:100%;max-width:none;margin:0}
   .comfort-nutri-bar{
     display:flex;align-items:center;justify-content:center;gap:0;width:100%;
-    height:2.35rem;padding:0 .2rem;border-radius:999px;
-    background:var(--bg);border:2px solid var(--border);box-sizing:border-box;
+    height:2.1rem;padding:0 .15rem;border-radius:999px;margin-top:.35rem;
+    background:var(--surface);border:2px solid var(--border);box-sizing:border-box;
   }
   .comfort-nutri-cell{
-    flex:1 1 0;min-width:0;height:1.55rem;display:flex;align-items:center;justify-content:center;
+    flex:1 1 0;min-width:0;height:1.35rem;display:flex;align-items:center;justify-content:center;
     opacity:.72;transition:transform .15s ease,opacity .15s ease,height .15s ease;
   }
   .comfort-nutri-cell .letter{
-    font-weight:800;font-size:.78rem;line-height:1;color:rgba(255,255,255,.88);
+    font-weight:800;font-size:.72rem;line-height:1;color:rgba(255,255,255,.88);
     text-shadow:0 1px 1px rgba(0,0,0,.18);
   }
   .comfort-nutri-cell[data-grade="A"]{background:var(--grade-a);
@@ -590,24 +580,23 @@
   .comfort-nutri-cell[data-grade="E"]{background:var(--grade-e);
     border-radius:0 999px 999px 0}
   .comfort-nutri-cell.active{
-    flex:1.35 1 0;height:2.85rem;opacity:1;z-index:1;
+    flex:1.35 1 0;height:2.55rem;opacity:1;z-index:1;
     border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.28);
-    transform:translateY(0);
   }
   .comfort-nutri-cell.active .letter{
-    font-size:1.35rem;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25);
+    font-size:1.2rem;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25);
   }
-  .comfort-nutri-caption{text-align:center;line-height:1.35}
+  .comfort-nutri-caption{text-align:left;line-height:1.35;margin-top:.15rem}
   .comfort-nutri-caption .grade-letter{
-    display:inline-block;font-weight:800;font-size:1.05rem;margin-right:.35rem;
+    display:inline-block;font-weight:800;font-size:1rem;margin-right:.35rem;
   }
-  .comfort-nutri-caption .grade-name{font-size:.92rem;font-weight:600;color:var(--text)}
+  .comfort-nutri-caption .grade-name{font-size:.88rem;font-weight:600;color:var(--text)}
   .comfort-nutri-caption[data-grade="A"] .grade-letter{color:var(--grade-a)}
   .comfort-nutri-caption[data-grade="B"] .grade-letter{color:var(--grade-b)}
   .comfort-nutri-caption[data-grade="C"] .grade-letter{color:var(--grade-c)}
   .comfort-nutri-caption[data-grade="D"] .grade-letter{color:var(--grade-d)}
   .comfort-nutri-caption[data-grade="E"] .grade-letter{color:var(--grade-e)}
-  .comfort-warning{margin-top:auto;padding-top:.55rem;font-size:.72rem;color:var(--muted);
+  .comfort-warning{margin-top:.45rem;padding-top:.45rem;font-size:.72rem;color:var(--muted);
                    line-height:1.4;border-top:1px solid var(--border);width:100%}
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
                   padding:.85rem;background:var(--bg);border:1px solid var(--border);
@@ -1121,7 +1110,6 @@
   <div class="report-toolbar">
     <a class="analyze-back" href="/?tab=data">← Back to Data</a>
   </div>
-  <div class="report-top-row">
   <div class="card report-zone" id="report-zone-a">
     <h2>Executive summary</h2>
     <div class="report-header-line" id="rpt-header">Loading…</div>
@@ -1132,12 +1120,7 @@
       <div class="report-progress-msg" id="rpt-progress-msg">Starting…</div>
       <div class="report-progress-code" id="rpt-progress-code" hidden></div>
     </div>
-    <div class="impact-grid" id="rpt-impact"></div>
-  </div>
-  <div class="card report-zone" id="report-zone-comfort" aria-label="Acoustic comfort rating">
-    <h2>Acoustic Comfort Rating</h2>
-    <div id="rpt-comfort"></div>
-  </div>
+    <div class="report-summary" id="rpt-impact"></div>
   </div>
   <div class="card report-zone" id="report-zone-b">
     <div class="report-zone-head">
@@ -4189,20 +4172,6 @@ function renderTopDisturbancesCard(rows) {
   </div>`;
 }
 
-function renderReportImpact(zoneA) {
-  const el = document.getElementById('rpt-impact');
-  if (!el) return;
-  const typicalHint = [
-    zoneA.l90_db != null ? `Quiet moments around ${fmtReportDb(zoneA.l90_db)}` : null,
-    zoneA.l10_db != null ? `Louder spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
-    zoneA.leq_context || null,
-  ].filter(Boolean).join(' · ') || 'Most-of-the-time neighborhood level';
-  el.innerHTML = [
-    impactCard('Typical level', fmtReportDb(zoneA.l50_db), typicalHint),
-    renderTopDisturbancesCard(zoneA.top_disturbances),
-  ].join('');
-}
-
 const COMFORT_GRADES = [
   { grade: 'A', name: 'Tranquil' },
   { grade: 'B', name: 'Balanced' },
@@ -4211,13 +4180,13 @@ const COMFORT_GRADES = [
   { grade: 'E', name: 'Intense' },
 ];
 
-function renderComfortRating(zoneA) {
-  const el = document.getElementById('rpt-comfort');
-  if (!el) return;
+function comfortRatingHtml(zoneA) {
   const rating = zoneA && zoneA.comfort_rating;
   if (!rating || !rating.grade) {
-    el.innerHTML = '<div class="empty">Not enough data to rate.</div>';
-    return;
+    return `<div class="impact-card comfort-card">
+      <div class="k">Acoustic comfort</div>
+      <div class="hint" style="margin-top:.35rem">Not enough data to rate.</div>
+    </div>`;
   }
   const label = rating.label || (
     (COMFORT_GRADES.find((g) => g.grade === rating.grade) || {}).name || ''
@@ -4231,7 +4200,8 @@ function renderComfortRating(zoneA) {
   const warn = rating.insufficient_data && rating.warning
     ? `<div class="comfort-warning">${rating.warning}</div>`
     : '';
-  el.innerHTML = `
+  return `<div class="impact-card comfort-card">
+    <div class="k">Acoustic comfort</div>
     <div class="comfort-nutri" data-grade="${rating.grade}">
       <div class="comfort-nutri-bar" role="img"
            aria-label="Acoustic comfort grade ${rating.grade}, ${label}">
@@ -4241,8 +4211,25 @@ function renderComfortRating(zoneA) {
         <span class="grade-letter">${rating.grade}</span>
         <span class="grade-name">${label}</span>
       </div>
+      ${warn}
     </div>
-    ${warn}`;
+  </div>`;
+}
+
+function renderReportImpact(zoneA) {
+  const el = document.getElementById('rpt-impact');
+  if (!el) return;
+  const typicalHint = [
+    zoneA.l90_db != null ? `Quiet moments around ${fmtReportDb(zoneA.l90_db)}` : null,
+    zoneA.l10_db != null ? `Louder spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
+    zoneA.leq_context || null,
+  ].filter(Boolean).join(' · ') || 'Most-of-the-time neighborhood level';
+  el.innerHTML = `
+    <div class="report-summary-aside">
+      ${impactCard('Typical level', fmtReportDb(zoneA.l50_db), typicalHint)}
+      ${comfortRatingHtml(zoneA)}
+    </div>
+    ${renderTopDisturbancesCard(zoneA.top_disturbances)}`;
 }
 
 function destroyChart(chart) {
@@ -5033,7 +5020,6 @@ function applyReportPayload(payload) {
       ? `${payload.meta.acoustic_event_count} acoustic events` : '',
   ].filter(Boolean).join(' · ');
   renderReportImpact(a);
-  renderComfortRating(a);
   setReportProfileView(b.default_view || 'timeline');
   setReportBudgetView(reportBudgetView || 'total');
   renderTimeBudget(c, payload.meta || {});

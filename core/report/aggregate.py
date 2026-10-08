@@ -31,6 +31,9 @@ DAY_HOURS = set(range(7, 22))
 RELATIVE_SILENCE = "Relative silence"
 DEFAULT_ACTIVE_DBA_THRESHOLD = 45.0
 DEFAULT_L90_OFFSET_DB = 5.0
+# Chronological hour charts: drop buckets with less than half an hour of chunks
+# (avoids a few trailing seconds reading like a full noisy hour).
+MIN_HOUR_COVERAGE_SECONDS = 30 * 60
 
 
 def leq_context(leq_db: float | None) -> str:
@@ -354,6 +357,20 @@ def _iter_hour_keys_with_gaps(
     return out
 
 
+def hour_coverage_seconds(chunk_count: int) -> float:
+    """Nominal recorded duration for ``chunk_count`` capture windows."""
+    return float(chunk_count) * float(YAMNET_CHUNK_DURATION_SECONDS)
+
+
+def hour_has_enough_coverage(
+    seconds: float,
+    *,
+    min_seconds: float = MIN_HOUR_COVERAGE_SECONDS,
+) -> bool:
+    """True when an hour bucket has at least half an hour of recorded audio."""
+    return float(seconds) >= float(min_seconds)
+
+
 def build_time_budget(
     chunks: list[AcousticChunk],
     *,
@@ -384,6 +401,13 @@ def build_time_budget(
             day_s[cat] += chunk_dur
         key = _hour_floor(chunk.dt_local)
         hour_counters.setdefault(key, Counter())[cat] += chunk_dur
+
+    # Drop sparse calendar hours from the By-hour chart only (totals keep all chunks).
+    hour_counters = {
+        key: counter
+        for key, counter in hour_counters.items()
+        if hour_has_enough_coverage(float(sum(counter.values())))
+    }
 
     hourly: list[dict[str, Any]] = []
     for kind, a, b in _iter_hour_keys_with_gaps(sorted(hour_counters.keys())):
@@ -461,6 +485,14 @@ def build_timeline_profile(chunks: list[AcousticChunk]) -> list[dict[str, Any]]:
     for c in chunks:
         key = _hour_floor(c.dt_local)
         buckets.setdefault(key, []).append(c)
+
+    buckets = {
+        key: members
+        for key, members in buckets.items()
+        if hour_has_enough_coverage(hour_coverage_seconds(len(members)))
+    }
+    if not buckets:
+        return []
 
     out: list[dict[str, Any]] = []
     for kind, a, b in _iter_hour_keys_with_gaps(sorted(buckets.keys())):
