@@ -404,8 +404,13 @@
     .report-pie-wrap.dual{grid-template-columns:1fr 1fr}
     .report-pie-box{height:240px}
   }
-  .takeaway-box{margin-top:.85rem;padding:.85rem;border:1px solid var(--border);
-                border-radius:8px;background:var(--bg);font-size:.88rem;line-height:1.45}
+  .takeaway-box{margin-top:.75rem;padding:.85rem .9rem;border:1px solid var(--border);
+                border-radius:8px;background:var(--bg);font-size:.86rem;line-height:1.5;
+                color:var(--text)}
+  .takeaway-box .takeaway-k{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;
+                            color:var(--muted);font-weight:600;margin-bottom:.45rem}
+  .takeaway-box p{margin:0 0 .55rem;color:var(--text)}
+  .takeaway-box p:last-child{margin-bottom:0}
   .report-methodology{margin:0;border:0;border-radius:0;background:transparent}
   .report-methodology > summary{cursor:pointer;list-style:none;padding:0;
                                 font-size:.72rem;font-weight:600;text-transform:uppercase;
@@ -1121,6 +1126,7 @@
       <div class="report-progress-code" id="rpt-progress-code" hidden></div>
     </div>
     <div class="report-summary" id="rpt-impact"></div>
+    <div class="takeaway-box" id="rpt-takeaway" hidden></div>
   </div>
   <div class="card report-zone" id="report-zone-b">
     <div class="report-zone-head">
@@ -1186,7 +1192,6 @@
         <canvas id="report-budget-hourly-chart" aria-label="Hourly time budget stacked bars"></canvas>
       </div>
     </div>
-    <div class="takeaway-box" id="rpt-takeaway"></div>
   </div>
   <div class="card report-zone" id="report-methodology-zone">
     <details class="report-methodology">
@@ -1197,6 +1202,12 @@
           and optional YAMNet / gate metadata.
         </p>
         <p>
+          <strong>Soundscape briefing</strong> (Executive summary) is a deterministic
+          text summary from comfort grade, L50/L90/L10, typical-day peak hours,
+          time-budget macros, night L<sub>eq</sub>, and the loudest Top&nbsp;3 peak —
+          not an AI-generated essay.
+        </p>
+        <p>
           <strong>Time budget charts</strong> classify every chunk: gated chunks count as
           <em>Relative silence</em>; otherwise the chunk’s eligible YAMNet label is mapped
           to a macro category (Traffic &amp; Transit, Human &amp; Community, and so on).
@@ -1204,12 +1215,11 @@
           Day is 07:00–21:59 local time; night is 22:00–06:59.
         </p>
         <p>
-          <strong>Acoustic events</strong> (used for the takeaway’s “driven primarily by…”
-          line) are separate: continuous runs of chunks at or above the active dBA
-          threshold, with up to <em>max gap</em> quieter chunks bridged inside one event.
-          Events shorter than the minimum length are dropped. The active threshold is
-          either a fixed dBA value or selection L90 plus an offset — set on the Data tab
-          before you generate the report.
+          <strong>Acoustic events</strong> are continuous runs of chunks at or above the
+          active dBA threshold, with up to <em>max gap</em> quieter chunks bridged inside
+          one event. Events shorter than the minimum length are dropped. The active
+          threshold is either a fixed dBA value or selection L90 plus an offset — set on
+          the Data tab before you generate the report.
         </p>
         <p>
           Noise-profile hourly levels use energetic L<sub>eq</sub>; soft bands show
@@ -5023,7 +5033,31 @@ function applyReportPayload(payload) {
   setReportProfileView(b.default_view || 'timeline');
   setReportBudgetView(reportBudgetView || 'total');
   renderTimeBudget(c, payload.meta || {});
-  document.getElementById('rpt-takeaway').textContent = c.takeaway || '';
+  renderReportBriefing(a.briefing || c.takeaway || '');
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderReportBriefing(text) {
+  const el = document.getElementById('rpt-takeaway');
+  if (!el) return;
+  const raw = String(text || '').trim();
+  if (!raw) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const paras = raw.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+  el.hidden = false;
+  el.innerHTML =
+    '<div class="takeaway-k">Soundscape briefing</div>' +
+    paras.map((p) => `<p>${escapeHtml(p)}</p>`).join('');
 }
 
 async function loadDashboardReport(files) {

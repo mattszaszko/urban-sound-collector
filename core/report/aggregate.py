@@ -704,7 +704,9 @@ def build_dashboard_report(
         ],
         "takeaway": "",
     }
-    zone_c["takeaway"] = build_takeaway(zone_b=zone_b, zone_c=zone_c)
+    briefing = build_takeaway(zone_a=zone_a, zone_b=zone_b, zone_c=zone_c)
+    zone_a["briefing"] = briefing
+    zone_c["takeaway"] = briefing  # compat alias for older clients
 
     meta = {
         "min_confidence": float(label_map.get("min_confidence", 0.25)),

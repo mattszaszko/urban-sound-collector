@@ -207,6 +207,8 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual(report["zone_a"]["chunk_count"], 3)
         self.assertIsNotNone(report["zone_a"]["leq_db"])
         self.assertTrue(report["zone_c"]["takeaway"])
+        self.assertEqual(report["zone_a"]["briefing"], report["zone_c"]["takeaway"])
+        self.assertIn("\n\n", report["zone_a"]["briefing"])
 
     def test_zone_a_percentiles_and_human_context(self) -> None:
         from core.report.aggregate import leq_context
