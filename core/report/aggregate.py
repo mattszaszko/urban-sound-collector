@@ -205,14 +205,78 @@ def chunk_time_budget_category(
     return MACRO_UNCLASSIFIED
 
 
+def _chunk_peak_level(chunk: AcousticChunk) -> float:
+    """Prefer LAFmax for peak ranking; fall back to dBA."""
+    if chunk.lafmax is not None:
+        return float(chunk.lafmax)
+    return float(chunk.dba)
+
+
+def top_peak_disturbances(
+    chunks: list[AcousticChunk],
+    *,
+    label_map: dict[str, Any] | None = None,
+    theme_by_label: dict[str, str] | None = None,
+    limit: int = 3,
+    min_separation_s: float = 60.0,
+) -> list[dict[str, Any]]:
+    """Loudest moments spaced apart, with category + source for Inspect links."""
+    cfg = label_map or load_label_map()
+    themes = theme_by_label if theme_by_label is not None else load_display_theme_map()
+    ranked = sorted(chunks, key=_chunk_peak_level, reverse=True)
+    picked: list[AcousticChunk] = []
+    sep = max(0.0, float(min_separation_s))
+    for chunk in ranked:
+        if any(
+            abs((chunk.dt_utc - other.dt_utc).total_seconds()) < sep for other in picked
+        ):
+            continue
+        picked.append(chunk)
+        if len(picked) >= max(1, int(limit)):
+            break
+
+    out: list[dict[str, Any]] = []
+    for chunk in picked:
+        category = chunk_time_budget_category(
+            chunk, label_map=cfg, theme_by_label=themes
+        )
+        if chunk.gated:
+            label = RELATIVE_SILENCE
+        elif chunk.vote_label:
+            label = str(chunk.vote_label)
+        else:
+            label = MACRO_UNCLASSIFIED
+        peak_db = _chunk_peak_level(chunk)
+        out.append(
+            {
+                "lafmax_db": round(peak_db, 1),
+                "dba": round(float(chunk.dba), 1),
+                "category": category,
+                "label": label,
+                "at_local": format_local(chunk.dt_local),
+                "at_utc": chunk.created_at,
+                "source_file": chunk.source_file,
+            }
+        )
+    return out
+
+
 def _category_order(label_map: dict[str, Any], present: set[str]) -> list[str]:
-    preferred = [RELATIVE_SILENCE]
-    preferred.extend(str(m) for m in (label_map.get("macros") or []) if str(m) != RELATIVE_SILENCE)
+    """Order macros for charts: largest-typical macros first (stack bottom), silence last (stack top)."""
+    preferred = [
+        str(m) for m in (label_map.get("macros") or []) if str(m) != RELATIVE_SILENCE
+    ]
     if MACRO_UNCLASSIFIED not in preferred:
         preferred.append(MACRO_UNCLASSIFIED)
     ordered = [c for c in preferred if c in present]
-    extras = sorted(c for c in present if c not in ordered)
-    return ordered + extras
+    extras = sorted(
+        c for c in present if c not in ordered and c != RELATIVE_SILENCE
+    )
+    # Chart.js stacks the first dataset at the bottom; silence is least important → top.
+    out = ordered + extras
+    if RELATIVE_SILENCE in present:
+        out.append(RELATIVE_SILENCE)
+    return out
 
 
 def _budget_rows(seconds: Counter[str], *, label_map: dict[str, Any]) -> list[dict[str, Any]]:
@@ -514,16 +578,16 @@ def build_dashboard_report(
     dbas = [c.dba for c in all_chunks]
     leq = energetic_leq(dbas)
     percentiles = _level_percentiles(dbas)
-    peak_laf = None
-    peak_at_local = None
-    peak_at_utc = None
-    for c in all_chunks:
-        if c.lafmax is None:
-            continue
-        if peak_laf is None or c.lafmax > peak_laf:
-            peak_laf = c.lafmax
-            peak_at_local = format_local(c.dt_local)
-            peak_at_utc = c.created_at
+    top_disturbances = top_peak_disturbances(
+        all_chunks,
+        label_map=label_map,
+        theme_by_label=themes,
+        limit=3,
+    )
+    peak_row = top_disturbances[0] if top_disturbances else None
+    peak_laf = peak_row["lafmax_db"] if peak_row else None
+    peak_at_local = peak_row["at_local"] if peak_row else None
+    peak_at_utc = peak_row["at_utc"] if peak_row else None
 
     device_counts = Counter(c.device_id for c in all_chunks if c.device_id)
     if site_label and site_label.strip():
@@ -559,9 +623,10 @@ def build_dashboard_report(
         "l10_db": percentiles["l10_db"],
         "l50_db": percentiles["l50_db"],
         "l90_db": percentiles["l90_db"],
-        "peak_lafmax_db": round(peak_laf, 1) if peak_laf is not None else None,
+        "peak_lafmax_db": round(float(peak_laf), 1) if peak_laf is not None else None,
         "peak_lafmax_at_local": peak_at_local,
         "peak_lafmax_at_utc": peak_at_utc,
+        "top_disturbances": top_disturbances,
         "recordings": recording_summaries,
         "chunk_count": len(all_chunks),
         "duration_s": total_duration_s if recording_summaries else None,

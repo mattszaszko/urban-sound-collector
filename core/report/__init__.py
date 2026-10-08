@@ -6,6 +6,7 @@ from core.report.aggregate import (
     build_time_budget,
     leq_context,
     sound_diet_from_events,
+    top_peak_disturbances,
 )
 from core.report.comfort import build_comfort_rating, grade_from_score
 from core.report.segment import (
@@ -33,5 +34,6 @@ __all__ = [
     "resolve_zone",
     "segment_acoustic_events",
     "sound_diet_from_events",
+    "top_peak_disturbances",
     "vote_label_for_event",
 ]

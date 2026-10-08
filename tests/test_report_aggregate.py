@@ -196,6 +196,37 @@ class AggregateTests(unittest.TestCase):
         self.assertIsNotNone(comfort)
         self.assertIn(comfort["grade"], {"A", "B", "C", "D", "E"})
         self.assertTrue(0 <= comfort["score"] <= 100)
+        tops = zone_a["top_disturbances"]
+        self.assertTrue(1 <= len(tops) <= 3)
+        self.assertEqual(tops[0]["lafmax_db"], zone_a["peak_lafmax_db"])
+        self.assertEqual(tops[0]["source_file"], "levels.jsonl")
+        self.assertIn("category", tops[0])
+        self.assertIn("at_utc", tops[0])
+
+    def test_top_disturbances_are_spaced_and_labelled(self) -> None:
+        base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+        events = [
+            _evt(0, dba=90.0, label="Vehicle", base=base),
+            _evt(1, dba=89.0, label="Vehicle", base=base),  # same minute cluster
+            _evt(120, dba=80.0, label="Speech", base=base),
+            _evt(240, dba=70.0, label="Bird", base=base),
+            _evt(300, dba=50.0, label="Vehicle", base=base),
+        ]
+        report = build_dashboard_report(
+            [("peaks.jsonl", events)],
+            timezone_name="Europe/Amsterdam",
+        )
+        tops = report["zone_a"]["top_disturbances"]
+        self.assertEqual(len(tops), 3)
+        self.assertEqual(tops[0]["lafmax_db"], 93.0)  # 90 + 3
+        self.assertEqual(tops[0]["category"], "Traffic & Transit")
+        self.assertEqual(tops[1]["lafmax_db"], 83.0)
+        self.assertEqual(tops[1]["category"], "Human & Community")
+        self.assertEqual(tops[2]["lafmax_db"], 73.0)
+        # Clustered second Vehicle peak (89) must not displace spaced ones.
+        labels = {t["label"] for t in tops}
+        self.assertIn("Vehicle", labels)
+        self.assertIn("Speech", labels)
 
     def test_hourly_gated_pct(self) -> None:
         base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
@@ -253,6 +284,9 @@ class AggregateTests(unittest.TestCase):
         by_cat = {r["category"]: r for r in budget["total"]}
         self.assertIn("Relative silence", by_cat)
         self.assertAlmostEqual(by_cat["Relative silence"]["pct"], 50.0, places=0)
+        # Silence last so stacked bars put it on top; Traffic (first macro) at bottom.
+        self.assertEqual(budget["categories"][-1], "Relative silence")
+        self.assertEqual(budget["categories"][0], "Traffic & Transit")
         self.assertTrue(budget["day"] or budget["night"])
         self.assertTrue(budget["hourly"])
 

@@ -500,6 +500,21 @@
   .impact-card .k{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
   .impact-card .v{font-size:1.05rem;font-weight:700;margin-top:.15rem}
   .impact-card .hint{font-size:.7rem;color:var(--muted);margin-top:.2rem;line-height:1.35}
+  .impact-card.disturbance-card{justify-content:flex-start}
+  .disturbance-list{list-style:none;margin:.45rem 0 0;padding:0;display:flex;flex-direction:column;gap:.45rem}
+  .disturbance-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem .55rem;
+                   align-items:center;padding:.4rem .45rem;border:1px solid var(--border);
+                   border-radius:8px;background:var(--surface)}
+  .disturbance-row .dist-level{font-size:.95rem;font-weight:700;color:var(--text);
+                               font-variant-numeric:tabular-nums}
+  .disturbance-row .dist-cat{font-size:.72rem;font-weight:600;color:var(--accent);margin-top:.1rem}
+  .disturbance-row .dist-meta{grid-column:1 / -1;font-size:.68rem;color:var(--muted);line-height:1.35}
+  .disturbance-row .dist-inspect{justify-self:end;align-self:start;padding:.28rem .55rem;
+                                 font-size:.7rem;font-weight:600;border-radius:6px;
+                                 border:1px solid var(--border);background:var(--bg);
+                                 color:var(--text);text-decoration:none;white-space:nowrap}
+  .disturbance-row .dist-inspect:hover{border-color:var(--accent);color:var(--accent)}
+  .disturbance-row .dist-inspect[aria-disabled="true"]{opacity:.45;pointer-events:none}
   .label-chips{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.35rem}
   .label-chip{font-size:.7rem;padding:.2rem .45rem;border-radius:999px;background:var(--surface);
               border:1px solid var(--border);color:var(--text)}
@@ -551,54 +566,49 @@
                                            justify-content:center}
   }
   #report-zone-comfort{display:flex;flex-direction:column}
-  #rpt-comfort{display:flex;flex-direction:column;flex:1}
-  .comfort-scale{display:flex;flex-direction:column;gap:.38rem;margin:0}
-  .comfort-wave-row{position:relative;display:flex;align-items:center;min-height:1.95rem;
-                    padding:.28rem 0 .28rem .15rem;opacity:.55;transition:opacity .15s;
-                    overflow:hidden}
-  .comfort-wave-row .wave{position:absolute;inset:0 auto 0 0;margin:auto 0;height:34px;
-                          pointer-events:none;z-index:0;overflow:visible;
-                          -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.25) 10%,
-                            rgba(0,0,0,.7) 22%,#000 38%);
-                          mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.25) 10%,
-                            rgba(0,0,0,.7) 22%,#000 38%)}
-  .comfort-wave-row .wave .wave-fill{stroke:none;opacity:.07}
-  .comfort-wave-row .wave .wave-line{fill:none;stroke-linecap:round;stroke-linejoin:round;
-                                    stroke-width:1;opacity:.26}
-  .comfort-wave-row .comfort-wave-label{position:relative;z-index:1;display:inline-flex;
-                                       align-items:baseline;gap:.5rem;padding:.08rem .4rem .08rem 0}
-  .comfort-wave-row .letter{font-weight:800;font-size:.82rem;line-height:1;
-                            text-shadow:0 0 6px var(--surface)}
-  .comfort-wave-row .name{font-size:.74rem;font-weight:600;color:var(--text);line-height:1.2;
-                          text-shadow:0 0 6px var(--surface)}
-  .comfort-wave-row.active{opacity:1}
-  .comfort-wave-row.active::before{content:'▸';position:absolute;left:-.7rem;top:50%;
-                                   transform:translateY(-50%);color:var(--text);z-index:2;
-                                   font-weight:700;font-size:.8rem}
-  .comfort-wave-row[data-grade="A"] .letter,
-  .comfort-wave-row[data-grade="A"] .wave .wave-fill,
-  .comfort-wave-row[data-grade="A"] .wave .wave-line{color:var(--grade-a);fill:var(--grade-a);stroke:var(--grade-a)}
-  .comfort-wave-row[data-grade="B"] .letter,
-  .comfort-wave-row[data-grade="B"] .wave .wave-fill,
-  .comfort-wave-row[data-grade="B"] .wave .wave-line{color:var(--grade-b);fill:var(--grade-b);stroke:var(--grade-b)}
-  .comfort-wave-row[data-grade="C"] .letter,
-  .comfort-wave-row[data-grade="C"] .wave .wave-fill,
-  .comfort-wave-row[data-grade="C"] .wave .wave-line{color:var(--grade-c);fill:var(--grade-c);stroke:var(--grade-c)}
-  .comfort-wave-row[data-grade="D"] .letter,
-  .comfort-wave-row[data-grade="D"] .wave .wave-fill,
-  .comfort-wave-row[data-grade="D"] .wave .wave-line{color:var(--grade-d);fill:var(--grade-d);stroke:var(--grade-d)}
-  .comfort-wave-row[data-grade="E"] .letter,
-  .comfort-wave-row[data-grade="E"] .wave .wave-fill,
-  .comfort-wave-row[data-grade="E"] .wave .wave-line{color:var(--grade-e);fill:var(--grade-e);stroke:var(--grade-e)}
-  .comfort-wave-row.active .wave .wave-fill{opacity:.12}
-  .comfort-wave-row.active .wave .wave-line{opacity:.36;stroke-width:1.1}
-  .comfort-wave-row[data-grade="A"] .wave{width:52%}
-  .comfort-wave-row[data-grade="B"] .wave{width:64%}
-  .comfort-wave-row[data-grade="C"] .wave{width:76%}
-  .comfort-wave-row[data-grade="D"] .wave{width:88%}
-  .comfort-wave-row[data-grade="E"] .wave{width:100%}
+  #rpt-comfort{display:flex;flex-direction:column;flex:1;justify-content:center}
+  .comfort-nutri{display:flex;flex-direction:column;align-items:center;gap:.75rem;
+                 margin:auto 0;width:100%;max-width:22rem}
+  .comfort-nutri-bar{
+    display:flex;align-items:center;justify-content:center;gap:0;width:100%;
+    height:2.35rem;padding:0 .2rem;border-radius:999px;
+    background:var(--bg);border:2px solid var(--border);box-sizing:border-box;
+  }
+  .comfort-nutri-cell{
+    flex:1 1 0;min-width:0;height:1.55rem;display:flex;align-items:center;justify-content:center;
+    opacity:.72;transition:transform .15s ease,opacity .15s ease,height .15s ease;
+  }
+  .comfort-nutri-cell .letter{
+    font-weight:800;font-size:.78rem;line-height:1;color:rgba(255,255,255,.88);
+    text-shadow:0 1px 1px rgba(0,0,0,.18);
+  }
+  .comfort-nutri-cell[data-grade="A"]{background:var(--grade-a);
+    border-radius:999px 0 0 999px}
+  .comfort-nutri-cell[data-grade="B"]{background:var(--grade-b)}
+  .comfort-nutri-cell[data-grade="C"]{background:var(--grade-c)}
+  .comfort-nutri-cell[data-grade="D"]{background:var(--grade-d)}
+  .comfort-nutri-cell[data-grade="E"]{background:var(--grade-e);
+    border-radius:0 999px 999px 0}
+  .comfort-nutri-cell.active{
+    flex:1.35 1 0;height:2.85rem;opacity:1;z-index:1;
+    border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.28);
+    transform:translateY(0);
+  }
+  .comfort-nutri-cell.active .letter{
+    font-size:1.35rem;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25);
+  }
+  .comfort-nutri-caption{text-align:center;line-height:1.35}
+  .comfort-nutri-caption .grade-letter{
+    display:inline-block;font-weight:800;font-size:1.05rem;margin-right:.35rem;
+  }
+  .comfort-nutri-caption .grade-name{font-size:.92rem;font-weight:600;color:var(--text)}
+  .comfort-nutri-caption[data-grade="A"] .grade-letter{color:var(--grade-a)}
+  .comfort-nutri-caption[data-grade="B"] .grade-letter{color:var(--grade-b)}
+  .comfort-nutri-caption[data-grade="C"] .grade-letter{color:var(--grade-c)}
+  .comfort-nutri-caption[data-grade="D"] .grade-letter{color:var(--grade-d)}
+  .comfort-nutri-caption[data-grade="E"] .grade-letter{color:var(--grade-e)}
   .comfort-warning{margin-top:auto;padding-top:.55rem;font-size:.72rem;color:var(--muted);
-                   line-height:1.4;border-top:1px solid var(--border)}
+                   line-height:1.4;border-top:1px solid var(--border);width:100%}
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
                   padding:.85rem;background:var(--bg);border:1px solid var(--border);
                   border-radius:8px}
@@ -1635,9 +1645,13 @@ function refreshChartsForColorMode() {
   [reportBudgetTotalChart, reportBudgetDayChart, reportBudgetNightChart, reportBudgetHourlyChart]
     .filter(Boolean)
     .forEach((chart) => {
+      applyBudgetDatasetColors(chart);
       applyChartScaleColors(chart);
       chart.update('none');
     });
+  if (reportZoneC && reportZoneC.time_budget) {
+    renderBudgetLegend(reportZoneC.time_budget.categories || []);
+  }
 }
 
 function applyReportHourlyDatasetColors(chart) {
@@ -3625,8 +3639,17 @@ async function loadRecordingOverview(name, { loudThreshold } = {}) {
   }
   setupOverviewAudio(data);
   if (overviewScrubPoints.length) {
-    const startMs = Date.parse(overviewScrubPoints[0].t);
-    setOverviewPlayheadMs(startMs, { seekAudio: true });
+    let seekMs = Date.parse(overviewScrubPoints[0].t);
+    try {
+      const tParam = new URLSearchParams(window.location.search).get('t');
+      if (tParam) {
+        const parsed = Date.parse(tParam);
+        if (Number.isFinite(parsed)) seekMs = parsed;
+      }
+    } catch { /* ignore bad ?t= */ }
+    if (Number.isFinite(overviewStartedMs)) seekMs = Math.max(overviewStartedMs, seekMs);
+    if (Number.isFinite(overviewEndedMs)) seekMs = Math.min(overviewEndedMs, seekMs);
+    setOverviewPlayheadMs(seekMs, { seekAudio: true });
     scheduleOverviewSeriesFetch(overviewPlayheadMs, { immediate: true });
   }
   setInlineStatus(
@@ -3812,7 +3835,6 @@ const recordingsSelectAll = document.getElementById('recordings-select-all');
 const REPORT_OPTIONS_KEY = 'usc-report-options';
 
 const TIME_BUDGET_COLORS = {
-  'Relative silence': '#94a3b8',
   'Traffic & Transit': '#0ea5e9',
   'Human & Community': '#f59e0b',
   'Environmental & Weather': '#22c55e',
@@ -3821,9 +3843,32 @@ const TIME_BUDGET_COLORS = {
 };
 
 function budgetColor(category, index) {
+  // Blend into the page/chart base so silence reads as “background”, not a loud slice.
+  if (category === 'Relative silence') {
+    return cssVar('--bg') || '#0f172a';
+  }
   if (TIME_BUDGET_COLORS[category]) return TIME_BUDGET_COLORS[category];
   const fallback = ['#14b8a6', '#e11d48', '#6366f1', '#84cc16', '#f97316'];
   return fallback[index % fallback.length];
+}
+
+function applyBudgetDatasetColors(chart) {
+  if (!chart || !chart.data || !chart.data.datasets) return;
+  const silence = budgetColor('Relative silence', 0);
+  const surface = cssVar('--surface') || '#0f172a';
+  chart.data.datasets.forEach((ds) => {
+    if (Array.isArray(ds.backgroundColor) && Array.isArray(chart.data.labels)) {
+      // Doughnut / pie: per-slice colors aligned to labels.
+      ds.backgroundColor = chart.data.labels.map((lab, i) => budgetColor(lab, i));
+      ds.borderColor = surface;
+      return;
+    }
+    if (ds.label === 'Relative silence') {
+      ds.backgroundColor = silence;
+    } else if (typeof ds.label === 'string' && TIME_BUDGET_COLORS[ds.label]) {
+      ds.backgroundColor = TIME_BUDGET_COLORS[ds.label];
+    }
+  });
 }
 
 function selectedRecordingNames() {
@@ -4104,6 +4149,46 @@ function fmtReportDb(v) {
   return v == null || Number.isNaN(Number(v)) ? '—' : `${Number(v).toFixed(1)} dBA`;
 }
 
+function disturbanceInspectHref(row) {
+  const file = row && row.source_file;
+  const at = row && row.at_utc;
+  if (!file || !at) return null;
+  return `/analyze/${encodeURIComponent(file)}?t=${encodeURIComponent(at)}`;
+}
+
+function renderTopDisturbancesCard(rows) {
+  const list = Array.isArray(rows) ? rows.slice(0, 3) : [];
+  if (!list.length) {
+    return impactCard('Top 3 disturbances', '—', 'No loud peaks in this selection');
+  }
+  const items = list.map((row, i) => {
+    const href = disturbanceInspectHref(row);
+    const label = row.label && row.label !== row.category
+      ? `${row.label}`
+      : '';
+    const metaBits = [
+      label || null,
+      row.at_local || null,
+      row.source_file || null,
+    ].filter(Boolean);
+    const inspect = href
+      ? `<a class="dist-inspect" href="${href}" target="_blank" rel="noopener">Inspect</a>`
+      : `<span class="dist-inspect" aria-disabled="true">Inspect</span>`;
+    return `<li class="disturbance-row">
+      <div>
+        <div class="dist-level">${i + 1}. ${fmtReportDb(row.lafmax_db)}</div>
+        <div class="dist-cat">${row.category || 'Unclassified / Ambient'}</div>
+      </div>
+      ${inspect}
+      <div class="dist-meta">${metaBits.join(' · ')}</div>
+    </li>`;
+  }).join('');
+  return `<div class="impact-card disturbance-card">
+    <div class="k">Top 3 disturbances</div>
+    <ol class="disturbance-list">${items}</ol>
+  </div>`;
+}
+
 function renderReportImpact(zoneA) {
   const el = document.getElementById('rpt-impact');
   if (!el) return;
@@ -4112,12 +4197,9 @@ function renderReportImpact(zoneA) {
     zoneA.l10_db != null ? `Louder spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
     zoneA.leq_context || null,
   ].filter(Boolean).join(' · ') || 'Most-of-the-time neighborhood level';
-  const peakHint = [
-    zoneA.peak_lafmax_at_local ? `Highest at ${zoneA.peak_lafmax_at_local}` : null,
-  ].filter(Boolean).join(' · ') || 'Sudden loud moments';
   el.innerHTML = [
     impactCard('Typical level', fmtReportDb(zoneA.l50_db), typicalHint),
-    impactCard('Peak disturbance', fmtReportDb(zoneA.peak_lafmax_db), peakHint),
+    renderTopDisturbancesCard(zoneA.top_disturbances),
   ].join('');
 }
 
@@ -4129,60 +4211,6 @@ const COMFORT_GRADES = [
   { grade: 'E', name: 'Intense' },
 ];
 
-/** Soft background waveforms; noisier grades = denser / more agitated. */
-function comfortWavePaths(grade) {
-  const profiles = {
-    A: { cycles: 2.4, amp: 4.2, harm: 0.14, noise: 0.18, spikes: 0.05, seed: 11 },
-    B: { cycles: 3.2, amp: 5.0, harm: 0.26, noise: 0.34, spikes: 0.14, seed: 23 },
-    C: { cycles: 4.6, amp: 6.0, harm: 0.4, noise: 0.58, spikes: 0.38, seed: 37 },
-    D: { cycles: 6.4, amp: 7.0, harm: 0.56, noise: 0.88, spikes: 0.72, seed: 53 },
-    E: { cycles: 9.0, amp: 8.0, harm: 0.74, noise: 1.15, spikes: 1.15, seed: 71 },
-  };
-  const p = profiles[grade] || profiles.C;
-  const mid = 17;
-  const n = 64;
-  let s = p.seed * 9973;
-  const rnd = () => {
-    s = (s * 16807) % 2147483647;
-    return (s % 10000) / 10000;
-  };
-  const amps = [];
-  for (let i = 0; i <= n; i += 1) {
-    const t = i / n;
-    const env = 0.55 + 0.45 * Math.sin(Math.PI * t);
-    const base = Math.abs(Math.sin(t * Math.PI * 2 * p.cycles));
-    const harm = Math.abs(Math.sin(t * Math.PI * 2 * p.cycles * 2.35 + 0.4)) * p.harm;
-    const flutter = Math.abs(Math.sin(t * Math.PI * 2 * p.cycles * 5.1 + 1.1)) * p.spikes * 0.35;
-    const noise = rnd() * p.noise;
-    const burst = (rnd() < p.spikes * 0.18 ? rnd() * p.spikes * 0.85 : 0);
-    const amp = Math.max(0.35, ((base + harm + flutter) * p.amp + noise * p.amp + burst * p.amp) * env);
-    amps.push({ x: 100 * t, amp: Math.min(mid - 1.2, amp) });
-  }
-  const curve = (pts) => {
-    let d = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
-    for (let i = 1; i < pts.length; i += 1) {
-      const [x0, y0] = pts[i - 1];
-      const [x1, y1] = pts[i];
-      const cx = ((x0 + x1) / 2).toFixed(2);
-      d += ` Q${cx} ${y0.toFixed(2)} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
-    }
-    return d;
-  };
-  const top = amps.map((pt) => [pt.x, mid - pt.amp]);
-  const bot = amps.map((pt) => [pt.x, mid + pt.amp]);
-  const centerPts = amps.map((pt, i) => {
-    const sign = (i % 2 === 0) ? 1 : -1;
-    const wobble = (i % 4 < 2) ? 1 : 0.72;
-    return [pt.x, mid - sign * pt.amp * wobble];
-  });
-  let fill = curve(top);
-  for (let i = bot.length - 1; i >= 0; i -= 1) {
-    fill += ` L${bot[i][0].toFixed(2)} ${bot[i][1].toFixed(2)}`;
-  }
-  fill += ' Z';
-  return { fill, stroke: curve(centerPts) };
-}
-
 function renderComfortRating(zoneA) {
   const el = document.getElementById('rpt-comfort');
   if (!el) return;
@@ -4191,26 +4219,28 @@ function renderComfortRating(zoneA) {
     el.innerHTML = '<div class="empty">Not enough data to rate.</div>';
     return;
   }
-  const rows = COMFORT_GRADES.map((g) => {
+  const label = rating.label || (
+    (COMFORT_GRADES.find((g) => g.grade === rating.grade) || {}).name || ''
+  );
+  const cells = COMFORT_GRADES.map((g) => {
     const active = g.grade === rating.grade ? ' active' : '';
-    const paths = comfortWavePaths(g.grade);
-    return `<div class="comfort-wave-row${active}" data-grade="${g.grade}">
-      <svg class="wave" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">
-        <path class="wave-fill" d="${paths.fill}"></path>
-        <path class="wave-line" d="${paths.stroke}"></path>
-      </svg>
-      <div class="comfort-wave-label">
-        <span class="letter">${g.grade}</span>
-        <span class="name">${g.name}</span>
-      </div>
-    </div>`;
+    return `<span class="comfort-nutri-cell${active}" data-grade="${g.grade}" title="${g.grade} · ${g.name}">
+      <span class="letter">${g.grade}</span>
+    </span>`;
   }).join('');
   const warn = rating.insufficient_data && rating.warning
     ? `<div class="comfort-warning">${rating.warning}</div>`
     : '';
   el.innerHTML = `
-    <div class="comfort-scale" role="img" aria-label="Grade ${rating.grade}, ${rating.label}">
-      ${rows}
+    <div class="comfort-nutri" data-grade="${rating.grade}">
+      <div class="comfort-nutri-bar" role="img"
+           aria-label="Acoustic comfort grade ${rating.grade}, ${label}">
+        ${cells}
+      </div>
+      <div class="comfort-nutri-caption" data-grade="${rating.grade}">
+        <span class="grade-letter">${rating.grade}</span>
+        <span class="grade-name">${label}</span>
+      </div>
     </div>
     ${warn}`;
 }
