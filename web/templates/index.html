@@ -343,6 +343,15 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .report-header-line{font-size:1.05rem;font-weight:700;margin-bottom:.35rem}
   .report-sub{font-size:.78rem;color:var(--muted);margin-bottom:.75rem}
+  .report-meta{display:flex;flex-wrap:wrap;gap:.4rem .55rem;align-items:center}
+  .report-meta-item{display:inline-flex;align-items:center;gap:.35rem;
+                    padding:.28rem .55rem;border-radius:999px;background:var(--bg);
+                    border:1px solid var(--border);color:var(--muted);font-size:.74rem;
+                    line-height:1.2;font-variant-numeric:tabular-nums}
+  .report-meta-item svg{width:.95rem;height:.95rem;flex:0 0 auto;opacity:.85;
+                        stroke:currentColor;fill:none;stroke-width:1.8;
+                        stroke-linecap:round;stroke-linejoin:round}
+  .report-meta-item strong{color:var(--text);font-weight:600}
   .report-chart-box{position:relative;height:280px;background:var(--bg);
                     border:1px solid var(--border);border-radius:8px;padding:.35rem .35rem .55rem}
   .report-band-legend{display:flex;flex-wrap:wrap;gap:.45rem .85rem;margin-top:.65rem;
@@ -508,6 +517,21 @@
   .impact-card .hint{font-size:.7rem;color:var(--muted);margin-top:.2rem;line-height:1.35}
   .impact-card .hint-stack{display:flex;flex-direction:column;gap:.2rem;margin-top:.35rem}
   .impact-card .hint-stack .hint{margin-top:0}
+  .typical-card{display:flex;flex-direction:column;gap:.7rem}
+  .typical-card .typical-hero{display:flex;flex-wrap:wrap;align-items:baseline;
+                              justify-content:space-between;gap:.35rem .75rem}
+  .typical-card .typical-hero .v{font-size:1.55rem;font-weight:750;letter-spacing:-.02em;
+                                 margin:0;font-variant-numeric:tabular-nums}
+  .typical-card .typical-sounds-like{font-size:.78rem;color:var(--muted);line-height:1.35}
+  .typical-card .typical-sounds-like em{font-style:normal;color:var(--text);font-weight:600}
+  .typical-card .typical-range{display:grid;grid-template-columns:1fr 1fr;gap:.45rem}
+  .typical-card .typical-range-item{padding:.5rem .55rem;border-radius:8px;
+                                    background:var(--surface);border:1px solid var(--border);
+                                    min-width:0}
+  .typical-card .typical-range-k{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;
+                                 color:var(--muted);font-weight:600}
+  .typical-card .typical-range-v{font-size:.95rem;font-weight:700;margin-top:.2rem;
+                                 font-variant-numeric:tabular-nums;color:var(--text)}
   .disturbance-panel{background:var(--bg);border:1px solid var(--border);border-radius:8px;
                      padding:.65rem .75rem .75rem;margin:0}
   .disturbance-panel > .k{margin-bottom:.55rem}
@@ -586,46 +610,55 @@
   #report-zone-a{display:flex;flex-direction:column;gap:0;margin-bottom:1.1rem}
   #report-zone-a > .report-header-line{margin-bottom:.25rem}
   #report-zone-a > .report-sub{margin-bottom:.85rem}
-  .comfort-card .comfort-nutri{display:flex;flex-direction:column;align-items:stretch;gap:.5rem;
-                               width:100%;max-width:none;margin:.15rem 0 0}
+  .comfort-card{display:flex;flex-direction:column}
+  .comfort-card .comfort-body{display:flex;flex-direction:column;gap:.7rem;margin-top:.35rem;
+                              flex:1}
+  .comfort-grade-block{display:flex;align-items:center;gap:.7rem}
+  .comfort-grade-mark{
+    flex:0 0 auto;width:2.85rem;height:2.85rem;border-radius:12px;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:1.35rem;font-weight:800;color:#fff;letter-spacing:-.02em;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);
+  }
+  .comfort-grade-block[data-grade="A"] .comfort-grade-mark{background:var(--grade-a)}
+  .comfort-grade-block[data-grade="B"] .comfort-grade-mark{background:var(--grade-b)}
+  .comfort-grade-block[data-grade="C"] .comfort-grade-mark{background:var(--grade-c)}
+  .comfort-grade-block[data-grade="D"] .comfort-grade-mark{background:var(--grade-d)}
+  .comfort-grade-block[data-grade="E"] .comfort-grade-mark{background:var(--grade-e)}
+  .comfort-grade-copy{display:flex;flex-direction:column;gap:.12rem;min-width:0}
+  .comfort-grade-copy .grade-name{font-size:1.05rem;font-weight:700;color:var(--text);
+                                  line-height:1.15}
+  .comfort-grade-copy .grade-sub{font-size:.72rem;color:var(--muted);line-height:1.35}
+  .comfort-card .comfort-nutri{display:flex;flex-direction:column;align-items:stretch;gap:.4rem;
+                               width:100%;max-width:none;margin:0;margin-top:auto}
   .comfort-nutri-bar{
-    display:flex;align-items:center;justify-content:center;gap:0;width:100%;
-    height:2rem;padding:0 .12rem;border-radius:999px;margin-top:.15rem;
-    background:var(--surface);border:2px solid var(--border);box-sizing:border-box;
+    display:flex;align-items:stretch;justify-content:stretch;gap:3px;width:100%;
+    height:1.7rem;padding:3px;border-radius:999px;
+    background:var(--surface);border:1px solid var(--border);box-sizing:border-box;
   }
   .comfort-nutri-cell{
-    flex:1 1 0;min-width:0;height:1.25rem;display:flex;align-items:center;justify-content:center;
-    opacity:.7;transition:transform .15s ease,opacity .15s ease,height .15s ease;
+    flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;
+    opacity:.55;border-radius:999px;transition:opacity .15s ease,transform .15s ease,
+      box-shadow .15s ease;
   }
   .comfort-nutri-cell .letter{
-    font-weight:800;font-size:.7rem;line-height:1;color:rgba(255,255,255,.88);
+    font-weight:800;font-size:.68rem;line-height:1;color:rgba(255,255,255,.9);
     text-shadow:0 1px 1px rgba(0,0,0,.18);
   }
-  .comfort-nutri-cell[data-grade="A"]{background:var(--grade-a);
-    border-radius:999px 0 0 999px}
+  .comfort-nutri-cell[data-grade="A"]{background:var(--grade-a)}
   .comfort-nutri-cell[data-grade="B"]{background:var(--grade-b)}
   .comfort-nutri-cell[data-grade="C"]{background:var(--grade-c)}
   .comfort-nutri-cell[data-grade="D"]{background:var(--grade-d)}
-  .comfort-nutri-cell[data-grade="E"]{background:var(--grade-e);
-    border-radius:0 999px 999px 0}
+  .comfort-nutri-cell[data-grade="E"]{background:var(--grade-e)}
   .comfort-nutri-cell.active{
-    flex:1.25 1 0;height:2.2rem;opacity:1;z-index:1;
-    border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.24);
+    opacity:1;transform:scale(1.04);z-index:1;
+    box-shadow:0 0 0 2px var(--surface),0 0 0 3px rgba(255,255,255,.55);
   }
-  .comfort-nutri-cell.active .letter{
-    font-size:1.05rem;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25);
-  }
-  .comfort-nutri-caption{text-align:left;line-height:1.35;margin-top:.05rem}
-  .comfort-nutri-caption .grade-letter{
-    display:inline-block;font-weight:800;font-size:1rem;margin-right:.35rem;
-  }
-  .comfort-nutri-caption .grade-name{font-size:.88rem;font-weight:600;color:var(--text)}
-  .comfort-nutri-caption[data-grade="A"] .grade-letter{color:var(--grade-a)}
-  .comfort-nutri-caption[data-grade="B"] .grade-letter{color:var(--grade-b)}
-  .comfort-nutri-caption[data-grade="C"] .grade-letter{color:var(--grade-c)}
-  .comfort-nutri-caption[data-grade="D"] .grade-letter{color:var(--grade-d)}
-  .comfort-nutri-caption[data-grade="E"] .grade-letter{color:var(--grade-e)}
-  .comfort-warning{margin-top:.45rem;padding-top:.45rem;font-size:.72rem;color:var(--muted);
+  .comfort-nutri-cell.active .letter{font-size:.78rem;color:#fff}
+  .comfort-nutri-legend{display:flex;justify-content:space-between;gap:.35rem;
+                        font-size:.62rem;color:var(--muted);padding:0 .15rem;
+                        text-transform:uppercase;letter-spacing:.04em}
+  .comfort-warning{margin-top:.15rem;padding-top:.45rem;font-size:.72rem;color:var(--muted);
                    line-height:1.4;border-top:1px solid var(--border);width:100%}
   .export-options{display:flex;flex-direction:column;gap:.45rem;margin-bottom:1rem;
                   padding:.85rem;background:var(--bg);border:1px solid var(--border);
@@ -4354,6 +4387,9 @@ function comfortRatingHtml(zoneA) {
   const label = rating.label || (
     (COMFORT_GRADES.find((g) => g.grade === rating.grade) || {}).name || ''
   );
+  const score = rating.score != null && Number.isFinite(Number(rating.score))
+    ? Number(rating.score)
+    : null;
   const cells = COMFORT_GRADES.map((g) => {
     const active = g.grade === rating.grade ? ' active' : '';
     return `<span class="comfort-nutri-cell${active}" data-grade="${g.grade}" title="${g.grade} · ${g.name}">
@@ -4363,39 +4399,72 @@ function comfortRatingHtml(zoneA) {
   const warn = rating.insufficient_data && rating.warning
     ? `<div class="comfort-warning">${rating.warning}</div>`
     : '';
+  const sub = score != null
+    ? `Grade ${rating.grade} of A–E · score ${score}/100`
+    : `Grade ${rating.grade} of A–E`;
   return `<div class="impact-card comfort-card">
     <div class="k">Acoustic comfort</div>
-    <div class="comfort-nutri" data-grade="${rating.grade}">
-      <div class="comfort-nutri-bar" role="img"
-           aria-label="Acoustic comfort grade ${rating.grade}, ${label}">
-        ${cells}
+    <div class="comfort-body">
+      <div class="comfort-grade-block" data-grade="${rating.grade}">
+        <span class="comfort-grade-mark" aria-hidden="true">${rating.grade}</span>
+        <div class="comfort-grade-copy">
+          <span class="grade-name">${label}</span>
+          <span class="grade-sub">${sub}</span>
+        </div>
       </div>
-      <div class="comfort-nutri-caption" data-grade="${rating.grade}">
-        <span class="grade-letter">${rating.grade}</span>
-        <span class="grade-name">${label}</span>
+      <div class="comfort-nutri" data-grade="${rating.grade}">
+        <div class="comfort-nutri-bar" role="img"
+             aria-label="Acoustic comfort grade ${rating.grade}, ${label}">
+          ${cells}
+        </div>
+        <div class="comfort-nutri-legend" aria-hidden="true">
+          <span>Tranquil</span><span>Intense</span>
+        </div>
+        ${warn}
       </div>
-      ${warn}
     </div>
+  </div>`;
+}
+
+function renderTypicalLevelCard(zoneA) {
+  const soundsLike = zoneA.leq_context && zoneA.leq_context !== '—'
+    ? zoneA.leq_context
+    : null;
+  const quiet = zoneA.l90_db != null
+    ? `<div class="typical-range-item">
+        <div class="typical-range-k">Quiet moments</div>
+        <div class="typical-range-v">${fmtReportDb(zoneA.l90_db)}</div>
+      </div>`
+    : '';
+  const loud = zoneA.l10_db != null
+    ? `<div class="typical-range-item">
+        <div class="typical-range-k">Louder spikes</div>
+        <div class="typical-range-v">${fmtReportDb(zoneA.l10_db)}</div>
+      </div>`
+    : '';
+  const range = (quiet || loud)
+    ? `<div class="typical-range">${quiet}${loud}</div>`
+    : `<div class="hint">Most-of-the-time neighborhood level</div>`;
+  const context = soundsLike
+    ? `<div class="typical-sounds-like">Sounds like: <em>${soundsLike}</em></div>`
+    : '';
+  return `<div class="impact-card typical-card">
+    <div class="k">Typical level</div>
+    <div class="typical-hero">
+      <div class="v">${fmtReportDb(zoneA.l50_db)}</div>
+      ${context}
+    </div>
+    ${range}
   </div>`;
 }
 
 function renderReportImpact(zoneA) {
   const el = document.getElementById('rpt-impact');
   if (!el) return;
-  const hintParts = [
-    zoneA.l90_db != null ? `Quiet moments around ${fmtReportDb(zoneA.l90_db)}` : null,
-    zoneA.l10_db != null ? `Louder spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
-    zoneA.leq_context || null,
-  ].filter(Boolean);
-  const typicalHints = hintParts.length
-    ? `<div class="hint-stack">${hintParts.map((h) => `<div class="hint">${h}</div>`).join('')}</div>`
-    : `<div class="hint">Most-of-the-time neighborhood level</div>`;
-  const typicalCard = `<div class="impact-card"><div class="k">Typical level</div>` +
-    `<div class="v">${fmtReportDb(zoneA.l50_db)}</div>${typicalHints}</div>`;
   const tops = zoneA.top_disturbances;
   el.innerHTML = `
     <div class="report-summary-kpis">
-      ${typicalCard}
+      ${renderTypicalLevelCard(zoneA)}
       ${comfortRatingHtml(zoneA)}
     </div>
     ${renderTopDisturbancesCard(tops)}`;
@@ -5174,6 +5243,54 @@ function hideReportProgress() {
   box.classList.remove('busy', 'err');
 }
 
+function reportMetaIcon(kind) {
+  if (kind === 'recordings') {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h11v12H8z"/><path d="M5 9h3v9H5z"/><path d="M11 10h5"/><path d="M11 14h5"/></svg>`;
+  }
+  if (kind === 'duration') {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 14c2-4 3.5-6 5-6s2.5 4 4 4 2.5-6 4-6 3 2 5 6"/></svg>`;
+}
+
+function renderReportMeta(zoneA, meta) {
+  const el = document.getElementById('rpt-sub');
+  if (!el) return;
+  const nRec = (zoneA.recordings || []).length;
+  const durationLabel = fmtHumanDuration(zoneA.duration_s);
+  const eventCount = meta && meta.acoustic_event_count != null
+    ? Number(meta.acoustic_event_count)
+    : null;
+  const items = [];
+  if (nRec) {
+    items.push({
+      kind: 'recordings',
+      html: `<strong>${nRec}</strong> recording${nRec === 1 ? '' : 's'}`,
+    });
+  }
+  if (durationLabel) {
+    items.push({
+      kind: 'duration',
+      html: `<strong>${escapeHtml(durationLabel)}</strong>`,
+    });
+  }
+  if (eventCount != null && Number.isFinite(eventCount)) {
+    items.push({
+      kind: 'events',
+      html: `<strong>${eventCount}</strong> acoustic event${eventCount === 1 ? '' : 's'}`,
+    });
+  }
+  if (!items.length) {
+    el.className = 'report-sub';
+    el.innerHTML = '';
+    return;
+  }
+  el.className = 'report-sub report-meta';
+  el.innerHTML = items.map((item) =>
+    `<span class="report-meta-item">${reportMetaIcon(item.kind)}${item.html}</span>`
+  ).join('');
+}
+
 function applyReportPayload(payload) {
   const a = (payload && payload.zone_a) || {};
   const b = (payload && payload.zone_b) || {};
@@ -5181,14 +5298,7 @@ function applyReportPayload(payload) {
   reportZoneB = b;
   reportZoneC = c;
   document.getElementById('rpt-header').textContent = a.header_line || 'Report';
-  const nRec = (a.recordings || []).length;
-  const durationLabel = fmtHumanDuration(a.duration_s);
-  document.getElementById('rpt-sub').textContent = [
-    nRec ? `${nRec} recording${nRec === 1 ? '' : 's'}` : '',
-    durationLabel || null,
-    (payload.meta && payload.meta.acoustic_event_count != null)
-      ? `${payload.meta.acoustic_event_count} acoustic events` : '',
-  ].filter(Boolean).join(' · ');
+  renderReportMeta(a, payload.meta || {});
   renderReportImpact(a);
   setReportProfileView(b.default_view || 'timeline');
   setReportBudgetView(reportBudgetView || 'total');
@@ -5231,7 +5341,11 @@ async function loadDashboardReport(files) {
     busy: true,
   });
   document.getElementById('rpt-header').textContent = 'Building report…';
-  document.getElementById('rpt-sub').textContent = '';
+  const subEl = document.getElementById('rpt-sub');
+  if (subEl) {
+    subEl.className = 'report-sub';
+    subEl.innerHTML = '';
+  }
 
   const opts = currentReportOptions();
   let response;
