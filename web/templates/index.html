@@ -404,13 +404,14 @@
     .report-pie-wrap.dual{grid-template-columns:1fr 1fr}
     .report-pie-box{height:240px}
   }
-  .takeaway-box{margin-top:.75rem;padding:.85rem .9rem;border:1px solid var(--border);
-                border-radius:8px;background:var(--bg);font-size:.86rem;line-height:1.5;
+  .takeaway-box{margin-top:0;padding:.9rem 1rem;border:1px solid var(--border);
+                border-radius:8px;background:var(--bg);font-size:.86rem;line-height:1.55;
                 color:var(--text)}
   .takeaway-box .takeaway-k{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;
-                            color:var(--muted);font-weight:600;margin-bottom:.45rem}
-  .takeaway-box p{margin:0 0 .55rem;color:var(--text)}
-  .takeaway-box p:last-child{margin-bottom:0}
+                            color:var(--muted);font-weight:600;margin-bottom:.55rem}
+  .takeaway-box .takeaway-body{display:grid;gap:.55rem;max-width:62rem}
+  .takeaway-box p{margin:0;color:var(--text)}
+  .takeaway-box p:last-child{color:var(--muted)}
   .report-methodology{margin:0;border:0;border-radius:0;background:transparent}
   .report-methodology > summary{cursor:pointer;list-style:none;padding:0;
                                 font-size:.72rem;font-weight:600;text-transform:uppercase;
@@ -505,29 +506,50 @@
   .impact-card .k{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
   .impact-card .v{font-size:1.05rem;font-weight:700;margin-top:.15rem}
   .impact-card .hint{font-size:.7rem;color:var(--muted);margin-top:.2rem;line-height:1.35}
-  .impact-card.disturbance-card{justify-content:flex-start}
-  .disturbance-list{list-style:none;margin:.45rem 0 0;padding:0;display:flex;flex-direction:column;gap:.45rem}
-  .disturbance-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem .55rem;
-                   align-items:center;padding:.4rem .45rem;border:1px solid var(--border);
-                   border-radius:8px;background:var(--surface)}
-  .disturbance-row .dist-level{font-size:.95rem;font-weight:700;color:var(--text);
-                               font-variant-numeric:tabular-nums}
-  .disturbance-row .dist-cat{font-size:.72rem;font-weight:600;color:var(--accent);margin-top:.1rem}
-  .disturbance-row .dist-meta{grid-column:1 / -1;font-size:.68rem;color:var(--muted);line-height:1.35}
-  .disturbance-row .dist-inspect{justify-self:end;align-self:start;padding:.28rem .55rem;
-                                 font-size:.7rem;font-weight:600;border-radius:6px;
-                                 border:1px solid var(--border);background:var(--bg);
-                                 color:var(--text);text-decoration:none;white-space:nowrap}
-  .disturbance-row .dist-inspect:hover{border-color:var(--accent);color:var(--accent)}
-  .disturbance-row .dist-inspect[aria-disabled="true"]{opacity:.45;pointer-events:none}
-  .report-summary{
-    display:grid;grid-template-columns:1fr;gap:.65rem;margin-top:.35rem;align-items:start;
+  .impact-card .hint-stack{display:flex;flex-direction:column;gap:.2rem;margin-top:.35rem}
+  .impact-card .hint-stack .hint{margin-top:0}
+  .disturbance-panel{background:var(--bg);border:1px solid var(--border);border-radius:8px;
+                     padding:.65rem .75rem .75rem;margin:0}
+  .disturbance-panel > .k{margin-bottom:.55rem}
+  .disturbance-cards{display:grid;grid-template-columns:1fr;gap:.55rem}
+  .disturbance-card{display:flex;flex-direction:column;gap:.45rem;min-width:0;
+                    padding:.55rem .6rem .65rem;border:1px solid var(--border);
+                    border-radius:8px;background:var(--surface)}
+  .disturbance-card .dist-chart-wrap{position:relative;height:7.5rem;border-radius:6px;
+                                     background:var(--bg);border:1px solid var(--border);
+                                     padding:.2rem .15rem .05rem}
+  .disturbance-card .dist-chart-wrap canvas{width:100% !important;height:100% !important}
+  .disturbance-card .dist-head{display:flex;align-items:baseline;justify-content:space-between;
+                               gap:.5rem}
+  .disturbance-card .dist-rank{
+    flex:0 0 auto;width:1.35rem;height:1.35rem;border-radius:999px;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:.68rem;font-weight:800;color:var(--muted);
+    background:var(--bg);border:1px solid var(--border);font-variant-numeric:tabular-nums;
   }
-  .report-summary-aside{display:flex;flex-direction:column;gap:.65rem;min-width:0}
-  .report-summary-aside .impact-card,
-  .report-summary .disturbance-card{margin:0}
-  @media(min-width:720px){
-    .report-summary{grid-template-columns:minmax(14rem,0.95fr) minmax(0,1.35fr)}
+  .disturbance-card .dist-level{font-size:1.05rem;font-weight:700;color:var(--text);
+                                font-variant-numeric:tabular-nums;line-height:1.15}
+  .disturbance-card .dist-cat{font-size:.75rem;font-weight:600;color:var(--accent);margin-top:.1rem}
+  .disturbance-card .dist-meta{font-size:.68rem;color:var(--muted);line-height:1.35;margin-top:.15rem;
+                               display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+                               overflow:hidden}
+  .disturbance-card .dist-inspect{align-self:flex-start;padding:.32rem .65rem;
+                                  font-size:.72rem;font-weight:600;border-radius:6px;
+                                  border:1px solid var(--border);background:var(--bg);
+                                  color:var(--text);text-decoration:none;white-space:nowrap;
+                                  margin-top:.1rem}
+  .disturbance-card .dist-inspect:hover{border-color:var(--accent);color:var(--accent)}
+  .disturbance-card .dist-inspect[aria-disabled="true"]{opacity:.45;pointer-events:none}
+  .report-summary{
+    display:flex;flex-direction:column;gap:.75rem;margin-top:.15rem;margin-bottom:.75rem;
+  }
+  .report-summary-kpis{
+    display:grid;grid-template-columns:1fr;gap:.65rem;min-width:0;
+  }
+  .report-summary-kpis .impact-card{margin:0;min-height:100%}
+  @media(min-width:640px){
+    .report-summary-kpis{grid-template-columns:1fr 1fr;align-items:stretch}
+    .disturbance-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
   }
   .label-chips{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.35rem}
   .label-chip{font-size:.7rem;padding:.2rem .45rem;border-radius:999px;background:var(--surface);
@@ -561,20 +583,22 @@
     .impact-grid{grid-template-columns:repeat(4,1fr)}
     .overview-chart-box{height:340px}
   }
-  #report-zone-a{display:flex;flex-direction:column;margin-bottom:1.1rem}
-  .comfort-card .comfort-nutri{display:flex;flex-direction:column;align-items:stretch;gap:.55rem;
-                               width:100%;max-width:none;margin:0}
+  #report-zone-a{display:flex;flex-direction:column;gap:0;margin-bottom:1.1rem}
+  #report-zone-a > .report-header-line{margin-bottom:.25rem}
+  #report-zone-a > .report-sub{margin-bottom:.85rem}
+  .comfort-card .comfort-nutri{display:flex;flex-direction:column;align-items:stretch;gap:.5rem;
+                               width:100%;max-width:none;margin:.15rem 0 0}
   .comfort-nutri-bar{
     display:flex;align-items:center;justify-content:center;gap:0;width:100%;
-    height:2.1rem;padding:0 .15rem;border-radius:999px;margin-top:.35rem;
+    height:2rem;padding:0 .12rem;border-radius:999px;margin-top:.15rem;
     background:var(--surface);border:2px solid var(--border);box-sizing:border-box;
   }
   .comfort-nutri-cell{
-    flex:1 1 0;min-width:0;height:1.35rem;display:flex;align-items:center;justify-content:center;
-    opacity:.72;transition:transform .15s ease,opacity .15s ease,height .15s ease;
+    flex:1 1 0;min-width:0;height:1.25rem;display:flex;align-items:center;justify-content:center;
+    opacity:.7;transition:transform .15s ease,opacity .15s ease,height .15s ease;
   }
   .comfort-nutri-cell .letter{
-    font-weight:800;font-size:.72rem;line-height:1;color:rgba(255,255,255,.88);
+    font-weight:800;font-size:.7rem;line-height:1;color:rgba(255,255,255,.88);
     text-shadow:0 1px 1px rgba(0,0,0,.18);
   }
   .comfort-nutri-cell[data-grade="A"]{background:var(--grade-a);
@@ -585,13 +609,13 @@
   .comfort-nutri-cell[data-grade="E"]{background:var(--grade-e);
     border-radius:0 999px 999px 0}
   .comfort-nutri-cell.active{
-    flex:1.35 1 0;height:2.55rem;opacity:1;z-index:1;
-    border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.28);
+    flex:1.25 1 0;height:2.2rem;opacity:1;z-index:1;
+    border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.24);
   }
   .comfort-nutri-cell.active .letter{
-    font-size:1.2rem;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25);
+    font-size:1.05rem;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25);
   }
-  .comfort-nutri-caption{text-align:left;line-height:1.35;margin-top:.15rem}
+  .comfort-nutri-caption{text-align:left;line-height:1.35;margin-top:.05rem}
   .comfort-nutri-caption .grade-letter{
     display:inline-block;font-weight:800;font-size:1rem;margin-right:.35rem;
   }
@@ -1642,6 +1666,11 @@ function refreshChartsForColorMode() {
       applyChartScaleColors(chart);
       chart.update('none');
     });
+  (reportDisturbanceCharts || []).forEach((chart) => {
+    applyDisturbanceSnippetColors(chart);
+    applyChartScaleColors(chart);
+    chart.update('none');
+  });
   if (reportZoneC && reportZoneC.time_budget) {
     renderBudgetLegend(reportZoneC.time_budget.categories || []);
   }
@@ -1686,6 +1715,7 @@ let reportBudgetTotalChart = null;
 let reportBudgetDayChart = null;
 let reportBudgetNightChart = null;
 let reportBudgetHourlyChart = null;
+let reportDisturbanceCharts = [];
 let reportZoneC = null;
 let reportBudgetView = 'total';
 
@@ -4149,10 +4179,127 @@ function disturbanceInspectHref(row) {
   return `/analyze/${encodeURIComponent(file)}?t=${encodeURIComponent(at)}`;
 }
 
+const distPeakMarkerPlugin = {
+  id: 'distPeakMarker',
+  afterDatasetsDraw(chart) {
+    const idx = chart.$peakIndex;
+    if (idx == null || idx < 0) return;
+    const meta = chart.getDatasetMeta(0);
+    const pt = meta && meta.data ? meta.data[idx] : null;
+    if (!pt || !Number.isFinite(pt.x)) return;
+    const { ctx, chartArea } = chart;
+    ctx.save();
+    ctx.strokeStyle = cssVar('--playhead') || '#f472b6';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pt.x, chartArea.top);
+    ctx.lineTo(pt.x, chartArea.bottom);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+
+function destroyDisturbanceSnippetCharts() {
+  (reportDisturbanceCharts || []).forEach((chart) => {
+    try { chart.destroy(); } catch (e) { /* ignore */ }
+  });
+  reportDisturbanceCharts = [];
+}
+
+function shortLocalClock(ts) {
+  if (!ts) return '';
+  const m = String(ts).match(/\b(\d{2}:\d{2})(?::\d{2})?\b/);
+  return m ? m[1] : String(ts);
+}
+
+function applyDisturbanceSnippetColors(chart) {
+  if (!chart || !chart.data || !chart.data.datasets || !chart.data.datasets[0]) return;
+  chart.data.datasets[0].borderColor = cssVar('--green') || '#22c55e';
+  chart.data.datasets[0].backgroundColor = 'transparent';
+}
+
+function mountDisturbanceSnippetCharts(rows) {
+  destroyDisturbanceSnippetCharts();
+  if (typeof Chart === 'undefined') return;
+  Chart.register(distPeakMarkerPlugin);
+  const list = Array.isArray(rows) ? rows.slice(0, 3) : [];
+  list.forEach((row, i) => {
+    const snip = row && row.snippet;
+    const values = snip && Array.isArray(snip.dba) ? snip.dba.map(Number).filter(Number.isFinite) : [];
+    if (!values.length) return;
+    const canvas = document.getElementById(`dist-snip-${i}`);
+    if (!canvas) return;
+    const peakIndex = Math.max(0, Math.min(values.length - 1, Number(snip.peak_index) || 0));
+    const labels = values.map((_, idx) => {
+      if (idx === 0) return shortLocalClock(snip.start_local);
+      if (idx === values.length - 1) return shortLocalClock(snip.end_local);
+      return '';
+    });
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    const pad = Math.max(2, (hi - lo) * 0.15);
+    const chart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          tension: 0.25,
+          spanGaps: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false },
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(148,163,184,.18)', drawTicks: false },
+            ticks: {
+              color: cssVar('--muted') || '#94a3b8',
+              maxRotation: 0,
+              autoSkip: false,
+              font: { size: 9 },
+              callback(val, idx) {
+                return labels[idx] || '';
+              },
+            },
+            border: { display: false },
+          },
+          y: {
+            min: Math.floor(lo - pad),
+            max: Math.ceil(hi + pad),
+            grid: { color: 'rgba(148,163,184,.18)', drawTicks: false },
+            ticks: {
+              color: cssVar('--muted') || '#94a3b8',
+              maxTicksLimit: 3,
+              font: { size: 9 },
+              callback(v) { return `${v}`; },
+            },
+            border: { display: false },
+          },
+        },
+      },
+    });
+    chart.$peakIndex = peakIndex;
+    applyDisturbanceSnippetColors(chart);
+    applyChartScaleColors(chart);
+    reportDisturbanceCharts.push(chart);
+  });
+}
+
 function renderTopDisturbancesCard(rows) {
   const list = Array.isArray(rows) ? rows.slice(0, 3) : [];
   if (!list.length) {
-    return impactCard('Top 3 disturbances', '—', 'No loud peaks in this selection');
+    return `<div class="disturbance-panel"><div class="k">Top 3 disturbances</div>` +
+      `<div class="hint">No loud peaks in this selection</div></div>`;
   }
   const items = list.map((row, i) => {
     const href = disturbanceInspectHref(row);
@@ -4167,18 +4314,24 @@ function renderTopDisturbancesCard(rows) {
     const inspect = href
       ? `<a class="dist-inspect" href="${href}" target="_blank" rel="noopener">Inspect</a>`
       : `<span class="dist-inspect" aria-disabled="true">Inspect</span>`;
-    return `<li class="disturbance-row">
-      <div>
-        <div class="dist-level">${i + 1}. ${fmtReportDb(row.lafmax_db)}</div>
-        <div class="dist-cat">${row.category || 'Unclassified / Ambient'}</div>
+    const hasSnip = row.snippet && Array.isArray(row.snippet.dba) && row.snippet.dba.length;
+    const chart = hasSnip
+      ? `<div class="dist-chart-wrap"><canvas id="dist-snip-${i}" aria-label="Sound level around peak ${i + 1}"></canvas></div>`
+      : '';
+    return `<article class="disturbance-card">
+      ${chart}
+      <div class="dist-head">
+        <span class="dist-rank" aria-hidden="true">${i + 1}</span>
+        <div class="dist-level">${fmtReportDb(row.lafmax_db)}</div>
       </div>
-      ${inspect}
+      <div class="dist-cat">${row.category || 'Unclassified / Ambient'}</div>
       <div class="dist-meta">${metaBits.join(' · ')}</div>
-    </li>`;
+      ${inspect}
+    </article>`;
   }).join('');
-  return `<div class="impact-card disturbance-card">
+  return `<div class="disturbance-panel">
     <div class="k">Top 3 disturbances</div>
-    <ol class="disturbance-list">${items}</ol>
+    <div class="disturbance-cards">${items}</div>
   </div>`;
 }
 
@@ -4229,17 +4382,24 @@ function comfortRatingHtml(zoneA) {
 function renderReportImpact(zoneA) {
   const el = document.getElementById('rpt-impact');
   if (!el) return;
-  const typicalHint = [
+  const hintParts = [
     zoneA.l90_db != null ? `Quiet moments around ${fmtReportDb(zoneA.l90_db)}` : null,
     zoneA.l10_db != null ? `Louder spikes around ${fmtReportDb(zoneA.l10_db)}` : null,
     zoneA.leq_context || null,
-  ].filter(Boolean).join(' · ') || 'Most-of-the-time neighborhood level';
+  ].filter(Boolean);
+  const typicalHints = hintParts.length
+    ? `<div class="hint-stack">${hintParts.map((h) => `<div class="hint">${h}</div>`).join('')}</div>`
+    : `<div class="hint">Most-of-the-time neighborhood level</div>`;
+  const typicalCard = `<div class="impact-card"><div class="k">Typical level</div>` +
+    `<div class="v">${fmtReportDb(zoneA.l50_db)}</div>${typicalHints}</div>`;
+  const tops = zoneA.top_disturbances;
   el.innerHTML = `
-    <div class="report-summary-aside">
-      ${impactCard('Typical level', fmtReportDb(zoneA.l50_db), typicalHint)}
+    <div class="report-summary-kpis">
+      ${typicalCard}
       ${comfortRatingHtml(zoneA)}
     </div>
-    ${renderTopDisturbancesCard(zoneA.top_disturbances)}`;
+    ${renderTopDisturbancesCard(tops)}`;
+  mountDisturbanceSnippetCharts(tops);
 }
 
 function destroyChart(chart) {
@@ -5057,7 +5217,9 @@ function renderReportBriefing(text) {
   el.hidden = false;
   el.innerHTML =
     '<div class="takeaway-k">Soundscape briefing</div>' +
-    paras.map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+    '<div class="takeaway-body">' +
+    paras.map((p) => `<p>${escapeHtml(p)}</p>`).join('') +
+    '</div>';
 }
 
 async function loadDashboardReport(files) {

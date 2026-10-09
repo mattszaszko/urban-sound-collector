@@ -269,6 +269,14 @@ class AggregateTests(unittest.TestCase):
         labels = {t["label"] for t in tops}
         self.assertIn("Vehicle", labels)
         self.assertIn("Speech", labels)
+        snip = tops[0]["snippet"]
+        self.assertIn("dba", snip)
+        self.assertGreaterEqual(len(snip["dba"]), 1)
+        self.assertIn("peak_index", snip)
+        self.assertEqual(
+            snip["dba"][snip["peak_index"]],
+            max(snip["dba"]),
+        )
 
     def test_hourly_gated_pct(self) -> None:
         base = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)

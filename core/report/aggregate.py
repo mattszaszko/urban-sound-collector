@@ -215,6 +215,36 @@ def _chunk_peak_level(chunk: AcousticChunk) -> float:
     return float(chunk.dba)
 
 
+# ±window around a Top-3 peak for the executive-summary SPL snapshot.
+SNIPPET_HALF_WINDOW_S = 45.0
+
+
+def _peak_level_snippet(
+    siblings: list[AcousticChunk],
+    peak: AcousticChunk,
+    *,
+    half_window_s: float = SNIPPET_HALF_WINDOW_S,
+) -> dict[str, Any]:
+    """Compact dBA series around a peak (no ML labels — shape + level only)."""
+    half = max(5.0, float(half_window_s))
+    t0 = peak.dt_utc - timedelta(seconds=half)
+    t1 = peak.dt_utc + timedelta(seconds=half)
+    window = [c for c in siblings if t0 <= c.dt_utc <= t1]
+    if not window:
+        window = [peak]
+    dba = [round(float(c.dba), 1) for c in window]
+    peak_index = min(
+        range(len(window)),
+        key=lambda i: abs((window[i].dt_utc - peak.dt_utc).total_seconds()),
+    )
+    return {
+        "dba": dba,
+        "peak_index": int(peak_index),
+        "start_local": format_local(window[0].dt_local),
+        "end_local": format_local(window[-1].dt_local),
+    }
+
+
 def top_peak_disturbances(
     chunks: list[AcousticChunk],
     *,
@@ -222,6 +252,7 @@ def top_peak_disturbances(
     theme_by_label: dict[str, str] | None = None,
     limit: int = 3,
     min_separation_s: float = 60.0,
+    snippet_half_window_s: float = SNIPPET_HALF_WINDOW_S,
 ) -> list[dict[str, Any]]:
     """Loudest moments spaced apart, with category + source for Inspect links."""
     cfg = label_map or load_label_map()
@@ -238,6 +269,12 @@ def top_peak_disturbances(
         if len(picked) >= max(1, int(limit)):
             break
 
+    by_file: dict[str, list[AcousticChunk]] = {}
+    for c in chunks:
+        by_file.setdefault(c.source_file or "", []).append(c)
+    for rows in by_file.values():
+        rows.sort(key=lambda c: c.dt_utc)
+
     out: list[dict[str, Any]] = []
     for chunk in picked:
         category = chunk_time_budget_category(
@@ -250,6 +287,7 @@ def top_peak_disturbances(
         else:
             label = MACRO_UNCLASSIFIED
         peak_db = _chunk_peak_level(chunk)
+        siblings = by_file.get(chunk.source_file or "", [chunk])
         out.append(
             {
                 "lafmax_db": round(peak_db, 1),
@@ -259,6 +297,11 @@ def top_peak_disturbances(
                 "at_local": format_local(chunk.dt_local),
                 "at_utc": chunk.created_at,
                 "source_file": chunk.source_file,
+                "snippet": _peak_level_snippet(
+                    siblings,
+                    chunk,
+                    half_window_s=snippet_half_window_s,
+                ),
             }
         )
     return out
