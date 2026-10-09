@@ -89,6 +89,7 @@ YAMNET_CATALOG_PATH = CONFIG_DIR / "yamnet_label_catalog.json"
 # ---------------------------------------------------------------------------
 PASSWORD = os.environ.get("USC_PASSWORD", "changeme")
 VIEWER_PASSWORD = os.environ.get("USC_VIEWER_PASSWORD", "").strip()
+VIEWER_SHARE_TOKEN = os.environ.get("USC_VIEWER_SHARE_TOKEN", "").strip()
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-please")
 PORT = int(os.environ.get("PORT", "8080"))
 DEFAULT_DEVICE_ID = default_device_id()
@@ -120,6 +121,10 @@ if VIEWER_PASSWORD:
     os.environ["USC_VIEWER_PASSWORD"] = VIEWER_PASSWORD
 else:
     os.environ.pop("USC_VIEWER_PASSWORD", None)
+if VIEWER_SHARE_TOKEN:
+    os.environ["USC_VIEWER_SHARE_TOKEN"] = VIEWER_SHARE_TOKEN
+else:
+    os.environ.pop("USC_VIEWER_SHARE_TOKEN", None)
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -132,6 +137,7 @@ from web.auth import (  # noqa: E402  (after env setup)
     login_page,
     make_session_cookie,
     verify_login,
+    verify_viewer_share_token,
 )
 
 # ---------------------------------------------------------------------------
@@ -1535,6 +1541,26 @@ def _build_report_ndjson(
 # Auth routes
 # ---------------------------------------------------------------------------
 
+def _safe_post_login_path(next_path: str | None) -> str:
+    """Allow only same-origin relative paths (block open redirects)."""
+    if not next_path or not isinstance(next_path, str):
+        return "/?tab=data"
+    path = next_path.strip()
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return "/?tab=data"
+    return path
+
+
+def _set_viewer_session_cookie(resp: RedirectResponse) -> None:
+    resp.set_cookie(
+        SESSION_COOKIE,
+        make_session_cookie(VIEWER_PASSWORD, "viewer"),
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+    )
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def get_login():
     return login_page()
@@ -1561,6 +1587,21 @@ async def post_login(
         samesite="lax",
         max_age=60 * 60 * 24 * 7,
     )
+    return resp
+
+
+@app.get("/demo/{token}")
+async def demo_viewer_login(token: str, next: str | None = None):
+    """Portfolio/demo magic link: set a viewer session and redirect (no password form)."""
+    if not VIEWER_SHARE_TOKEN or not VIEWER_PASSWORD:
+        return login_page(
+            error="Viewer demo link is not configured on this device.",
+            role="viewer",
+        )
+    if not verify_viewer_share_token(token):
+        return login_page(error="Invalid demo link.", role="viewer")
+    resp = RedirectResponse(_safe_post_login_path(next), status_code=303)
+    _set_viewer_session_cookie(resp)
     return resp
 
 

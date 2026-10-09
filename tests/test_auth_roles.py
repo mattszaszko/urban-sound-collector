@@ -15,10 +15,12 @@ class AuthRoleTests(unittest.TestCase):
             "SECRET_KEY": os.environ.get("SECRET_KEY"),
             "USC_PASSWORD": os.environ.get("USC_PASSWORD"),
             "USC_VIEWER_PASSWORD": os.environ.get("USC_VIEWER_PASSWORD"),
+            "USC_VIEWER_SHARE_TOKEN": os.environ.get("USC_VIEWER_SHARE_TOKEN"),
         }
         os.environ["SECRET_KEY"] = "unit-test-secret-key"
         os.environ["USC_PASSWORD"] = "admin-secret"
         os.environ["USC_VIEWER_PASSWORD"] = "viewer-secret"
+        os.environ["USC_VIEWER_SHARE_TOKEN"] = "portfolio-demo-token"
 
     def tearDown(self) -> None:
         for key, value in self._env.items():
@@ -67,6 +69,16 @@ class AuthRoleTests(unittest.TestCase):
         req = self._request_with_cookie(legacy)
         self.assertFalse(auth.is_authenticated(req))
         self.assertIsNone(auth.get_role(req))
+
+    def test_viewer_share_token(self) -> None:
+        self.assertTrue(auth.verify_viewer_share_token("portfolio-demo-token"))
+        self.assertFalse(auth.verify_viewer_share_token("wrong-token"))
+        self.assertFalse(auth.verify_viewer_share_token(""))
+        os.environ.pop("USC_VIEWER_SHARE_TOKEN", None)
+        self.assertFalse(auth.verify_viewer_share_token("portfolio-demo-token"))
+        os.environ["USC_VIEWER_SHARE_TOKEN"] = "portfolio-demo-token"
+        os.environ.pop("USC_VIEWER_PASSWORD", None)
+        self.assertFalse(auth.verify_viewer_share_token("portfolio-demo-token"))
 
 
 if __name__ == "__main__":

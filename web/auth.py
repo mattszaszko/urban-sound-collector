@@ -37,6 +37,25 @@ def viewer_password() -> str:
     return os.environ.get("USC_VIEWER_PASSWORD", "").strip()
 
 
+def viewer_share_token() -> str:
+    """Optional portfolio/demo link secret (not the viewer password)."""
+    return os.environ.get("USC_VIEWER_SHARE_TOKEN", "").strip()
+
+
+def verify_viewer_share_token(token: str) -> bool:
+    """True if token matches USC_VIEWER_SHARE_TOKEN and viewer login is configured."""
+    expected = viewer_share_token()
+    if not expected or not viewer_password():
+        return False
+    if not isinstance(token, str) or not token:
+        return False
+    # Digest compare so length mismatch cannot raise from compare_digest.
+    return hmac.compare_digest(
+        _password_digest(token),
+        _password_digest(expected),
+    )
+
+
 def password_for_role(role: Role) -> str:
     if role == "admin":
         return admin_password()
