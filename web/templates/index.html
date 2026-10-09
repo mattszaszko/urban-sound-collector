@@ -4478,6 +4478,21 @@ function destroyChart(chart) {
   return null;
 }
 
+function playBudgetChartIntro(chart) {
+  if (!chart || chart.$introPlayed) return;
+  chart.$introPlayed = true;
+  try {
+    const isPie = chart.config && chart.config.type === 'doughnut';
+    chart.options.animation = isPie
+      ? BUDGET_PIE_ANIMATION
+      : { duration: 1100, easing: 'easeOutQuart' };
+    if (!isPie) chart.options.animations = BUDGET_BAR_ANIMATIONS;
+    chart.resize();
+    chart.reset();
+    chart.update();
+  } catch (e) { /* ignore */ }
+}
+
 function setReportBudgetView(view) {
   const next = (view === 'daynight' || view === 'hourly') ? view : 'total';
   reportBudgetView = next;
@@ -4488,11 +4503,54 @@ function setReportBudgetView(view) {
     const panel = document.getElementById(`rpt-budget-${name}`);
     if (panel) panel.classList.toggle('active', name === next);
   });
+  // Play intro only once the panel is visible (charts built while hidden skip a sideways pop).
+  requestAnimationFrame(() => {
+    if (next === 'total') playBudgetChartIntro(reportBudgetTotalChart);
+    if (next === 'daynight') {
+      playBudgetChartIntro(reportBudgetDayChart);
+      playBudgetChartIntro(reportBudgetNightChart);
+    }
+    if (next === 'hourly') playBudgetChartIntro(reportBudgetHourlyChart);
+  });
 }
 
 document.querySelectorAll('[data-budget-view]').forEach((btn) => {
   btn.addEventListener('click', () => setReportBudgetView(btn.getAttribute('data-budget-view')));
 });
+
+/** Doughnut: grow + rotate from the center (unfurl), not a side slide-in. */
+const BUDGET_PIE_ANIMATION = {
+  duration: 1100,
+  easing: 'easeOutQuart',
+  animateRotate: true,
+  animateScale: true,
+};
+
+/** Stacked bars: grow upward from y=0; disable horizontal fly-in. */
+const BUDGET_BAR_ANIMATIONS = {
+  colors: false,
+  x: false,
+  y: {
+    duration: 1100,
+    easing: 'easeOutQuart',
+    from(ctx) {
+      if (ctx.type !== 'data') return;
+      const yScale = ctx.chart.scales.y;
+      if (!yScale) return;
+      return yScale.getPixelForValue(0);
+    },
+  },
+  base: {
+    duration: 1100,
+    easing: 'easeOutQuart',
+    from(ctx) {
+      if (ctx.type !== 'data') return;
+      const yScale = ctx.chart.scales.y;
+      if (!yScale) return;
+      return yScale.getPixelForValue(0);
+    },
+  },
+};
 
 function upsertPieChart(existing, canvasId, rows) {
   const canvas = document.getElementById(canvasId);
@@ -4515,6 +4573,8 @@ function upsertPieChart(existing, canvasId, rows) {
     existing.data.datasets[0].backgroundColor = colors;
     existing.data.datasets[0].borderColor = cssVar('--surface') || '#0f172a';
     existing.$budgetRows = rows || [];
+    existing.$introPlayed = false;
+    existing.options.animation = false;
     existing.update('none');
     return existing;
   }
@@ -4532,6 +4592,8 @@ function upsertPieChart(existing, canvasId, rows) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      // Intro plays when the budget panel becomes visible (see playBudgetChartIntro).
+      animation: false,
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: tooltipCb },
@@ -4539,6 +4601,7 @@ function upsertPieChart(existing, canvasId, rows) {
     },
   });
   chart.$budgetRows = rows || [];
+  chart.$introPlayed = false;
   return chart;
 }
 
@@ -4770,6 +4833,9 @@ function renderHourlyBudgetStack(budget) {
     reportBudgetHourlyChart.data.labels = labels;
     reportBudgetHourlyChart.data.datasets = datasets;
     applyChartScaleColors(reportBudgetHourlyChart);
+    reportBudgetHourlyChart.$introPlayed = false;
+    reportBudgetHourlyChart.options.animation = false;
+    reportBudgetHourlyChart.options.animations = BUDGET_BAR_ANIMATIONS;
     reportBudgetHourlyChart.update('none');
     return;
   }
@@ -4779,6 +4845,8 @@ function renderHourlyBudgetStack(budget) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      animations: BUDGET_BAR_ANIMATIONS,
       scales: {
         x: {
           stacked: true,
@@ -4838,6 +4906,7 @@ function renderHourlyBudgetStack(budget) {
     }],
   });
   reportBudgetHourlyChart.$reportRows = hours;
+  reportBudgetHourlyChart.$introPlayed = false;
   applyChartScaleColors(reportBudgetHourlyChart);
 }
 
@@ -5301,8 +5370,9 @@ function applyReportPayload(payload) {
   renderReportMeta(a, payload.meta || {});
   renderReportImpact(a);
   setReportProfileView(b.default_view || 'timeline');
-  setReportBudgetView(reportBudgetView || 'total');
   renderTimeBudget(c, payload.meta || {});
+  // After charts exist: show active panel and play unfurl / rise intro once.
+  setReportBudgetView(reportBudgetView || 'total');
   renderReportBriefing(a.briefing || c.takeaway || '');
 }
 
