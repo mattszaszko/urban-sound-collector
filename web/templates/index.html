@@ -192,6 +192,12 @@
                 border-radius:8px;padding:.4rem .85rem;cursor:pointer;font:inherit;font-size:.85rem}
   .settings-tab[aria-selected="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
   .settings-tab-panel[hidden]{display:none}
+  .live-chart-legend [data-heavy-legend][hidden]{display:none}
+  .heavy-ml-badge{display:inline-block;font-size:.65rem;font-weight:700;letter-spacing:.03em;
+    text-transform:uppercase;padding:.12rem .4rem;border-radius:4px;margin-left:.35rem;
+    vertical-align:middle;border:1px solid var(--border);color:var(--muted);background:var(--bg)}
+  .heavy-ml-badge.clap{color:var(--clap-label);border-color:var(--clap-border);background:var(--clap-window)}
+  .heavy-ml-badge.dasm{color:var(--dasm-label);border-color:var(--dasm-border);background:var(--dasm-window)}
   .swatch.bracket{width:16px;height:8px;border:2px solid #22c55e;border-bottom:none;
                   border-radius:2px 2px 0 0;background:transparent;box-sizing:border-box}
   .chart-conf-row{display:flex;flex-wrap:wrap;gap:.55rem 1.1rem;align-items:center;
@@ -892,17 +898,18 @@
         Rolling 2&nbsp;min · local time ({{ site_timezone }}) · Gate L90 is post-HPF
         unweighted dBFS + 120 (relative) · dBA colored by spectrum (A-weighted)
       </div>
-      <div class="live-chart-legend">
+      <div class="live-chart-legend" id="live-chart-legend">
         <span><i class="swatch line spectrum-grad" aria-hidden="true"></i>dBA by spectrum</span>
         <span><i class="swatch spectrum-dark" aria-hidden="true"></i>Dark</span>
         <span><i class="swatch spectrum-mid" aria-hidden="true"></i>Mid</span>
         <span><i class="swatch spectrum-bright" aria-hidden="true"></i>Bright</span>
         <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
         <span><i class="swatch bracket" aria-hidden="true"></i>YAMNet label run</span>
-        <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
-        <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
-        <span><i class="swatch dot" style="background:var(--dasm-point)"></i>DASM</span>
-        <span><i class="swatch band band-dasm" aria-hidden="true"></i>DASM window</span>
+        <span data-heavy-legend="clap" hidden><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
+        <span data-heavy-legend="clap" hidden><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
+        <span data-heavy-legend="dasm" hidden><i class="swatch dot" style="background:var(--dasm-point)"></i>DASM</span>
+        <span data-heavy-legend="dasm" hidden><i class="swatch band band-dasm" aria-hidden="true"></i>DASM window</span>
+        <span data-heavy-legend="dasm" hidden><i class="swatch bracket" style="border-color:var(--dasm-point)" aria-hidden="true"></i>DASM label spans</span>
       </div>
       <div class="chart-conf-row" id="live-chart-conf-row">
         <label for="live-yam-conf-min">Hide YAMNet below
@@ -914,7 +921,7 @@
           conf
         </label>
         <label for="live-dasm-conf-min" id="live-dasm-conf-wrap" hidden>Hide DASM below
-          <input type="number" id="live-dasm-conf-min" min="0" max="1" step="0.05" value="0.35">
+          <input type="number" id="live-dasm-conf-min" min="0" max="1" step="0.05" value="0">
           conf
         </label>
       </div>
@@ -1110,7 +1117,13 @@
       <div class="recording-info" style="display:flex;gap:.5rem;align-items:flex-start">
         <input type="checkbox" class="recording-check recording-select" value="{{ recording.name }}" aria-label="Select {{ recording.name }}">
         <div>
-          <div class="recording-name">{{ recording.name }}</div>
+          <div class="recording-name">{{ recording.name }}
+            {% if recording.heavy_ml == 'clap' %}
+              <span class="heavy-ml-badge clap">CLAP</span>
+            {% elif recording.heavy_ml == 'dasm' %}
+              <span class="heavy-ml-badge dasm">DASM</span>
+            {% endif %}
+          </div>
           <div class="recording-meta">
             {{ recording.started_display }}
             {% if recording.duration_label %} · {{ recording.duration_label }}{% endif %}
@@ -1164,17 +1177,18 @@
     <div class="impact-grid" id="ov-impact"></div>
     <div class="impact-grid" id="ov-labels" style="grid-template-columns:1fr 1fr"></div>
     <div class="overview-chart-note">2&nbsp;min window · full-resolution series loads as you scrub · local time ({{ site_timezone }}) · dBA colored by spectrum (A-weighted)</div>
-    <div class="live-chart-legend" style="margin-bottom:.45rem">
+    <div class="live-chart-legend" id="ov-chart-legend" style="margin-bottom:.45rem">
       <span><i class="swatch line spectrum-grad" aria-hidden="true"></i>dBA by spectrum</span>
       <span><i class="swatch spectrum-dark" aria-hidden="true"></i>Dark</span>
       <span><i class="swatch spectrum-mid" aria-hidden="true"></i>Mid</span>
       <span><i class="swatch spectrum-bright" aria-hidden="true"></i>Bright</span>
       <span><i class="swatch line" style="background:var(--muted)"></i>Gate L90</span>
       <span><i class="swatch bracket" aria-hidden="true"></i>YAMNet label run</span>
-      <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
-      <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
-      <span><i class="swatch dot" style="background:var(--dasm-point)"></i>DASM</span>
-      <span><i class="swatch band band-dasm" aria-hidden="true"></i>DASM window</span>
+      <span data-heavy-legend="clap" hidden><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
+      <span data-heavy-legend="clap" hidden><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
+      <span data-heavy-legend="dasm" hidden><i class="swatch dot" style="background:var(--dasm-point)"></i>DASM</span>
+      <span data-heavy-legend="dasm" hidden><i class="swatch band band-dasm" aria-hidden="true"></i>DASM window</span>
+      <span data-heavy-legend="dasm" hidden><i class="swatch bracket" style="border-color:var(--dasm-point)" aria-hidden="true"></i>DASM label spans</span>
     </div>
     <div class="chart-conf-row" id="ov-chart-conf-row">
       <label for="ov-yam-conf-min">Hide YAMNet below
@@ -1186,7 +1200,7 @@
         conf
       </label>
       <label for="ov-dasm-conf-min" id="ov-dasm-conf-wrap" hidden>Hide DASM below
-        <input type="number" id="ov-dasm-conf-min" min="0" max="1" step="0.05" value="0.35">
+        <input type="number" id="ov-dasm-conf-min" min="0" max="1" step="0.05" value="0">
         conf
       </label>
     </div>
@@ -2414,24 +2428,93 @@ function clapMarkers(points, minConfidence) {
   return out;
 }
 
-function dasmMarkers(points, minConfidence) {
+/**
+ * Keep open-vocab labels whose clip_confidence clears the chart floor.
+ * All spans for a kept label are retained; if none exist, synthesize a full-window span
+ * when ``eventSeconds`` is provided.
+ */
+function filterDasmLabelsForChart(
+  rawLabels,
+  minConfidence,
+  fallbackTop,
+  fallbackConf,
+  eventSeconds,
+) {
   const floor = Number(minConfidence);
   const minConf = Number.isFinite(floor) ? floor : 0;
+  const winSecs = Number(eventSeconds);
+  const src = Array.isArray(rawLabels) ? rawLabels : [];
+  const kept = [];
+  for (const item of src) {
+    if (!item || typeof item.label !== 'string' || !item.label) continue;
+    const clip = item.clip_confidence == null ? null : Number(item.clip_confidence);
+    if (clip != null && Number.isFinite(clip) && clip < minConf) continue;
+    if (clip == null && minConf > 0) continue;
+    let spans = Array.isArray(item.spans)
+      ? item.spans.filter((sp) => {
+        const t0 = Number(sp && sp.t0_s);
+        const t1 = Number(sp && sp.t1_s);
+        return Number.isFinite(t0) && Number.isFinite(t1) && t1 > t0;
+      }).map((sp) => ({
+        t0_s: Number(sp.t0_s),
+        t1_s: Number(sp.t1_s),
+        confidence: sp.confidence == null ? null : Number(sp.confidence),
+      }))
+      : [];
+    if (!spans.length && Number.isFinite(winSecs) && winSecs > 0) {
+      spans = [{
+        t0_s: 0,
+        t1_s: winSecs,
+        confidence: Number.isFinite(clip) ? clip : 0,
+      }];
+    }
+    kept.push({
+      label: item.label,
+      clip_confidence: Number.isFinite(clip) ? clip : null,
+      spans,
+    });
+  }
+  if (!kept.length && fallbackTop) {
+    const clip = fallbackConf == null ? null : Number(fallbackConf);
+    if (clip == null || !Number.isFinite(clip) || clip >= minConf) {
+      const spans = (Number.isFinite(winSecs) && winSecs > 0)
+        ? [{ t0_s: 0, t1_s: winSecs, confidence: Number.isFinite(clip) ? clip : 0 }]
+        : [];
+      kept.push({
+        label: String(fallbackTop),
+        clip_confidence: Number.isFinite(clip) ? clip : null,
+        spans,
+      });
+    }
+  }
+  kept.sort((a, b) => (Number(b.clip_confidence) || 0) - (Number(a.clip_confidence) || 0));
+  return kept;
+}
+
+function dasmMarkers(points, minConfidence) {
   const out = [];
   for (const p of points) {
-    if (p.dasm_status !== 'triggered' || !p.dasm || p.dba == null) continue;
-    const conf = p.dasm_conf == null ? null : Number(p.dasm_conf);
-    if (conf != null && Number.isFinite(conf) && conf < minConf) continue;
+    if (p.dasm_status !== 'triggered' || p.dba == null) continue;
+    const secs = Number(p.dasm_event_seconds);
+    if (!Number.isFinite(secs) || secs <= 0) continue;
+    const labels = filterDasmLabelsForChart(
+      p.dasm_labels,
+      minConfidence,
+      p.dasm,
+      p.dasm_conf,
+      secs,
+    );
+    if (!labels.length) continue;
+    const top = labels[0];
     const marker = {
       x: Date.parse(p.t),
       y: p.dba,
-      label: p.dasm,
-      labels: Array.isArray(p.dasm_labels) ? p.dasm_labels : [],
+      label: labels.map((l) => l.label).join(' · '),
+      labels,
+      event_seconds: secs,
     };
     if (!Number.isFinite(marker.x)) continue;
-    if (Number.isFinite(conf)) marker.confidence = conf;
-    const secs = Number(p.dasm_event_seconds);
-    if (Number.isFinite(secs) && secs > 0) marker.event_seconds = secs;
+    if (top && top.clip_confidence != null) marker.confidence = top.clip_confidence;
     out.push(marker);
   }
   return out;
@@ -2439,7 +2522,7 @@ function dasmMarkers(points, minConfidence) {
 
 const DEFAULT_YAM_CONF_MIN = 0.30;
 const DEFAULT_CLAP_CONF_MIN = 0.55;
-const DEFAULT_DASM_CONF_MIN = 0.35;
+const DEFAULT_DASM_CONF_MIN = 0.0;
 const YAM_CONF_KEY = 'usc-yam-conf-min';
 const CLAP_CONF_KEY = 'usc-clap-conf-min';
 const DASM_CONF_KEY = 'usc-dasm-conf-min';
@@ -2467,8 +2550,8 @@ let clapConfMin = readConfThreshold(CLAP_CONF_KEY, DEFAULT_CLAP_CONF_MIN);
 let dasmConfMin = readConfThreshold(DASM_CONF_KEY, DEFAULT_DASM_CONF_MIN);
 let liveSeriesPoints = [];
 let liveSeriesWindowS = 120;
-let overviewHasClap = false;
-let overviewHasDasm = false;
+let liveHeavyMl = 'off';
+let overviewHeavyMl = 'off';
 
 function syncConfInputs() {
   ['live-yam-conf-min', 'ov-yam-conf-min'].forEach((id) => {
@@ -2490,24 +2573,46 @@ function selectedHeavyMl() {
   return el ? String(el.value) : 'off';
 }
 
-function setClapConfVisible(visible) {
-  ['live-clap-conf-wrap', 'ov-clap-conf-wrap'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.hidden = !visible;
-  });
+function normalizeHeavyMl(value) {
+  const v = String(value || '').toLowerCase();
+  if (v === 'clap' || v === 'dasm') return v;
+  return 'off';
 }
 
-function setDasmConfVisible(visible) {
-  ['live-dasm-conf-wrap', 'ov-dasm-conf-wrap'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.hidden = !visible;
-  });
+/** Show conf filters + legend rows that match the active heavy ML mode. */
+function applyHeavyMlChrome(mode, { live = false, inspect = false } = {}) {
+  const heavy = normalizeHeavyMl(mode);
+  const showClap = heavy === 'clap';
+  const showDasm = heavy === 'dasm';
+  if (live) {
+    const clapWrap = document.getElementById('live-clap-conf-wrap');
+    const dasmWrap = document.getElementById('live-dasm-conf-wrap');
+    if (clapWrap) clapWrap.hidden = !showClap;
+    if (dasmWrap) dasmWrap.hidden = !showDasm;
+    document.querySelectorAll('#live-chart-legend [data-heavy-legend]').forEach((el) => {
+      const kind = el.getAttribute('data-heavy-legend');
+      el.hidden = !(kind === heavy);
+    });
+  }
+  if (inspect) {
+    const clapWrap = document.getElementById('ov-clap-conf-wrap');
+    const dasmWrap = document.getElementById('ov-dasm-conf-wrap');
+    if (clapWrap) clapWrap.hidden = !showClap;
+    if (dasmWrap) dasmWrap.hidden = !showDasm;
+    document.querySelectorAll('#ov-chart-legend [data-heavy-legend]').forEach((el) => {
+      const kind = el.getAttribute('data-heavy-legend');
+      el.hidden = !(kind === heavy);
+    });
+  }
 }
 
-function syncHeavyConfVisibility() {
-  const heavy = selectedHeavyMl();
-  setClapConfVisible(heavy === 'clap' || overviewHasClap);
-  setDasmConfVisible(heavy === 'dasm' || overviewHasDasm);
+function syncLiveHeavyMlChrome() {
+  const mode = liveHeavyMl !== 'off' ? liveHeavyMl : selectedHeavyMl();
+  applyHeavyMlChrome(mode, { live: true });
+}
+
+function syncInspectHeavyMlChrome() {
+  applyHeavyMlChrome(overviewHeavyMl, { inspect: true });
 }
 
 function refreshChartsForConf() {
@@ -2564,9 +2669,12 @@ function wireConfInputs() {
   if (ovDasm) ovDasm.addEventListener('change', onDasm);
 
   document.querySelectorAll('#start-recording-form [name="heavy_ml"]').forEach((el) => {
-    el.addEventListener('change', syncHeavyConfVisibility);
+    el.addEventListener('change', () => {
+      if (liveHeavyMl === 'off') syncLiveHeavyMlChrome();
+    });
   });
-  syncHeavyConfVisibility();
+  syncLiveHeavyMlChrome();
+  syncInspectHeavyMlChrome();
 }
 
 const labelMarkerPlugin = {
@@ -2696,7 +2804,7 @@ const clapWindowBandsPlugin = {
   },
 };
 
-/** Draw multilabel DASM spans (t0_s/t1_s relative to window start) as thin bars. */
+/** Draw multilabel DASM spans (t0_s/t1_s relative to window start) as labeled bars. */
 const dasmSpansPlugin = {
   id: 'dasmSpans',
   afterDatasetsDraw(chart) {
@@ -2706,16 +2814,14 @@ const dasmSpansPlugin = {
     if (!dasmDs || !Array.isArray(dasmDs.data) || !dasmDs.data.length) return;
     const xScale = scales.x;
     const yScale = scales.y;
+    const rowH = 11;
     ctx.save();
     ctx.beginPath();
     ctx.rect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
     ctx.clip();
-    ctx.strokeStyle = cssVar('--dasm-span');
-    ctx.fillStyle = cssVar('--dasm-label');
-    ctx.lineWidth = 2;
     ctx.font = '600 9px system-ui,sans-serif';
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
+    ctx.textBaseline = 'middle';
     for (const pt of dasmDs.data) {
       const endMs = Number(pt && pt.x);
       const winSecs = Number(pt && pt.event_seconds);
@@ -2735,14 +2841,25 @@ const dasmSpansPlugin = {
           if (x1 <= x0) continue;
           const yBase = Number.isFinite(yv)
             ? yScale.getPixelForValue(yv)
-            : chartArea.bottom - 12;
-          const y = Math.min(chartArea.bottom - 4, yBase + 10 + row * 8);
+            : chartArea.bottom - 14;
+          const y = Math.min(chartArea.bottom - 6, Math.max(chartArea.top + 8, yBase + 12 + row * rowH));
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = cssVar('--dasm-span');
+          ctx.fillRect(x0, y - 4, Math.max(2, x1 - x0), 8);
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = cssVar('--dasm-point');
+          ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.moveTo(x0, y);
           ctx.lineTo(x1, y);
           ctx.stroke();
-          if (lab.label) {
-            ctx.fillText(truncateLabel(lab.label, 14), x0 + 2, y - 2);
+          const clip = lab.clip_confidence != null && Number.isFinite(Number(lab.clip_confidence))
+            ? Number(lab.clip_confidence).toFixed(2)
+            : null;
+          const text = clip ? `${lab.label} ${clip}` : String(lab.label || '');
+          if (text) {
+            ctx.fillStyle = cssVar('--dasm-label');
+            ctx.fillText(truncateLabel(text, 22), x0 + 3, y);
           }
           row += 1;
         }
@@ -2814,12 +2931,13 @@ function ensureLoudnessChart() {
           type: 'scatter',
           data: [],
           showLine: false,
-          pointRadius: 5,
+          pointRadius: 4,
           pointHoverRadius: 6,
           backgroundColor: cssVar('--dasm-point'),
           borderColor: cssVar('--dasm-border'),
           borderWidth: 1,
-          showPointLabels: true,
+          // Multilabel text is drawn by dasmSpansPlugin.
+          showPointLabels: false,
           pointLabelColor: cssVar('--dasm-label'),
         },
       ],
@@ -2839,19 +2957,7 @@ function ensureLoudnessChart() {
               return Number.isFinite(x) ? fmtSiteClock(x, { withSeconds: true }) : '';
             },
             label(ctx) {
-              const raw = ctx.raw || {};
-              const y = ctx.parsed.y;
-              const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
-              if (raw.label) {
-                const conf = raw.confidence != null && Number.isFinite(Number(raw.confidence))
-                  ? ` · ${Number(raw.confidence).toFixed(2)}`
-                  : '';
-                return `${base} · ${raw.label}${conf}`;
-              }
-              if (ctx.dataset.label === 'dBA' && raw.centroid_hz != null && Number.isFinite(Number(raw.centroid_hz))) {
-                return `${base} · ${Math.round(Number(raw.centroid_hz))} Hz`;
-              }
-              return base;
+              return heavyMlTooltipLines(ctx);
             },
           },
         },
@@ -2879,6 +2985,33 @@ function ensureLoudnessChart() {
     },
   });
   return loudnessChart;
+}
+
+function heavyMlTooltipLines(ctx) {
+  const raw = ctx.raw || {};
+  const y = ctx.parsed.y;
+  const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
+  if (ctx.dataset.label === 'DASM' && Array.isArray(raw.labels) && raw.labels.length) {
+    const lines = [base];
+    raw.labels.forEach((lab) => {
+      const clip = lab.clip_confidence != null && Number.isFinite(Number(lab.clip_confidence))
+        ? Number(lab.clip_confidence).toFixed(2)
+        : '—';
+      const nSpans = Array.isArray(lab.spans) ? lab.spans.length : 0;
+      lines.push(`  ${lab.label} · ${clip} · ${nSpans} span${nSpans === 1 ? '' : 's'}`);
+    });
+    return lines;
+  }
+  if (raw.label) {
+    const conf = raw.confidence != null && Number.isFinite(Number(raw.confidence))
+      ? ` · ${Number(raw.confidence).toFixed(2)}`
+      : '';
+    return `${base} · ${raw.label}${conf}`;
+  }
+  if (ctx.dataset.label === 'dBA' && raw.centroid_hz != null && Number.isFinite(Number(raw.centroid_hz))) {
+    return `${base} · ${Math.round(Number(raw.centroid_hz))} Hz`;
+  }
+  return base;
 }
 
 function clearLoudnessChart() {
@@ -2927,13 +3060,10 @@ function updateLoudnessChart(payload) {
     if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
   }
   const yam = yamnetLabelSpans(points, yamConfMin);
-  const clap = clapMarkers(points, clapConfMin);
-  const dasm = dasmMarkers(points, dasmConfMin);
-  const heavy = selectedHeavyMl();
-  const liveHasClap = points.some((p) => p.clap_status || p.clap);
-  const liveHasDasm = points.some((p) => p.dasm_status || p.dasm);
-  setClapConfVisible(heavy === 'clap' || liveHasClap || overviewHasClap);
-  setDasmConfVisible(heavy === 'dasm' || liveHasDasm || overviewHasDasm);
+  const heavy = normalizeHeavyMl(liveHeavyMl !== 'off' ? liveHeavyMl : selectedHeavyMl());
+  const clap = heavy === 'clap' ? clapMarkers(points, clapConfMin) : [];
+  const dasm = heavy === 'dasm' ? dasmMarkers(points, dasmConfMin) : [];
+  syncLiveHeavyMlChrome();
 
   chart.data.datasets[0].data = dba;
   chart.data.datasets[1].data = l90;
@@ -2966,16 +3096,31 @@ function updateLoudnessChart(payload) {
     let lastHeavy = '—';
     for (let i = points.length - 1; i >= 0; i -= 1) {
       const p = points[i];
-      if (p.dasm_status === 'triggered' && p.dasm) {
-        const conf = p.dasm_conf == null ? null : Number(p.dasm_conf);
-        if (conf != null && Number.isFinite(conf) && conf < dasmConfMin) continue;
-        lastHeavy = p.dasm;
+      if (p.dasm_status === 'triggered') {
+        const labs = filterDasmLabelsForChart(
+          p.dasm_labels,
+          dasmConfMin,
+          p.dasm,
+          p.dasm_conf,
+          p.dasm_event_seconds,
+        );
+        if (!labs.length) continue;
+        lastHeavy = labs
+          .slice(0, 4)
+          .map((l) => (
+            l.clip_confidence != null
+              ? `${l.label} ${Number(l.clip_confidence).toFixed(2)}`
+              : l.label
+          ))
+          .join(' · ');
+        if (labs.length > 4) lastHeavy += ` · +${labs.length - 4}`;
         break;
       }
       if (p.clap_status === 'triggered' && p.clap) {
         const conf = p.clap_conf == null ? null : Number(p.clap_conf);
-        if (conf != null && Number.isFinite(conf) && conf < clapConfMin) continue;
-        lastHeavy = p.clap;
+        lastHeavy = Number.isFinite(conf)
+          ? `${p.clap} (${conf.toFixed(2)})`
+          : p.clap;
         break;
       }
     }
@@ -3006,6 +3151,10 @@ async function pollStatus() {
     ]);
     if (statusRes.ok) {
       const d = await statusRes.json();
+      liveHeavyMl = d.recording
+        ? normalizeHeavyMl(d.heavy_ml)
+        : 'off';
+      syncLiveHeavyMlChrome();
       setRecordingLayout(!!d.recording, d.recording_id || '', d.chunk_count || 0);
       const chunksEl = document.getElementById('stat-chunks');
       const elapsedEl = document.getElementById('stat-elapsed');
@@ -3401,11 +3550,11 @@ function ensureOverviewChart() {
           type: 'scatter',
           data: [],
           showLine: false,
-          pointRadius: 5,
+          pointRadius: 4,
           backgroundColor: cssVar('--dasm-point'),
           borderColor: cssVar('--dasm-border'),
           borderWidth: 1,
-          showPointLabels: true,
+          showPointLabels: false,
           pointLabelColor: cssVar('--dasm-label'),
         },
       ],
@@ -3430,19 +3579,7 @@ function ensureOverviewChart() {
               return Number.isFinite(x) ? fmtSiteClock(x, { withSeconds: true }) : '';
             },
             label(ctx) {
-              const raw = ctx.raw || {};
-              const y = ctx.parsed.y;
-              const base = `${ctx.dataset.label}: ${y == null ? '—' : Number(y).toFixed(1)}`;
-              if (raw.label) {
-                const conf = raw.confidence != null && Number.isFinite(Number(raw.confidence))
-                  ? ` · ${Number(raw.confidence).toFixed(2)}`
-                  : '';
-                return `${base} · ${raw.label}${conf}`;
-              }
-              if (ctx.dataset.label === 'dBA' && raw.centroid_hz != null && Number.isFinite(Number(raw.centroid_hz))) {
-                return `${base} · ${Math.round(Number(raw.centroid_hz))} Hz`;
-              }
-              return base;
+              return heavyMlTooltipLines(ctx);
             },
           },
         },
@@ -3715,12 +3852,19 @@ function renderOverviewSummary(data) {
   const dist = s.disturbances || {};
   const yam = s.yamnet || {};
   const clap = s.clap || {};
+  const dasm = s.dasm || {};
+  overviewHeavyMl = normalizeHeavyMl(data.heavy_ml || s.heavy_ml);
+  syncInspectHeavyMlChrome();
   ovTitle.textContent = data.name || 'Recording analysis';
+  const heavyLabel = overviewHeavyMl === 'clap'
+    ? 'CLAP'
+    : (overviewHeavyMl === 'dasm' ? 'DASM' : 'YAMNet only');
   ovSub.textContent = [
     s.device_id || '',
     s.recording_id || '',
     fmtElapsed(s.duration_s),
     `${s.chunks || 0} chunks`,
+    heavyLabel,
   ].filter(Boolean).join(' · ');
 
   ovImpact.innerHTML = [
@@ -3736,29 +3880,46 @@ function renderOverviewSummary(data) {
     impactCard('Gate open', `${fmtNum(dist.gate_open_pct, 1)}%`, `Gated ${fmtNum(dist.gated_pct, 1)}%`),
   ].join('');
 
-  ovLabels.innerHTML = [
+  const labelCards = [
     impactCard(
       'YAMNet labels',
       `${yam.classified_chunks || 0} classified`,
       chipsHtml(yam.top_labels) +
         `<div class="hint" style="margin-top:.35rem">Gated chunks: ${yam.gated_chunks || 0}</div>`
     ),
-    impactCard(
+  ];
+  if (overviewHeavyMl === 'dasm') {
+    labelCards.push(impactCard(
+      'DASM labels',
+      String(dasm.triggered || 0),
+      chipsHtml(dasm.top_labels)
+    ));
+  } else if (overviewHeavyMl === 'clap') {
+    labelCards.push(impactCard(
       'CLAP labels',
       String(clap.triggered || 0),
       chipsHtml(clap.top_labels)
-    ),
-  ].join('');
+    ));
+  } else {
+    labelCards.push(impactCard(
+      'Heavy ML',
+      'Off',
+      '<div class="hint">This recording used YAMNet only (no CLAP or DASM).</div>'
+    ));
+  }
+  ovLabels.innerHTML = labelCards.join('');
 }
 
 function rebuildOverviewLabelSeries() {
   const source = overviewWindowPoints || [];
   overviewSeries.yam = yamnetLabelSpans(source, yamConfMin);
-  overviewSeries.clap = clapMarkers(source, clapConfMin);
-  overviewSeries.dasm = dasmMarkers(source, dasmConfMin);
-  overviewHasClap = source.some((p) => p.clap_status || p.clap);
-  overviewHasDasm = source.some((p) => p.dasm_status || p.dasm);
-  syncHeavyConfVisibility();
+  overviewSeries.clap = overviewHeavyMl === 'clap'
+    ? clapMarkers(source, clapConfMin)
+    : [];
+  overviewSeries.dasm = overviewHeavyMl === 'dasm'
+    ? dasmMarkers(source, dasmConfMin)
+    : [];
+  syncInspectHeavyMlChrome();
 }
 
 function buildOverviewSeriesFromWindow(data) {
@@ -3914,6 +4075,25 @@ function renderOverviewDetailForPoint(p) {
     const c = p.clap_conf != null ? ` (${Number(p.clap_conf).toFixed(2)})` : '';
     bits.push(`CLAP ${p.clap}${c}`);
   } else if (p.clap_status) bits.push(`clap:${p.clap_status}`);
+  if (p.dasm_status === 'triggered') {
+    const labs = filterDasmLabelsForChart(
+      p.dasm_labels,
+      dasmConfMin,
+      p.dasm,
+      p.dasm_conf,
+      p.dasm_event_seconds,
+    );
+    if (labs.length) {
+      const parts = labs.map((l) => {
+        const c = l.clip_confidence != null
+          ? Number(l.clip_confidence).toFixed(2)
+          : '—';
+        const n = Array.isArray(l.spans) ? l.spans.length : 0;
+        return `${l.label} ${c} (${n}sp)`;
+      });
+      bits.push(`DASM ${parts.join(', ')}`);
+    }
+  } else if (p.dasm_status) bits.push(`dasm:${p.dasm_status}`);
   const dominant = dominantSpectrumBand(p.spectrum_bands);
   if (dominant) {
     const bands = p.spectrum_bands;

@@ -497,6 +497,10 @@ def build_recording_overview(
     yamnet_counts: Counter[str] = Counter()
     clap_counts: Counter[str] = Counter()
     clap_triggered = 0
+    dasm_counts: Counter[str] = Counter()
+    dasm_triggered = 0
+    saw_clap = False
+    saw_dasm = False
     device_id = None
     recording_id = None
 
@@ -524,11 +528,31 @@ def build_recording_overview(
         label = slim.get("yamnet")
         if label and label != "gated" and not slim["gated"]:
             yamnet_counts[label] += 1
+        if slim.get("clap_status"):
+            saw_clap = True
+        if slim.get("dasm_status"):
+            saw_dasm = True
         if slim.get("clap_status") == "triggered":
             clap_triggered += 1
             clap_lab = slim.get("clap")
             if clap_lab:
                 clap_counts[clap_lab] += 1
+        if slim.get("dasm_status") == "triggered":
+            dasm_triggered += 1
+            multi = slim.get("dasm_labels")
+            counted = False
+            if isinstance(multi, list) and multi:
+                for item in multi:
+                    if not isinstance(item, dict):
+                        continue
+                    lab = item.get("label")
+                    if isinstance(lab, str) and lab:
+                        dasm_counts[lab] += 1
+                        counted = True
+            if not counted:
+                dasm_lab = slim.get("dasm")
+                if isinstance(dasm_lab, str) and dasm_lab:
+                    dasm_counts[dasm_lab] += 1
 
     chunks = len(points_full)
     started_at = points_full[0]["t"] if points_full else None
@@ -562,6 +586,15 @@ def build_recording_overview(
     points_chart = downsample_points(points_full)
     points_full_flag = len(points_chart) == len(points_full)
 
+    if saw_dasm and not saw_clap:
+        heavy_ml = "dasm"
+    elif saw_clap and not saw_dasm:
+        heavy_ml = "clap"
+    elif saw_dasm and saw_clap:
+        heavy_ml = "dasm"
+    else:
+        heavy_ml = "off"
+
     return {
         "ok": True,
         "name": name,
@@ -570,6 +603,7 @@ def build_recording_overview(
         "recording_active": bool(recording_active),
         "calib_offset": float(calib_offset),
         "display_db_offset": float(display_db_offset),
+        "heavy_ml": heavy_ml,
         "summary": {
             "device_id": device_id,
             "recording_id": recording_id,
@@ -577,6 +611,7 @@ def build_recording_overview(
             "ended_at": ended_at,
             "duration_s": duration_s,
             "chunks": chunks,
+            "heavy_ml": heavy_ml,
             "loudness": {
                 "dba_mean": round(sum(dbas) / len(dbas), 1) if dbas else None,
                 "dba_median": (
@@ -623,6 +658,10 @@ def build_recording_overview(
                 "triggered": clap_triggered,
                 "top_labels": _top(clap_counts),
             },
+            "dasm": {
+                "triggered": dasm_triggered,
+                "top_labels": _top(dasm_counts),
+            },
         },
         # Coarse series for the scrubber only; Inspect chart loads a dense window via /overview/series.
         "points": points_chart,
@@ -630,6 +669,7 @@ def build_recording_overview(
         "yamnet_spans": yamnet_label_spans(points_chart),
         "yamnet_markers": yamnet_change_markers(points_chart),
         "clap_markers": clap_triggered_markers(points_chart),
+        "dasm_markers": dasm_triggered_markers(points_chart),
         "scrub_points": points_chart,
         "series_window_s": DEFAULT_SERIES_WINDOW_S,
         # Sibling audio is one capture chunk per JSONL event (uniform timeline).

@@ -863,10 +863,11 @@ def stream_live(
                             }
                             dasm_triggers += 1
                             logger.info(
-                                "DASM triggered reason=%s top=%s ms=%s "
+                                "DASM triggered reason=%s top=%s conf=%.3f ms=%s "
                                 "trigger_chunk=%s event_s=%s labels=%s",
                                 link.get("trigger_reason"),
                                 dasm_result.top_label,
+                                float(dasm_result.top_confidence or 0.0),
                                 dasm_result.inference_ms,
                                 link.get("trigger_chunk_index"),
                                 event_s,

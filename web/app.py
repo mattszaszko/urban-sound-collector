@@ -437,17 +437,77 @@ def _find_collector_process() -> psutil.Process | None:
     return None
 
 
+def _heavy_ml_from_cmdline(cmd: list[str] | None) -> str:
+    """Infer exclusive heavy ML mode from collector argv."""
+    parts = list(cmd or [])
+    if "--enable-dasm" in parts:
+        return "dasm"
+    if "--enable-clap" in parts:
+        return "clap"
+    return "off"
+
+
+def _detect_heavy_ml_in_jsonl(
+    path: Path,
+    *,
+    max_bytes: int = 6_000_000,
+    max_lines: int = 4000,
+) -> str:
+    """Return ``clap`` / ``dasm`` / ``off`` by scanning events (early exit).
+
+    Exclusive product runs write either CLAP flat fields or a nested ``dasm``
+    object; YAMNet-only runs have neither.
+    """
+    has_clap = False
+    has_dasm = False
+    try:
+        with path.open("rb") as f:
+            nbytes = 0
+            nlines = 0
+            for raw in f:
+                nbytes += len(raw)
+                if not raw.strip():
+                    continue
+                nlines += 1
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                if not has_clap and isinstance(event.get("clap_status"), str):
+                    has_clap = True
+                if not has_dasm and isinstance(event.get("dasm"), dict):
+                    has_dasm = True
+                if has_clap and has_dasm:
+                    break
+                if nlines >= max_lines or nbytes >= max_bytes:
+                    break
+    except OSError:
+        return "off"
+    if has_dasm and not has_clap:
+        return "dasm"
+    if has_clap and not has_dasm:
+        return "clap"
+    if has_dasm and has_clap:
+        # Prefer whichever appears; product is exclusive — DASM wins if both.
+        return "dasm"
+    return "off"
+
+
 def _get_status() -> dict:
     """Return current collector status dict."""
     proc = _find_collector_process()
     if proc is None:
         return {
             "recording": False,
+            "heavy_ml": "off",
             "display_db_offset": float(DISPLAY_DB_OFFSET),
         }
 
     # Find the output file from the cmdline
     cmd = proc.cmdline()
+    heavy_ml = _heavy_ml_from_cmdline(cmd)
     output_file: str | None = None
     for i, part in enumerate(cmd):
         if part in ("-o", "--output") and i + 1 < len(cmd):
@@ -517,6 +577,9 @@ def _get_status() -> dict:
         "elapsed_s": elapsed_s,
         "started_at": started_at,
         "recording_id": recording_id,
+        "heavy_ml": heavy_ml,
+        "enable_clap": heavy_ml == "clap",
+        "enable_dasm": heavy_ml == "dasm",
         "display_db_offset": float(DISPLAY_DB_OFFSET),
     }
 
@@ -582,6 +645,7 @@ def _list_recordings() -> list[dict]:
     for p in sorted(RECORDINGS_DIR.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
         size = p.stat().st_size
         lines, first_at, last_at = _jsonl_list_stats(p) if size > 0 else (0, None, None)
+        heavy_ml = _detect_heavy_ml_in_jsonl(p) if size > 0 else "off"
 
         duration_s = None
         if first_at is not None and last_at is not None:
@@ -615,6 +679,7 @@ def _list_recordings() -> list[dict]:
             "lines": lines,
             "started_display": started_display,
             "duration_label": _format_duration(duration_s),
+            "heavy_ml": heavy_ml,
             "has_audio": has_audio,
             "audio_name": audio_path.name if has_audio and audio_path else None,
             "audio_format": audio_format,
