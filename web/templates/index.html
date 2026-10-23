@@ -2432,19 +2432,18 @@ function clapMarkers(points, minConfidence) {
 
 /**
  * Keep open-vocab labels whose clip_confidence clears the chart floor.
- * All spans for a kept label are retained; if none exist, synthesize a full-window span
- * when ``eventSeconds`` is provided.
+ * Only real model spans (t0/t1) are kept — never invent a full-window bar.
+ * Clip-level labels with empty spans still appear on markers / tooltips.
  */
 function filterDasmLabelsForChart(
   rawLabels,
   minConfidence,
   fallbackTop,
   fallbackConf,
-  eventSeconds,
+  _eventSeconds,
 ) {
   const floor = Number(minConfidence);
   const minConf = Number.isFinite(floor) ? floor : 0;
-  const winSecs = Number(eventSeconds);
   const src = Array.isArray(rawLabels) ? rawLabels : [];
   const kept = [];
   for (const item of src) {
@@ -2452,7 +2451,7 @@ function filterDasmLabelsForChart(
     const clip = item.clip_confidence == null ? null : Number(item.clip_confidence);
     if (clip != null && Number.isFinite(clip) && clip < minConf) continue;
     if (clip == null && minConf > 0) continue;
-    let spans = Array.isArray(item.spans)
+    const spans = Array.isArray(item.spans)
       ? item.spans.filter((sp) => {
         const t0 = Number(sp && sp.t0_s);
         const t1 = Number(sp && sp.t1_s);
@@ -2463,13 +2462,6 @@ function filterDasmLabelsForChart(
         confidence: sp.confidence == null ? null : Number(sp.confidence),
       }))
       : [];
-    if (!spans.length && Number.isFinite(winSecs) && winSecs > 0) {
-      spans = [{
-        t0_s: 0,
-        t1_s: winSecs,
-        confidence: Number.isFinite(clip) ? clip : 0,
-      }];
-    }
     kept.push({
       label: item.label,
       clip_confidence: Number.isFinite(clip) ? clip : null,
@@ -2479,13 +2471,10 @@ function filterDasmLabelsForChart(
   if (!kept.length && fallbackTop) {
     const clip = fallbackConf == null ? null : Number(fallbackConf);
     if (clip == null || !Number.isFinite(clip) || clip >= minConf) {
-      const spans = (Number.isFinite(winSecs) && winSecs > 0)
-        ? [{ t0_s: 0, t1_s: winSecs, confidence: Number.isFinite(clip) ? clip : 0 }]
-        : [];
       kept.push({
         label: String(fallbackTop),
         clip_confidence: Number.isFinite(clip) ? clip : null,
-        spans,
+        spans: [],
       });
     }
   }
