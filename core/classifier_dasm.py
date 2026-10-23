@@ -12,18 +12,21 @@ import numpy as np
 from core.audio_constants import CAPTURE_SAMPLE_RATE
 from core.dasm_onnx import (
     DASM_MODEL_NAME,
+    OPEN_VOCAB_SLOTS,
     DasmModelsMissingError,
     DasmSession,
     build_tgt_mask,
     load_base_queries,
     model_version_fingerprint,
     onnx_ready_status,
+    pad_open_vocab_queries,
 )
 from core.dasm_preprocess import load_bn0, prepare_dasm_mel
 from core.dasm_prompts import (
     DEFAULT_EMBEDDINGS_PATH,
     DEFAULT_PROMPTS_PATH,
     DEFAULT_WINDOW_PATH,
+    MAX_OPEN_VOCAB_PROMPTS,
     DasmWindowConfig,
     embedding_sync_status,
     embeddings_compatible,
@@ -160,6 +163,11 @@ class DasmClassifier:
             )
         if [p.label for p in pairs] != loaded.labels:
             raise RuntimeError("DASM embedding labels do not match prompts file order")
+        if len(loaded.labels) > MAX_OPEN_VOCAB_PROMPTS:
+            raise RuntimeError(
+                f"DASM has {len(loaded.labels)} prompts; ONNX open-vocab budget is "
+                f"{MAX_OPEN_VOCAB_PROMPTS}. Trim prompts or re-export with larger --n-extra."
+            )
         self._labels = loaded.labels
         self._open_queries = loaded.embeddings
         self._hash = loaded.prompts_hash
@@ -181,6 +189,7 @@ class DasmClassifier:
             "post_roll_s": self._window.post_roll_s,
             "frame_threshold": self._window.frame_threshold,
         }
+        status["open_vocab_slots"] = OPEN_VOCAB_SLOTS
         return status
 
     def predict(self, pcm_48k: np.ndarray) -> DasmPredictResult:
@@ -196,10 +205,14 @@ class DasmClassifier:
             dasm_dir=self._session.dasm_dir,
         )
         base = self._base_queries
-        open_q = self._open_queries
-        query = np.concatenate([base, open_q], axis=0)
+        open_padded, real_open = pad_open_vocab_queries(
+            self._open_queries, slots=OPEN_VOCAB_SLOTS
+        )
+        query = np.concatenate([base, open_padded], axis=0)
         base_len = int(base.shape[0])
-        tgt_mask = build_tgt_mask(query.shape[0], base_len)
+        tgt_mask = build_tgt_mask(
+            query.shape[0], base_len, real_open=real_open
+        )
 
         if not self._session.loaded:
             self._session.load()
@@ -217,8 +230,9 @@ class DasmClassifier:
         if weak.ndim == 2:
             weak = weak[0]
 
-        open_strong = strong[base_len:]
-        open_weak = weak[base_len:]
+        # Drop pad slots — only real open-vocab rows map to labels.
+        open_strong = strong[base_len : base_len + real_open]
+        open_weak = weak[base_len : base_len + real_open]
         labels_out: list[dict[str, Any]] = []
         for i, label in enumerate(self._labels):
             spans = frames_to_spans(

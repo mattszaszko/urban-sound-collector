@@ -73,5 +73,15 @@ git push
 
 4. On the Pi: `git pull`, then Start → **Heavy ML: DASM**.
 
+Open-vocab count may vary up to **16**. The ONNX graph is frozen at export for
+`407 base + 16 open-vocab` queries; the collector pads unused slots. Re-export
+with matching `--n-extra` if you change that budget:
+
+```bash
+/path/to/Transformer4SED/.venv/bin/python scripts/dasm_spike/export_dasm_onnx.py \
+  --root /path/to/Transformer4SED --n-extra 16
+# then copy onnx_export/dasm_text_fp32.onnx → models/dasm/ on the Pi
+```
+
 `config/dasm_query_embeddings.npz` is meant to be versioned. Mutually exclusive
 with `--enable-clap` / Heavy ML CLAP.

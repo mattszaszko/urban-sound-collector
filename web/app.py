@@ -2672,7 +2672,7 @@ async def api_dasm_prompts_get(request: Request):
     denied = _require_auth_json(request)
     if denied:
         return denied
-    from core.dasm_onnx import onnx_ready_status
+    from core.dasm_onnx import OPEN_VOCAB_SLOTS, onnx_ready_status
     from core.dasm_prompts import embedding_sync_status, load_prompt_pairs
 
     pairs = load_prompt_pairs(DASM_PROMPTS_PATH) if DASM_PROMPTS_PATH.exists() else []
@@ -2685,12 +2685,14 @@ async def api_dasm_prompts_get(request: Request):
         {
             "ok": True,
             "prompts": [{"label": p.label, "prompt": p.prompt} for p in pairs],
+            "open_vocab_slots": OPEN_VOCAB_SLOTS,
             "sync": sync,
             "onnx": onnx_ready_status(),
             "rebuild_hint": (
                 "No in-app rebuild. On a PC with the Transformer4SED spike + MGA-CLAP, "
                 "run: python scripts/bake_dasm_embeddings.py --spike-root <T4SED>, "
-                "commit config/dasm_query_embeddings.npz, then git pull on the Pi."
+                "commit config/dasm_query_embeddings.npz, then git pull on the Pi. "
+                f"ONNX must be exported with --n-extra {OPEN_VOCAB_SLOTS} (pad budget)."
             ),
         }
     )

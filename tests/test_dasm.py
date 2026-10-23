@@ -12,11 +12,16 @@ import numpy as np
 from core.classifier_dasm import frames_to_spans
 from core.clap_event_buffer import ChunkTelemetry
 from core.dasm_capture import CaptureState, FixedDasmCapture
-from core.dasm_onnx import build_tgt_mask
+from core.dasm_onnx import (
+    OPEN_VOCAB_SLOTS,
+    build_tgt_mask,
+    pad_open_vocab_queries,
+)
 from core.dasm_preprocess import log_mel_spectrogram, pad_or_truncate
 from core.dasm_prompts import (
     DasmPromptPair,
     EXPECTED_MODEL_NAME,
+    MAX_OPEN_VOCAB_PROMPTS,
     embeddings_compatible,
     load_embeddings,
     load_window_config,
@@ -47,6 +52,35 @@ class TestDasmMask(unittest.TestCase):
         self.assertFalse(mask[0, 0])
         self.assertFalse(bool(mask[9, 0]))  # base columns unmasked for attend
         self.assertTrue(bool(mask[0, 9]))
+
+    def test_tgt_mask_pads_blocked(self) -> None:
+        # 7 base + 3 real open + 6 pad = 16
+        mask = build_tgt_mask(16, 7, real_open=3)
+        self.assertFalse(bool(mask[8, 0]))  # real open may attend base
+        self.assertTrue(bool(mask[10, 0]))  # pad blocked from base
+        self.assertTrue(bool(mask[0, 10]))  # base blocked from pad
+        self.assertFalse(bool(mask[10, 10]))  # pad self kept open
+
+    def test_pad_open_vocab_queries(self) -> None:
+        self.assertEqual(OPEN_VOCAB_SLOTS, MAX_OPEN_VOCAB_PROMPTS)
+        real = np.random.randn(3, 1024).astype(np.float32)
+        padded, n = pad_open_vocab_queries(real, slots=16)
+        self.assertEqual(n, 3)
+        self.assertEqual(padded.shape, (16, 1024))
+        np.testing.assert_allclose(padded[:3], real)
+        self.assertTrue(np.all(padded[3:] == 0))
+        with self.assertRaises(ValueError):
+            pad_open_vocab_queries(np.zeros((17, 1024), np.float32), slots=16)
+
+    def test_save_prompts_enforces_max(self) -> None:
+        pairs = [
+            DasmPromptPair(f"l{i}", f"prompt {i}")
+            for i in range(MAX_OPEN_VOCAB_PROMPTS + 1)
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prompts.json"
+            with self.assertRaises(ValueError):
+                save_prompt_pairs(pairs, path)
 
 
 class TestDasmCapture(unittest.TestCase):

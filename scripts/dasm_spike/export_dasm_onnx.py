@@ -116,7 +116,7 @@ def get_att_mask(query_len: int, base_len: int) -> torch.Tensor:
     return att_mask
 
 
-def build_example_io(dasm, configs, example_wav: Path, n_extra: int = 6):
+def build_example_io(dasm, configs, example_wav: Path, n_extra: int = 16):
     from src.preprocess.feats_extraction import waveform_modification
     from src.codec.encoder import Encoder
 
@@ -225,10 +225,22 @@ def main() -> int:
     parser.add_argument("--quantize", action="store_true", help="Also write dynamic INT8 ONNX")
     parser.add_argument("--skip-ort", action="store_true")
     parser.add_argument(
+        "--n-extra",
+        type=int,
+        default=16,
+        help=(
+            "Open-vocab query slots to freeze into ONNX (product pads to this; "
+            "must match core.dasm_onnx.OPEN_VOCAB_SLOTS, default 16)"
+        ),
+    )
+    parser.add_argument(
         "--example-wav",
         default="docs/DASM/examples/Y69AIBPnJN5E.wav",
     )
     args = parser.parse_args()
+    if args.n_extra < 1:
+        print("--n-extra must be >= 1", file=sys.stderr)
+        return 1
 
     root = Path(args.root).resolve()
     os.chdir(root)
@@ -260,8 +272,13 @@ def main() -> int:
     wrapper = DASMOnnxWrapper(dasm, temp_w=temp_w).eval()
 
     print("building example mel/query…")
-    mel, query, tgt_mask, base_len = build_example_io(dasm, configs, example_wav)
-    print(f"mel={tuple(mel.shape)} query={tuple(query.shape)} mask={tuple(tgt_mask.shape)} base_len={base_len}")
+    mel, query, tgt_mask, base_len = build_example_io(
+        dasm, configs, example_wav, n_extra=int(args.n_extra)
+    )
+    print(
+        f"mel={tuple(mel.shape)} query={tuple(query.shape)} "
+        f"mask={tuple(tgt_mask.shape)} base_len={base_len} n_extra={args.n_extra}"
+    )
 
     with torch.no_grad():
         torch_strong, torch_weak = wrapper(mel, query, tgt_mask)

@@ -14,6 +14,9 @@ DEFAULT_DASM_DIR = REPO_ROOT / "models" / "dasm"
 DASM_MODEL_NAME = "dasm-htsat-text-onnx"
 ONNX_NAME = "dasm_text_fp32.onnx"
 BASE_QUERY_NAME = "base_query.npy"
+# ONNX attention Reshape ops are frozen at export-time query count.
+# Runtime always pads open-vocab rows to this budget (re-export if you raise it).
+OPEN_VOCAB_SLOTS = 16
 BN0_NAME = "bn0.npz"
 
 QUERY_DIM = 1024
@@ -109,12 +112,55 @@ def load_base_queries(dasm_dir: Path = DEFAULT_DASM_DIR) -> np.ndarray:
     return arr
 
 
-def build_tgt_mask(query_len: int, base_len: int) -> np.ndarray:
-    """Attention mask matching Transformer4SED notebook helper."""
+def build_tgt_mask(
+    query_len: int,
+    base_len: int,
+    *,
+    real_open: int | None = None,
+) -> np.ndarray:
+    """Attention mask matching Transformer4SED notebook helper.
+
+    ``True`` = blocked. Everyone may attend to base queries and to self.
+    When ``real_open`` is set, trailing pad slots (``base_len + real_open`` …)
+    are fully blocked from attending / being attended (diagonal kept open).
+    """
     att = np.ones((query_len, query_len), dtype=bool)
     att[:, :base_len] = False
     np.fill_diagonal(att, False)
+    if real_open is not None:
+        pad_start = int(base_len) + max(0, int(real_open))
+        if 0 <= pad_start < query_len:
+            att[pad_start:, :] = True
+            att[:, pad_start:] = True
+            for i in range(pad_start, query_len):
+                att[i, i] = False
     return att
+
+
+def pad_open_vocab_queries(
+    open_q: np.ndarray,
+    *,
+    slots: int = OPEN_VOCAB_SLOTS,
+) -> tuple[np.ndarray, int]:
+    """Pad open-vocab embeddings to the ONNX slot budget; return (padded, real_n)."""
+    matrix = np.asarray(open_q, dtype=np.float32)
+    if matrix.ndim != 2:
+        raise ValueError(f"open-vocab queries must be 2-D, got {matrix.shape}")
+    real_n = int(matrix.shape[0])
+    budget = int(slots)
+    if budget < 1:
+        raise ValueError("open-vocab slot budget must be >= 1")
+    if real_n > budget:
+        raise ValueError(
+            f"Got {real_n} open-vocab queries; ONNX budget is {budget}. "
+            "Remove prompts or re-export ONNX with a larger --n-extra."
+        )
+    if real_n == budget:
+        return matrix, real_n
+    out = np.zeros((budget, matrix.shape[1]), dtype=np.float32)
+    if real_n:
+        out[:real_n] = matrix
+    return out, real_n
 
 
 class DasmSession:

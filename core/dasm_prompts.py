@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from core.dasm_onnx import QUERY_DIM
+from core.dasm_onnx import OPEN_VOCAB_SLOTS, QUERY_DIM
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROMPTS_PATH = REPO_ROOT / "config" / "dasm_prompts.json"
@@ -19,6 +19,8 @@ DEFAULT_WINDOW_PATH = REPO_ROOT / "config" / "dasm_window.json"
 
 EXPECTED_MODEL_NAME = "dasm-htsat-text-onnx"
 DEFAULT_PROMPT_PREFIX = "sound of "
+# Re-export: keep in sync with core.dasm_onnx.OPEN_VOCAB_SLOTS / export --n-extra.
+MAX_OPEN_VOCAB_PROMPTS = OPEN_VOCAB_SLOTS
 DEFAULT_PRE_ROLL_S = 5.0
 DEFAULT_POST_ROLL_S = 5.0
 DEFAULT_FRAME_THRESHOLD = 0.35
@@ -89,6 +91,11 @@ def load_prompt_pairs(path: Path = DEFAULT_PROMPTS_PATH) -> list[DasmPromptPair]
 def save_prompt_pairs(
     pairs: list[DasmPromptPair], path: Path = DEFAULT_PROMPTS_PATH
 ) -> None:
+    if len(pairs) > MAX_OPEN_VOCAB_PROMPTS:
+        raise ValueError(
+            f"DASM supports at most {MAX_OPEN_VOCAB_PROMPTS} open-vocab prompts "
+            f"(ONNX slot budget); got {len(pairs)}"
+        )
     labels = [p.label for p in pairs]
     if len(labels) != len(set(labels)):
         raise ValueError("DASM labels must be unique")
@@ -213,6 +220,7 @@ def embedding_sync_status(
             "in_sync": False,
             "prompt_count": len(pairs),
             "embedding_count": 0,
+            "open_vocab_slots": MAX_OPEN_VOCAB_PROMPTS,
             "prompts_hash": expected,
             "embeddings_hash": None,
             "embeddings_path": str(embeddings_path),
@@ -233,6 +241,7 @@ def embedding_sync_status(
         ),
         "prompt_count": len(pairs),
         "embedding_count": int(loaded.embeddings.shape[0]),
+        "open_vocab_slots": MAX_OPEN_VOCAB_PROMPTS,
         "prompts_hash": expected,
         "embeddings_hash": loaded.prompts_hash,
         "embeddings_path": str(embeddings_path),

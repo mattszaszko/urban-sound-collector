@@ -1622,7 +1622,9 @@
     </div>
     <div class="field-note" style="margin-bottom:.75rem">
       Save prompts here; bake embeddings on a PC (no in-app Rebuild), commit the npz,
-      then <code>git pull</code> on the Pi.
+      then <code>git pull</code> on the Pi. Up to <strong>16</strong> open-vocab prompts
+      (unused slots are padded at inference; ONNX must be exported with
+      <code>--n-extra 16</code>).
       <a href="/help/dasm-bake" target="_blank" rel="noopener noreferrer"
          style="color:var(--accent);font-weight:600;margin-left:.15rem">How it works →</a>
     </div>
@@ -6418,6 +6420,8 @@ const dasmPromptsSyncBadge = document.getElementById('dasm-prompts-sync-badge');
 const dasmPromptsOnnxBadge = document.getElementById('dasm-prompts-onnx-badge');
 const dasmPromptsSyncDetail = document.getElementById('dasm-prompts-sync-detail');
 const dasmWindowStatus = document.getElementById('dasm-window-status');
+const DASM_OPEN_VOCAB_SLOTS_DEFAULT = 16;
+let dasmOpenVocabSlots = DASM_OPEN_VOCAB_SLOTS_DEFAULT;
 let dasmSettingsLoaded = false;
 
 function renderDasmSync(sync, onnx) {
@@ -6428,11 +6432,12 @@ function renderDasmSync(sync, onnx) {
     if (dasmPromptsSyncDetail) dasmPromptsSyncDetail.textContent = '';
   } else {
     const inSync = !!sync.in_sync;
+    const slots = Number(sync.open_vocab_slots) || dasmOpenVocabSlots;
     dasmPromptsSyncBadge.className = 'badge ' + (inSync ? 'ok' : 'warn');
     dasmPromptsSyncBadge.innerHTML =
       '<span class="dot"></span>' + (inSync ? 'Embeddings in sync' : 'Bake on PC, then pull');
     let detail =
-      `${sync.prompt_count || 0} prompts · ${sync.embedding_count || 0} embeddings` +
+      `${sync.prompt_count || 0} / ${slots} prompts · ${sync.embedding_count || 0} embeddings` +
       (sync.prompts_hash ? ` · hash ${sync.prompts_hash}` : '');
     if (sync.compat_error) detail += ` · ${sync.compat_error}`;
     if (dasmPromptsSyncDetail) dasmPromptsSyncDetail.textContent = detail;
@@ -6495,6 +6500,10 @@ async function loadDasmPrompts() {
     setInlineStatus(dasmPromptsStatus, (data && data.error) || 'Failed to load DASM prompts', 'err');
     return;
   }
+  const slots = Number(data.open_vocab_slots);
+  dasmOpenVocabSlots = Number.isFinite(slots) && slots > 0
+    ? slots
+    : DASM_OPEN_VOCAB_SLOTS_DEFAULT;
   dasmPromptsTbody.innerHTML = '';
   (data.prompts || []).forEach((p) => addDasmPromptRow(p.label, p.prompt));
   if (!dasmPromptsTbody.children.length) addDasmPromptRow();
@@ -6527,6 +6536,13 @@ async function loadDasmSettings() {
 
 async function saveDasmPromptsToServer(prompts, statusMsg) {
   if (IS_VIEWER) return false;
+  if (prompts.length > dasmOpenVocabSlots) {
+    const msg =
+      `DASM allows at most ${dasmOpenVocabSlots} prompts (ONNX pad budget); got ${prompts.length}.`;
+    setInlineStatus(dasmPromptsStatus, msg, 'err');
+    alert(msg);
+    return false;
+  }
   setInlineStatus(dasmPromptsStatus, 'Saving…');
   const { ok, data } = await apiFetch('/api/dasm/prompts', {
     method: 'PUT',
@@ -6552,6 +6568,13 @@ const dasmPromptsAddBtn = document.getElementById('dasm-prompts-add-btn');
 if (dasmPromptsAddBtn) {
   dasmPromptsAddBtn.addEventListener('click', () => {
     if (guardViewerAction()) return;
+    const n = dasmPromptsTbody ? dasmPromptsTbody.querySelectorAll('tr').length : 0;
+    if (n >= dasmOpenVocabSlots) {
+      const msg = `DASM allows at most ${dasmOpenVocabSlots} prompt rows.`;
+      setInlineStatus(dasmPromptsStatus, msg, 'err');
+      alert(msg);
+      return;
+    }
     addDasmPromptRow();
   });
 }
