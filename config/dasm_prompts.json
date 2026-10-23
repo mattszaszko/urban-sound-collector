@@ -1,29 +1,44 @@
 {
-  "prompt_prefix": "sound of ",
   "prompts": [
     {
+      "label": "traffic",
+      "prompt": "Passing car traffic noise"
+    },
+    {
+      "label": "revving",
+      "prompt": "Car engine revving loudly"
+    },
+    {
+      "label": "motorcycle",
+      "prompt": "Loud motorcycle engine roar"
+    },
+    {
+      "label": "truck",
+      "prompt": "Heavy truck engine rumbling"
+    },
+    {
+      "label": "speech",
+      "prompt": "People talking"
+    },
+    {
+      "label": "birds",
+      "prompt": "Birds chirping and singing"
+    },
+    {
       "label": "siren",
-      "prompt": "sound of siren"
-    },
-    {
-      "label": "alarm",
-      "prompt": "sound of alarm"
-    },
-    {
-      "label": "dog",
-      "prompt": "sound of dog"
-    },
-    {
-      "label": "music",
-      "prompt": "sound of music"
-    },
-    {
-      "label": "bird",
-      "prompt": "sound of bird"
+      "prompt": "Emergency vehicle siren wailing"
     },
     {
       "label": "horn",
-      "prompt": "sound of car horn"
+      "prompt": "Car horn honking"
+    },
+    {
+      "label": "bells",
+      "prompt": "Church bells ringing"
+    },
+    {
+      "label": "music",
+      "prompt": "Music playing or background melody"
     }
   ]
 }
