@@ -1612,11 +1612,27 @@ def _build_report_ndjson(
 def _safe_post_login_path(next_path: str | None) -> str:
     """Allow only same-origin relative paths (block open redirects)."""
     if not next_path or not isinstance(next_path, str):
-        return "/?tab=data"
+        return "/data"
     path = next_path.strip()
     if not path.startswith("/") or path.startswith("//") or "\\" in path:
-        return "/?tab=data"
+        return "/data"
     return path
+
+
+_LEGACY_TAB_PATHS = {
+    "record": "/record",
+    "run": "/record",
+    "data": "/data",
+    "settings": "/settings",
+    "prompts": "/settings",
+    "triggers": "/settings",
+}
+
+
+def _path_for_legacy_tab(tab: str | None) -> str:
+    if not tab:
+        return "/record"
+    return _LEGACY_TAB_PATHS.get(str(tab).strip().lower(), "/record")
 
 
 def _set_viewer_session_cookie(resp: RedirectResponse) -> None:
@@ -1687,12 +1703,24 @@ async def logout():
 def _index_context(
     request: Request,
     *,
+    active_page: str | None = None,
     analyze_recording: str | None = None,
     report_recordings: list[str] | None = None,
 ) -> dict:
     status = _get_status()
     recordings = _list_recordings()
     error = request.query_params.get("error", "")
+    report_list = list(report_recordings or [])
+    if analyze_recording:
+        page = "analyze"
+    elif report_list:
+        page = "report"
+    elif active_page in ("record", "data", "settings"):
+        page = active_page
+    else:
+        page = "record"
+    # Sidebar: Inspect/Report live under Data.
+    nav_active = "data" if page in ("analyze", "report", "data") else page
     return dict(
         request=request,
         status=status,
@@ -1711,16 +1739,59 @@ def _index_context(
         site_timezone=SITE_TIMEZONE,
         user_role=get_role(request) or "viewer",
         error=error,
+        active_page=page,
+        nav_active=nav_active,
         analyze_recording=analyze_recording,
-        report_recordings=report_recordings or [],
+        report_recordings=report_list,
     )
+
+
+def _require_auth_page(request: Request) -> RedirectResponse | None:
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    return None
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    if not is_authenticated(request):
-        return RedirectResponse("/login", status_code=303)
-    return _render("index.html", **_index_context(request))
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
+    # Legacy ?tab= → path routes (preserve error=).
+    tab = request.query_params.get("tab")
+    error = request.query_params.get("error")
+    path = _path_for_legacy_tab(tab) if tab else "/record"
+    if error:
+        return RedirectResponse(f"{path}?error={error}", status_code=303)
+    return RedirectResponse(path, status_code=303)
+
+
+@app.get("/record", response_class=HTMLResponse)
+async def page_record(request: Request):
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
+    return _render(
+        "index.html", **_index_context(request, active_page="record")
+    )
+
+
+@app.get("/data", response_class=HTMLResponse)
+async def page_data(request: Request):
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
+    return _render("index.html", **_index_context(request, active_page="data"))
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def page_settings(request: Request):
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
+    return _render(
+        "index.html", **_index_context(request, active_page="settings")
+    )
 
 
 @app.get("/help/dasm-bake", response_class=HTMLResponse)
@@ -1736,11 +1807,14 @@ async def analyze_recording_page(filename: str, request: Request):
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
     if not filename.lower().endswith(".jsonl"):
-        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
+        return RedirectResponse("/data?error=bad_request", status_code=303)
     path = _safe_recordings_path(filename)
     if path is None or not path.exists() or not path.is_file():
-        return RedirectResponse("/?tab=data&error=not_found", status_code=303)
-    return _render("index.html", **_index_context(request, analyze_recording=path.name))
+        return RedirectResponse("/data?error=not_found", status_code=303)
+    return _render(
+        "index.html",
+        **_index_context(request, analyze_recording=path.name),
+    )
 
 
 @app.get("/report", response_class=HTMLResponse)
@@ -1757,8 +1831,10 @@ async def report_page(request: Request):
         if path is not None and path.is_file():
             safe.append(path.name)
     if not safe:
-        return RedirectResponse("/?tab=data&error=bad_request", status_code=303)
-    return _render("index.html", **_index_context(request, report_recordings=safe))
+        return RedirectResponse("/data?error=bad_request", status_code=303)
+    return _render(
+        "index.html", **_index_context(request, report_recordings=safe)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1782,17 +1858,16 @@ def _require_admin_json(request: Request) -> JSONResponse | None:
 
 
 def _forbid_viewer_redirect(
-    request: Request, *, tab: str | None = None
+    request: Request, *, page: str | None = None, tab: str | None = None
 ) -> RedirectResponse | None:
     """For form POSTs: send viewers back to the UI instead of mutating."""
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
     if is_admin(request):
         return None
-    q = "error=viewer_readonly"
-    if tab:
-        q = f"tab={tab}&{q}"
-    return RedirectResponse(f"/?{q}", status_code=303)
+    # ``tab`` kept as alias for older call sites.
+    dest = page or (tab if tab in ("record", "data", "settings") else None) or "record"
+    return RedirectResponse(f"/{dest}?error=viewer_readonly", status_code=303)
 
 
 @app.post("/api/start")
@@ -1827,7 +1902,7 @@ async def api_start(
                 },
                 status_code=403,
             )
-        return RedirectResponse("/?error=viewer_readonly", status_code=303)
+        return RedirectResponse("/record?error=viewer_readonly", status_code=303)
 
     if _find_collector_process():
         if wants_json:
@@ -1839,7 +1914,7 @@ async def api_start(
                 },
                 status_code=409,
             )
-        return RedirectResponse("/?error=already_recording", status_code=303)
+        return RedirectResponse("/record?error=already_recording", status_code=303)
 
     try:
         check_capture_device_available(alsa_device)
@@ -1854,7 +1929,7 @@ async def api_start(
                 },
                 status_code=400,
             )
-        return RedirectResponse("/?error=no_capture_device", status_code=303)
+        return RedirectResponse("/record?error=no_capture_device", status_code=303)
 
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1880,7 +1955,7 @@ async def api_start(
                 },
                 status_code=400,
             )
-        return RedirectResponse("/?error=heavy_ml_exclusive", status_code=303)
+        return RedirectResponse("/record?error=heavy_ml_exclusive", status_code=303)
     audio_on = record_audio in {"1", "true", "on", "yes"}
     fmt = normalize_audio_format(audio_format or AUDIO_FORMAT)
     cmd = [
@@ -1921,17 +1996,17 @@ async def api_start(
                 "startup_discard_s": float(CAPTURE_STARTUP_DISCARD_SECONDS),
             }
         )
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/record", status_code=303)
 
 
 @app.post("/api/stop")
 async def api_stop(request: Request):
-    blocked = _forbid_viewer_redirect(request)
+    blocked = _forbid_viewer_redirect(request, page="record")
     if blocked:
         return blocked
 
     _stop_collector()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/record", status_code=303)
 
 
 @app.post("/api/shutdown")
@@ -2403,15 +2478,15 @@ async def api_recordings_delete(
     request: Request,
     filename: str = Form(...),
 ):
-    blocked = _forbid_viewer_redirect(request, tab="data")
+    blocked = _forbid_viewer_redirect(request, page="data")
     if blocked:
         return blocked
 
     result = _delete_recording_by_name(filename)
     if result.get("status") == "deleted":
-        return RedirectResponse("/?tab=data", status_code=303)
+        return RedirectResponse("/data", status_code=303)
     err = result.get("error") or "bad_request"
-    return RedirectResponse(f"/?tab=data&error={err}", status_code=303)
+    return RedirectResponse(f"/data?error={err}", status_code=303)
 
 
 @app.post("/api/recordings/delete-bulk")

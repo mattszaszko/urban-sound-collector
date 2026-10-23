@@ -74,9 +74,130 @@
     --grade-c-bg:rgba(202,138,4,.12);--grade-d-bg:rgba(217,119,6,.12);
     --grade-e-bg:rgba(220,38,38,.12);
   }
-  body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
-       min-height:100vh;padding:1rem}
-  header{display:flex;align-items:center;justify-content:space-between;
+  body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);
+       min-height:100vh;padding:0;overflow:hidden}
+  body.app-body{height:100vh;height:100dvh}
+
+  /* App shell (sidebar + main) */
+  .app-shell{display:flex;height:100%;min-height:0}
+  .sidebar{
+    width:18rem;flex-shrink:0;display:flex;flex-direction:column;
+    background:var(--surface);border-right:1px solid var(--border);z-index:30;
+  }
+  .sidebar-scroll{flex:1 1 auto;overflow-y:auto;min-height:0}
+  .sidebar-brand{
+    display:flex;align-items:center;gap:.75rem;padding:1.15rem 1.25rem;
+    border-bottom:1px solid var(--border);
+  }
+  .sidebar-brand-icon{
+    width:2.25rem;height:2.25rem;border-radius:8px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--accent);color:#fff;
+    box-shadow:0 1px 2px rgba(2,132,199,.25);
+  }
+  .sidebar-brand-icon svg{width:1.15rem;height:1.15rem}
+  .sidebar-brand h1{font-size:.95rem;font-weight:700;line-height:1.2;color:var(--text)}
+  .sidebar-brand .brand-sub{font-size:.7rem;color:var(--muted);font-weight:500;margin-top:.1rem}
+  .sidebar-device{padding:.85rem 1rem}
+  .sidebar-device-card{
+    padding:.7rem .8rem;border-radius:10px;border:1px solid var(--border);
+    background:var(--bg);display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+  }
+  .sidebar-device-card .dev-left{display:flex;align-items:center;gap:.65rem;min-width:0}
+  .sidebar-device-card .dev-name{font-size:.75rem;font-weight:650;color:var(--text);line-height:1.2}
+  .sidebar-device-card .dev-host{font-size:.65rem;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin-top:.2rem}
+  .live-dot{position:relative;width:.65rem;height:.65rem;flex-shrink:0}
+  .live-dot::before,.live-dot::after{
+    content:"";position:absolute;inset:0;border-radius:999px;background:var(--green);
+  }
+  .live-dot.is-idle::before,.live-dot.is-idle::after{background:var(--muted)}
+  .live-dot:not(.is-idle)::after{animation:ping 1.4s cubic-bezier(0,0,.2,1) infinite;opacity:.55}
+  @keyframes ping{75%,100%{transform:scale(2.2);opacity:0}}
+  .sidebar-nav{padding:.25rem .65rem 1rem;display:flex;flex-direction:column;gap:.2rem}
+  .nav-link{
+    display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+    padding:.6rem .85rem;border-radius:8px;text-decoration:none;
+    color:var(--muted);font-size:.85rem;font-weight:550;border:1px solid transparent;
+  }
+  .nav-link:hover{background:var(--hover-tab);color:var(--text)}
+  .nav-link .nav-link-main{display:flex;align-items:center;gap:.7rem;min-width:0}
+  .nav-link svg{width:1.15rem;height:1.15rem;flex-shrink:0;opacity:.85}
+  .nav-link.active{
+    background:var(--accent-soft);color:var(--accent);border-color:rgba(2,132,199,.22);
+    font-weight:650;
+  }
+  html[data-theme="dark"] .nav-link.active{border-color:rgba(56,189,248,.28)}
+  .nav-link.active svg{opacity:1;color:var(--accent)}
+  .nav-pill{
+    font-size:.58rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    padding:.15rem .4rem;border-radius:4px;background:rgba(2,132,199,.14);color:var(--accent);
+  }
+  .sidebar-footer{
+    flex-shrink:0;padding:.85rem 1rem 1rem;border-top:1px solid var(--border);
+    background:color-mix(in srgb, var(--bg) 55%, var(--surface));
+    display:flex;flex-direction:column;gap:.7rem;
+  }
+  .sidebar-meta{display:flex;justify-content:space-between;gap:.5rem;
+    font-size:.65rem;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .sidebar-theme-row{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+  .sidebar-theme-row .theme-label{font-size:.72rem;font-weight:550;color:var(--muted);
+    display:inline-flex;align-items:center;gap:.35rem}
+  .theme-switch{
+    position:relative;width:2.25rem;height:1.25rem;border-radius:999px;border:0;
+    background:var(--border);cursor:pointer;padding:0;flex-shrink:0;
+  }
+  .theme-switch[aria-checked="true"]{background:var(--accent)}
+  .theme-switch .knob{
+    position:absolute;top:2px;left:2px;width:1rem;height:1rem;border-radius:999px;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .18s ease;
+  }
+  .theme-switch[aria-checked="true"] .knob{transform:translateX(1rem)}
+  .sidebar-footer .btn-shutdown-sm{width:100%;justify-content:center}
+  .sidebar-signout{text-align:center;font-size:.72rem;color:var(--muted);text-decoration:none}
+  .sidebar-signout:hover{color:var(--text)}
+
+  .main-column{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+  .topbar{
+    height:3.5rem;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+    gap:.75rem;padding:0 1.5rem;background:var(--surface);border-bottom:1px solid var(--border);z-index:20;
+  }
+  .topbar-left{display:flex;align-items:center;gap:.55rem;min-width:0}
+  .topbar-crumb{font-size:.68rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .topbar-sep{color:var(--border)}
+  .topbar-path{font-size:.72rem;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text)}
+  .topbar-right{display:flex;align-items:center;gap:.55rem;flex-shrink:0}
+  .topbar-menu-btn{
+    display:none;align-items:center;justify-content:center;width:2.1rem;height:2.1rem;
+    border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;
+  }
+  .daemon-chip{
+    display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .65rem;border-radius:999px;
+    font-size:.7rem;font-weight:600;border:1px solid var(--border);background:var(--bg);color:var(--muted);
+  }
+  .daemon-chip.is-active{background:var(--badge-ok-bg);color:var(--green);border-color:transparent}
+  .daemon-chip .dot{width:6px;height:6px}
+  .version-chip{
+    font-size:.68rem;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--muted);background:var(--bg);border:1px solid var(--border);
+    padding:.25rem .55rem;border-radius:6px;
+  }
+  .main-content{flex:1 1 auto;overflow-y:auto;padding:1.5rem 1.75rem 2.5rem;min-height:0}
+  .main-inner{max-width:72rem;margin:0 auto}
+  .sidebar-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:25;
+  }
+  body.sidebar-open .sidebar-backdrop{display:block}
+  @media (max-width:900px){
+    .sidebar{
+      position:fixed;inset:0 auto 0 0;transform:translateX(-105%);transition:transform .2s ease;
+      box-shadow:0 10px 40px rgba(0,0,0,.25);
+    }
+    body.sidebar-open .sidebar{transform:translateX(0)}
+    .topbar-menu-btn{display:inline-flex}
+    .main-content{padding:1rem 1rem 2rem}
+  }
+
+  header.legacy-header{display:flex;align-items:center;justify-content:space-between;
          margin-bottom:1rem;gap:.75rem}
   header h1{font-size:1.1rem;font-weight:700;color:var(--accent)}
   .device-meta{font-size:.72rem;color:var(--muted);margin-top:.25rem;line-height:1.4}
@@ -102,17 +223,9 @@
     background:var(--border);color:var(--muted);border-color:var(--border);
     cursor:not-allowed;opacity:.7}
 
-  /* Tabs */
-  .tab-bar{display:flex;gap:.35rem;margin-bottom:1.25rem;border-bottom:1px solid var(--border);
-           padding-bottom:.35rem}
-  .tab-btn{background:transparent;border:1px solid transparent;color:var(--muted);
-           padding:.5rem .9rem;border-radius:8px 8px 0 0;font-size:.85rem;font-weight:600;
-           cursor:pointer}
-  .tab-btn:hover{color:var(--text);background:var(--hover-tab)}
-  .tab-btn.active{color:var(--text);border-color:var(--border);border-bottom-color:var(--surface);
-                  background:var(--surface)}
-  .tab-panel{display:none}
-  .tab-panel.active{display:block}
+  /* Page panels (was top tabs) */
+  .tab-panel,.page-panel{display:none}
+  .tab-panel.active,.page-panel.active{display:block}
 
   .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
         padding:1.25rem;margin-bottom:1rem}
@@ -300,16 +413,47 @@
            height:200px;overflow-y:auto;border:1px solid var(--border)}
   #log-box p{margin:0;line-height:1.6;white-space:pre-wrap;word-break:break-all}
 
-  /* Recordings table */
-  .recording-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
-           justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);
-           font-size:.8rem;border-radius:8px;padding-left:.35rem;padding-right:.35rem}
-  .recording-row:hover{background:var(--hover-row)}
-  .recording-row.selected{background:var(--selected-row);outline:1px solid var(--selected-outline)}
-  .recording-row:last-child{border-bottom:none}
-  .recording-info{min-width:0;flex:1 1 12rem}
-  .recording-name{color:var(--text);word-break:break-all}
-  .recording-meta{color:var(--muted);white-space:normal}
+  /* Data page + recordings list */
+  .data-page-head{margin-bottom:1rem}
+  .data-page-head-row{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:1rem}
+  .data-section-kicker{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+                       color:var(--muted);margin:0 0 .35rem}
+  .data-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    overflow:hidden;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(15,23,42,.04);
+  }
+  .data-card-head{padding:.85rem 1.15rem;border-bottom:1px solid var(--border);
+                  background:color-mix(in srgb, var(--bg) 60%, var(--surface))}
+  .data-card-head-compact{padding:.65rem 1.15rem}
+  .data-card-head h3{margin:0;font-size:.85rem;font-weight:650;color:var(--text);text-transform:none;letter-spacing:0}
+  .data-card-head p{margin:.2rem 0 0;font-size:.72rem;color:var(--muted)}
+  .data-card-body{padding:1.1rem 1.15rem}
+  .export-options-grid{display:grid;grid-template-columns:1fr;gap:1rem}
+  @media (min-width:720px){.export-options-grid{grid-template-columns:1fr 1fr}}
+  .data-files-kicker{font-size:.7rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
+                     color:var(--muted);margin:1rem 0 .55rem;padding:0 .15rem}
+  .data-files-list{display:flex;flex-direction:column;gap:.65rem}
+  .recording-row{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;
+           justify-content:space-between;padding:.9rem 1rem;font-size:.8rem;
+           background:var(--surface);border:1px solid var(--border);border-radius:12px;
+           transition:border-color .15s ease, box-shadow .15s ease, background .15s ease}
+  .recording-row:hover{border-color:color-mix(in srgb, var(--border) 40%, var(--muted))}
+  .recording-row.selected{
+    background:var(--selected-row);border-color:var(--accent);
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .recording-info{display:flex;gap:.65rem;align-items:flex-start;min-width:0;flex:1 1 14rem}
+  .recording-name{color:var(--text);word-break:break-all;
+                  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+                  font-size:.82rem;font-weight:650}
+  .recording-selected-pill{
+    display:inline-flex;align-items:center;margin-left:.35rem;padding:.05rem .35rem;
+    font-size:.58rem;font-weight:650;border-radius:4px;border:1px solid rgba(2,132,199,.35);
+    background:rgba(2,132,199,.12);color:var(--accent);vertical-align:middle;
+  }
+  .recording-row:not(.selected) .recording-selected-pill{display:none !important}
+  .recording-meta{color:var(--muted);white-space:normal;
+                  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.72rem;margin-top:.25rem}
   .recording-actions{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
   .recording-actions a,.recording-actions form,.recording-actions button{cursor:pointer}
   .dl-btn,.del-btn,.view-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
@@ -321,13 +465,7 @@
   .del-btn:hover{border-color:var(--red)}
   #panel-analyze{display:none}
   #panel-analyze.active{display:block}
-  body.analyze-mode .tab-bar{display:none}
-  body.analyze-mode .tab-panel{display:none !important}
-  body.analyze-mode #panel-analyze{display:block !important}
-  body.report-mode .tab-bar{display:none}
-  body.report-mode .tab-panel{display:none !important}
-  body.report-mode #panel-analyze{display:none !important}
-  body.report-mode #panel-report{display:block !important}
+  /* Page visibility driven by .active on panels (active_page / client nav) */
   #panel-report{display:none}
   #panel-report.active{display:block}
   .report-toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
@@ -777,41 +915,113 @@
 })();
 </script>
 </head>
-<body{% if analyze_recording %} class="analyze-mode"{% elif report_recordings %} class="report-mode"{% endif %}>
-
-<header>
-  <div>
-    <h1>🎙 Urban Sound Collector</h1>
-    {% if site_label %}
-    <div class="device-meta"><strong>{{ site_label }}</strong></div>
-    {% endif %}
-    <div class="device-meta">
-      Device <code>{{ device_id }}</code> · host {{ pi_hostname }}
-      {% if public_url %} · <a href="{{ public_url }}" target="_blank" rel="noopener">{{ public_url }}</a>{% endif %}
+<body class="app-body" data-active-page="{{ active_page|default('record') }}" data-nav-active="{{ nav_active|default('record') }}">
+{% set page = active_page|default('record') %}
+{% set nav = nav_active|default('record') %}
+<div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
+<div class="app-shell">
+<aside class="sidebar" id="app-sidebar" aria-label="Main navigation">
+  <div class="sidebar-scroll">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-icon" aria-hidden="true">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Urban Sound Collector</h1>
+        <div class="brand-sub">Acoustic Telemetry Node</div>
+      </div>
     </div>
+    <div class="sidebar-device">
+      <div class="sidebar-device-card">
+        <div class="dev-left">
+          <span class="live-dot{% if not status.recording %} is-idle{% endif %}" id="sidebar-live-dot" title="{% if status.recording %}Recording{% else %}Idle{% endif %}"></span>
+          <div>
+            <div class="dev-name">{% if site_label %}{{ site_label }}{% else %}{{ device_id }}{% endif %}</div>
+            <div class="dev-host">host {{ pi_hostname }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <nav class="sidebar-nav" aria-label="Primary">
+      <a class="nav-link{% if nav == 'record' %} active{% endif %}" href="/record" data-nav="record">
+        <span class="nav-link-main">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="7" stroke-width="2"></circle>
+            <circle cx="12" cy="12" fill="currentColor" r="3"></circle>
+          </svg>
+          Record
+        </span>
+      </a>
+      <a class="nav-link{% if nav == 'data' %} active{% endif %}" href="/data" data-nav="data"{% if nav == 'data' %} aria-current="page"{% endif %}>
+        <span class="nav-link-main">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h4m-4-8h6"/>
+          </svg>
+          Data
+        </span>
+        <span class="nav-pill">Past &amp; Reports</span>
+      </a>
+      <a class="nav-link{% if nav == 'settings' %} active{% endif %}" href="/settings" data-nav="settings">
+        <span class="nav-link-main">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <circle cx="12" cy="12" r="3" stroke-width="2"></circle>
+          </svg>
+          Settings
+        </span>
+      </a>
+    </nav>
   </div>
-  <div class="header-actions">
+  <div class="sidebar-footer">
+    <div class="sidebar-meta">
+      <span id="sidebar-uptime">—</span>
+      <span>refreshes every 3 s</span>
+    </div>
+    <div class="sidebar-theme-row">
+      <span class="theme-label">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        </svg>
+        Dark mode
+      </span>
+      <button type="button" class="theme-switch" id="color-mode-toggle" role="switch"
+              aria-checked="true" title="Toggle light/dark mode" aria-label="Toggle dark mode">
+        <span class="knob" aria-hidden="true"></span>
+      </button>
+    </div>
+    <button class="btn-shutdown-sm" type="button" id="shutdown-btn" title="Safely shut down this Pi">
+      Shut down
+    </button>
+    <a class="sidebar-signout" href="/logout">Sign out</a>
+  </div>
+</aside>
+<div class="main-column">
+<header class="topbar">
+  <div class="topbar-left">
+    <button type="button" class="topbar-menu-btn" id="sidebar-toggle" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/>
+      </svg>
+    </button>
+    <span class="topbar-crumb">Node telemetry</span>
+    <span class="topbar-sep" aria-hidden="true">/</span>
+    <span class="topbar-path" id="topbar-path">{% if page == 'record' %}record{% elif page == 'data' %}data-store{% elif page == 'settings' %}settings{% elif page == 'analyze' %}inspect{% elif page == 'report' %}report{% else %}{{ page }}{% endif %}</span>
+  </div>
+  <div class="topbar-right">
     {% if user_role == 'viewer' %}
     <span class="viewer-badge" title="Signed in as viewer (read-only)">Viewer</span>
     {% endif %}
-    <button class="btn-color-mode" type="button" id="color-mode-toggle"
-            title="Toggle light/dark mode" aria-label="Toggle light/dark mode">
-      <span class="icon-moon" aria-hidden="true">☾</span>
-      <span class="icon-sun" aria-hidden="true">☀</span>
-      <span class="color-mode-label">Light</span>
-    </button>
-    <button class="btn-shutdown-sm" type="button" id="shutdown-btn" title="Safely shut down this Pi">
-      ⏻ Shut down
-    </button>
-    <a href="/logout">Sign out</a>
+    <div class="daemon-chip{% if status.recording %} is-active{% endif %}" id="daemon-chip">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="daemon-chip-label">{% if status.recording %}Recording{% else %}Idle{% endif %}</span>
+    </div>
   </div>
 </header>
-
-<nav class="tab-bar" role="tablist"{% if analyze_recording or report_recordings %} hidden{% endif %}>
-  <button type="button" class="tab-btn active" data-tab="record" role="tab" aria-selected="true">Record</button>
-  <button type="button" class="tab-btn" data-tab="data" role="tab" aria-selected="false">Data</button>
-  <button type="button" class="tab-btn" data-tab="settings" role="tab" aria-selected="false">Settings</button>
-</nav>
+<main class="main-content">
+<div class="main-inner">
 
 {% if error == 'already_recording' %}
 <div class="error-banner">A recording is already active. Stop it before starting a new one.</div>
@@ -827,8 +1037,8 @@
 <div class="error-banner">That action is disabled for viewers.</div>
 {% endif %}
 
-<!-- ── RECORD TAB ── -->
-<div class="tab-panel{% if not analyze_recording and not report_recordings %} active{% endif %}" id="panel-record" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
+<!-- ── RECORD ── -->
+<div class="tab-panel{% if page == 'record' %} active{% endif %}" id="panel-record" role="tabpanel"{% if page != 'record' %} hidden{% endif %}>
 
 <div class="record-layout{% if status.recording and (status.chunk_count or 0) >= 1 %} is-live{% endif %}" id="record-layout">
 <!-- ── STATUS (visible once first chunk arrives) ── -->
@@ -1011,60 +1221,41 @@
   </details>
 </div>
 
-<div id="shutdown-overlay" aria-live="polite" aria-busy="true">
-  <div class="shutdown-panel">
-    <h3 id="shutdown-title">Shutting down…</h3>
-    <p id="shutdown-message">Stopping services and preparing to power off.</p>
-    <div class="shutdown-loader" id="shutdown-loader" role="status" aria-label="Waiting for Pi to go offline"></div>
-    <p id="shutdown-safe" class="shutdown-safe" hidden>
-      Safe to unplug power now.<br>
-      Wait until the Pi’s activity LED is off, then disconnect USB power.
-    </p>
-    <p class="shutdown-host" id="shutdown-host"></p>
-  </div>
-</div>
-
 </div><!-- /panel-record -->
 
-<div id="bulk-delete-overlay" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-title" hidden>
-  <div class="bulk-delete-panel">
-    <h3 id="bulk-delete-title">Delete selected recordings?</h3>
-    <p id="bulk-delete-summary">This permanently removes the selected JSONL files and any sibling WAVs.</p>
-    <label for="bulk-delete-password">Admin password</label>
-    <input type="password" id="bulk-delete-password" autocomplete="current-password" placeholder="Type admin password to confirm">
-    <div id="bulk-delete-error" class="inline-status err" style="margin-top:.55rem"></div>
-    <div class="bulk-delete-actions">
-      <button type="button" class="btn-cancel" id="bulk-delete-cancel">Cancel</button>
-      <button type="button" class="btn-confirm-delete" id="bulk-delete-confirm">Delete permanently</button>
+<!-- ── DATA ── -->
+<div class="tab-panel{% if page == 'data' %} active{% endif %}" id="panel-data" role="tabpanel"{% if page != 'data' %} hidden{% endif %}>
+<div class="data-page-head">
+  <div class="data-page-head-row">
+    <div>
+      <h2 class="data-section-kicker">Past recordings</h2>
+      {% if disk %}
+      <div class="disk-meter {{ disk.level }}" title="Filesystem that stores recordings/">
+        Disk: {{ disk.line }}
+        {% if disk.level == 'warn' %} · getting low{% endif %}
+        {% if disk.level == 'critical' %} · free space critically low{% endif %}
+      </div>
+      {% endif %}
     </div>
+    {% if recordings %}
+    <div class="data-toolbar">
+      <label class="check-row" style="margin:0;cursor:pointer">
+        <input type="checkbox" id="recordings-select-all" class="recording-check">
+        <div>Select all</div>
+      </label>
+      <button type="button" class="btn" id="generate-report-btn" disabled>Generate report</button>
+      <button type="button" class="btn-danger-sm" id="bulk-delete-btn" disabled>Delete selected</button>
+    </div>
+    {% endif %}
   </div>
 </div>
-
-<!-- ── DATA TAB ── -->
-<div class="tab-panel" id="panel-data" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
-<div class="card">
-  <h2>Past recordings</h2>
-  {% if disk %}
-  <div class="disk-meter {{ disk.level }}" title="Filesystem that stores recordings/">
-    Disk: {{ disk.line }}
-    {% if disk.level == 'warn' %} · getting low{% endif %}
-    {% if disk.level == 'critical' %} · free space critically low{% endif %}
+{% if recordings %}
+<section class="data-card" id="report-options">
+  <div class="data-card-head">
+    <h3>Report options</h3>
+    <p>Applied when you generate a report. Chunk ≈ 1&nbsp;s.</p>
   </div>
-  {% endif %}
-  {% if recordings %}
-  <div class="data-toolbar">
-    <label class="check-row" style="margin:0;cursor:pointer">
-      <input type="checkbox" id="recordings-select-all" class="recording-check">
-      <div>Select all</div>
-    </label>
-    <button type="button" class="btn" id="generate-report-btn" disabled>Generate report</button>
-    <button type="button" class="btn-danger-sm" id="bulk-delete-btn" disabled>Delete selected</button>
-  </div>
-  <div class="report-options" id="report-options">
-    <div class="export-title">Report options</div>
-    <div class="field-note" style="margin:0 0 .15rem">
-      Applied when you generate a report. Chunk ≈ 1&nbsp;s.
-    </div>
+  <div class="data-card-body">
     <div class="report-options-grid">
       <div>
         <label for="rpt-opt-min-event">Min event length (chunks / ≈seconds)</label>
@@ -1095,71 +1286,81 @@
       </div>
     </div>
   </div>
-  <div class="export-options" id="export-options">
-    <div class="export-title">Download options</div>
-    <label class="check-row">
-      <input type="checkbox" id="dl-include-spectrum" checked>
-      <div>
-        Include spectrum
-        <span>Z + A 1/3-octave bands (~bulk of each line). Uncheck for smaller files.</span>
-      </div>
-    </label>
-    <label class="check-row">
-      <input type="checkbox" id="dl-include-preprocess" checked>
-      <div>
-        Include gate diagnostics
-        <span>yamnet_preprocess (L90 floor, thresholds, applied gain).</span>
-      </div>
-    </label>
+</section>
+<section class="data-card" id="export-options">
+  <div class="data-card-head data-card-head-compact">
+    <h3>Download options</h3>
   </div>
-    {% for recording in recordings %}
-    <div class="recording-row" data-recording-name="{{ recording.name }}" data-has-wav="{{ '1' if recording.has_wav else '0' }}">
-      <div class="recording-info" style="display:flex;gap:.5rem;align-items:flex-start">
-        <input type="checkbox" class="recording-check recording-select" value="{{ recording.name }}" aria-label="Select {{ recording.name }}">
+  <div class="data-card-body">
+    <div class="export-options-grid">
+      <label class="check-row">
+        <input type="checkbox" id="dl-include-spectrum" checked>
         <div>
-          <div class="recording-name">{{ recording.name }}
-            {% if recording.heavy_ml == 'clap' %}
-              <span class="heavy-ml-badge clap">CLAP</span>
-            {% elif recording.heavy_ml == 'dasm' %}
-              <span class="heavy-ml-badge dasm">DASM</span>
-            {% endif %}
-          </div>
-          <div class="recording-meta">
-            {{ recording.started_display }}
-            {% if recording.duration_label %} · {{ recording.duration_label }}{% endif %}
-            · {{ recording.lines }} events · {{ recording.size_label }}
-            {% if recording.has_audio or recording.has_wav %}
-              · audio{% if recording.audio_format %} {{ recording.audio_format|upper }}{% endif %}
-              {{ recording.audio_size_label or recording.wav_size_label }}
-            {% endif %}
-          </div>
+          Include spectrum
+          <span>Z + A 1/3-octave bands (~bulk of each line). Uncheck for smaller files.</span>
+        </div>
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="dl-include-preprocess" checked>
+        <div>
+          Include gate diagnostics
+          <span>yamnet_preprocess (L90 floor, thresholds, applied gain).</span>
+        </div>
+      </label>
+    </div>
+  </div>
+</section>
+<div class="data-files-kicker">Files available on disk</div>
+<div class="data-files-list">
+  {% for recording in recordings %}
+  <div class="recording-row" data-recording-name="{{ recording.name }}" data-has-wav="{{ '1' if recording.has_wav else '0' }}">
+    <div class="recording-info">
+      <input type="checkbox" class="recording-check recording-select" value="{{ recording.name }}" aria-label="Select {{ recording.name }}">
+      <div>
+        <div class="recording-name">{{ recording.name }}
+          {% if recording.heavy_ml == 'clap' %}
+            <span class="heavy-ml-badge clap">CLAP</span>
+          {% elif recording.heavy_ml == 'dasm' %}
+            <span class="heavy-ml-badge dasm">DASM</span>
+          {% endif %}
+          <span class="recording-selected-pill" hidden>Selected</span>
+        </div>
+        <div class="recording-meta">
+          {{ recording.started_display }}
+          {% if recording.duration_label %} · {{ recording.duration_label }}{% endif %}
+          · {{ recording.lines }} events · {{ recording.size_label }}
+          {% if recording.has_audio or recording.has_wav %}
+            · audio{% if recording.audio_format %} {{ recording.audio_format|upper }}{% endif %}
+            {{ recording.audio_size_label or recording.wav_size_label }}
+          {% endif %}
         </div>
       </div>
-      <div class="recording-actions">
-        <a class="view-btn" href="/analyze/{{ recording.name }}">Inspect</a>
-        <a class="dl-btn" href="/recordings/{{ recording.name }}"
-           data-filename="{{ recording.name }}" download>↓ JSONL</a>
-        {% if recording.has_audio or recording.has_wav %}
-        <a class="dl-btn" href="/recordings/{{ recording.audio_name or recording.wav_name }}?download=1" download>↓ Audio</a>
-        {% endif %}
-        <form method="post" action="/api/recordings/delete" style="display:inline;margin:0"
-              onsubmit="return confirm('Delete {{ recording.name }}{% if recording.has_audio or recording.has_wav %} and its audio file{% endif %}? This cannot be undone.');">
-          <input type="hidden" name="filename" value="{{ recording.name }}">
-          <button class="del-btn" type="submit">Delete</button>
-        </form>
-      </div>
     </div>
-    {% endfor %}
-  {% else %}
-  <div class="empty">No recordings yet.</div>
-  {% endif %}
+    <div class="recording-actions">
+      <a class="view-btn" href="/analyze/{{ recording.name }}">Inspect</a>
+      <a class="dl-btn" href="/recordings/{{ recording.name }}"
+         data-filename="{{ recording.name }}" download>↓ JSONL</a>
+      {% if recording.has_audio or recording.has_wav %}
+      <a class="dl-btn" href="/recordings/{{ recording.audio_name or recording.wav_name }}?download=1" download>↓ Audio</a>
+      {% endif %}
+      <form method="post" action="/api/recordings/delete" style="display:inline;margin:0"
+            onsubmit="return confirm('Delete {{ recording.name }}{% if recording.has_audio or recording.has_wav %} and its audio file{% endif %}? This cannot be undone.');">
+        <input type="hidden" name="filename" value="{{ recording.name }}">
+        <button class="del-btn" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
 </div>
+{% else %}
+<div class="empty">No recordings yet.</div>
+{% endif %}
 </div><!-- /panel-data -->
 
 <!-- ── ANALYZE (dedicated screen / openable in new tab) ── -->
-<div id="panel-analyze"{% if analyze_recording %} class="active"{% endif %}{% if not analyze_recording %} hidden{% endif %}>
+<div class="tab-panel{% if page == 'analyze' %} active{% endif %}" id="panel-analyze" role="tabpanel"{% if page != 'analyze' %} hidden{% endif %}>
   <div class="analyze-toolbar">
-    <a class="analyze-back" href="/?tab=data">← Back to Data</a>
+    <a class="analyze-back" href="/data">← Back to Data</a>
   </div>
   <div class="card" id="recording-overview">
     <div class="overview-head">
@@ -1225,9 +1426,9 @@
 </div>
 
 <!-- ── MULTI-RUN REPORT (three-zone dashboard) ── -->
-<div id="panel-report"{% if report_recordings %} class="active"{% endif %}{% if not report_recordings %} hidden{% endif %}>
+<div class="tab-panel{% if page == 'report' %} active{% endif %}" id="panel-report" role="tabpanel"{% if page != 'report' %} hidden{% endif %}>
   <div class="report-toolbar">
-    <a class="analyze-back" href="/?tab=data">← Back to Data</a>
+    <a class="analyze-back" href="/data">← Back to Data</a>
   </div>
   <div class="card report-zone" id="report-zone-a">
     <h2>Executive summary</h2>
@@ -1376,8 +1577,8 @@
   </div>
 </div>
 
-<!-- ── SETTINGS TAB ── -->
-<div class="tab-panel" id="panel-settings" role="tabpanel"{% if analyze_recording or report_recordings %} hidden{% endif %}>
+<!-- ── SETTINGS ── -->
+<div class="tab-panel{% if page == 'settings' %} active{% endif %}" id="panel-settings" role="tabpanel"{% if page != 'settings' %} hidden{% endif %}>
   <div class="card" id="system-health-card">
     <h2>This Pi · system health</h2>
     <div class="field-note" style="margin-bottom:.65rem">
@@ -1680,6 +1881,38 @@
     <div class="inline-status" id="dasm-window-status"></div>
   </div>
   </div><!-- /dasm panel -->
+</div><!-- /panel-settings -->
+
+</div><!-- /.main-inner -->
+</main>
+</div><!-- /.main-column -->
+</div><!-- /.app-shell -->
+
+<div id="shutdown-overlay" aria-live="polite" aria-busy="true">
+  <div class="shutdown-panel">
+    <h3 id="shutdown-title">Shutting down…</h3>
+    <p id="shutdown-message">Stopping services and preparing to power off.</p>
+    <div class="shutdown-loader" id="shutdown-loader" role="status" aria-label="Waiting for Pi to go offline"></div>
+    <p id="shutdown-safe" class="shutdown-safe" hidden>
+      Safe to unplug power now.<br>
+      Wait until the Pi’s activity LED is off, then disconnect USB power.
+    </p>
+    <p class="shutdown-host" id="shutdown-host"></p>
+  </div>
+</div>
+
+<div id="bulk-delete-overlay" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-title" hidden>
+  <div class="bulk-delete-panel">
+    <h3 id="bulk-delete-title">Delete selected recordings?</h3>
+    <p id="bulk-delete-summary">This permanently removes the selected JSONL files and any sibling WAVs.</p>
+    <label for="bulk-delete-password">Admin password</label>
+    <input type="password" id="bulk-delete-password" autocomplete="current-password" placeholder="Type admin password to confirm">
+    <div id="bulk-delete-error" class="inline-status err" style="margin-top:.55rem"></div>
+    <div class="bulk-delete-actions">
+      <button type="button" class="btn-cancel" id="bulk-delete-cancel">Cancel</button>
+      <button type="button" class="btn-confirm-delete" id="bulk-delete-confirm">Delete permanently</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
@@ -1698,11 +1931,11 @@ function currentColorMode() {
 function syncColorModeToggle() {
   const btn = document.getElementById('color-mode-toggle');
   if (!btn) return;
-  const light = currentColorMode() === 'light';
+  const dark = currentColorMode() === 'dark';
+  btn.setAttribute('aria-checked', dark ? 'true' : 'false');
+  btn.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
   const label = btn.querySelector('.color-mode-label');
-  if (label) label.textContent = light ? 'Dark' : 'Light';
-  btn.setAttribute('aria-pressed', light ? 'true' : 'false');
-  btn.title = light ? 'Switch to dark mode' : 'Switch to light mode';
+  if (label) label.textContent = dark ? 'Light' : 'Dark';
 }
 
 function applyChartScaleColors(chart) {
@@ -1911,30 +2144,79 @@ let reportBudgetView = 'total';
   });
 })();
 
-// ── Tabs ──────────────────────────────────────────────────────────
-const tabBtns = document.querySelectorAll('.tab-btn');
+// ── Path-based page navigation (sidebar) ──────────────────────────
+const PAGE_PATHS = {
+  record: '/record',
+  data: '/data',
+  settings: '/settings',
+};
+const PAGE_CRUMBS = {
+  record: 'record',
+  data: 'data-store',
+  settings: 'settings',
+  analyze: 'inspect',
+  report: 'report',
+};
 const tabPanels = {
   record: document.getElementById('panel-record'),
   data: document.getElementById('panel-data'),
   settings: document.getElementById('panel-settings'),
+  analyze: document.getElementById('panel-analyze'),
+  report: document.getElementById('panel-report'),
 };
 let promptsLoaded = false;
 let triggersLoaded = false;
 let systemHealthTimer = null;
 
-function switchTab(name) {
-  tabBtns.forEach((btn) => {
-    const on = btn.dataset.tab === name;
-    btn.classList.toggle('active', on);
-    btn.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
+function currentPageName() {
+  return document.body.getAttribute('data-active-page') || 'record';
+}
+
+function navActiveForPage(page) {
+  return (page === 'analyze' || page === 'report' || page === 'data') ? 'data' : page;
+}
+
+function setSidebarOpen(open) {
+  document.body.classList.toggle('sidebar-open', !!open);
+  const btn = document.getElementById('sidebar-toggle');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (backdrop) backdrop.hidden = !open;
+}
+
+function showPage(name, { push = false } = {}) {
+  const page = PAGE_PATHS[name] ? name : 'record';
+  // Full pages (inspect/report) are server-rendered; don't SPA-swap into them.
+  if (page !== 'record' && page !== 'data' && page !== 'settings') return;
+
+  document.body.setAttribute('data-active-page', page);
+  document.body.setAttribute('data-nav-active', navActiveForPage(page));
+
   Object.entries(tabPanels).forEach(([key, panel]) => {
     if (!panel) return;
-    panel.classList.toggle('active', key === name);
+    const on = key === page;
+    panel.classList.toggle('active', on);
+    panel.hidden = !on;
   });
-  // Defer so mid-script tab init (and early clicks) don't touch lets declared later.
+
+  document.querySelectorAll('.sidebar-nav .nav-link[data-nav]').forEach((link) => {
+    const on = link.getAttribute('data-nav') === navActiveForPage(page);
+    link.classList.toggle('active', on);
+    if (on) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+
+  const crumb = document.getElementById('topbar-path');
+  if (crumb) crumb.textContent = PAGE_CRUMBS[page] || page;
+
+  if (push && PAGE_PATHS[page]) {
+    history.pushState({ page }, '', PAGE_PATHS[page]);
+  }
+
+  setSidebarOpen(false);
+
   queueMicrotask(() => {
-    if (name === 'settings') {
+    if (page === 'settings') {
       if (typeof loadPrompts === 'function') loadPrompts();
       if (typeof loadTriggersPanel === 'function') loadTriggersPanel();
       if (typeof loadDasmSettings === 'function') loadDasmSettings();
@@ -1943,6 +2225,11 @@ function switchTab(name) {
       stopSystemHealthPolling();
     }
   });
+}
+
+/** @deprecated use showPage — kept for any leftover callers */
+function switchTab(name) {
+  showPage(name, { push: true });
 }
 
 (function initHeavySettingsTabs() {
@@ -1972,17 +2259,48 @@ function switchTab(name) {
   });
 })();
 
-tabBtns.forEach((btn) => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
-
-(function initTabFromQuery() {
-  const params = new URLSearchParams(window.location.search);
-  let tab = params.get('tab');
-  if (tab === 'run') tab = 'record'; // legacy alias
-  if (tab === 'prompts' || tab === 'triggers') tab = 'settings'; // legacy aliases
-  if (tab && tabPanels[tab]) switchTab(tab);
+(function initSidebarNav() {
+  document.querySelectorAll('.sidebar-nav .nav-link[data-nav]').forEach((link) => {
+    link.addEventListener('click', (ev) => {
+      const name = link.getAttribute('data-nav');
+      if (!PAGE_PATHS[name]) return;
+      // Allow open-in-new-tab / modified clicks.
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
+      ev.preventDefault();
+      showPage(name, { push: true });
+    });
+  });
+  window.addEventListener('popstate', (ev) => {
+    const page = (ev.state && ev.state.page) || pageFromPathname(window.location.pathname);
+    if (PAGE_PATHS[page]) showPage(page, { push: false });
+    else window.location.reload();
+  });
+  const toggle = document.getElementById('sidebar-toggle');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      setSidebarOpen(!document.body.classList.contains('sidebar-open'));
+    });
+  }
+  if (backdrop) {
+    backdrop.addEventListener('click', () => setSidebarOpen(false));
+  }
 })();
+
+function pageFromPathname(pathname) {
+  const p = (pathname || '').replace(/\/+$/, '') || '/';
+  if (p === '/record' || p === '/') return 'record';
+  if (p === '/data') return 'data';
+  if (p === '/settings') return 'settings';
+  if (p.startsWith('/analyze/')) return 'analyze';
+  if (p === '/report') return 'report';
+  return currentPageName();
+}
+
+// Seed history state for back/forward.
+if (PAGE_PATHS[currentPageName()]) {
+  history.replaceState({ page: currentPageName() }, '', window.location.pathname + window.location.search);
+}
 
 function syncStartSettingsFromForm() {
   const device = document.getElementById('settings-device-id');
@@ -3129,6 +3447,16 @@ function setRecordingLayout(recording, recordingId, chunkCount) {
   if (statusCard) statusCard.hidden = !live;
   if (controlCard) controlCard.hidden = live;
   if (idEl) idEl.textContent = live && recordingId ? recordingId : '';
+  const recordingOn = !!recording;
+  const chip = document.getElementById('daemon-chip');
+  const chipLabel = document.getElementById('daemon-chip-label');
+  if (chip) chip.classList.toggle('is-active', recordingOn);
+  if (chipLabel) chipLabel.textContent = recordingOn ? 'Recording' : 'Idle';
+  const liveDot = document.getElementById('sidebar-live-dot');
+  if (liveDot) {
+    liveDot.classList.toggle('is-idle', !recordingOn);
+    liveDot.title = recordingOn ? 'Recording' : 'Idle';
+  }
 }
 
 let statusPollInFlight = false;
@@ -3386,7 +3714,7 @@ if (startRecordingForm) {
       return;
     }
 
-    window.location.href = '/?tab=record';
+    window.location.href = '/record';
   });
 }
 
@@ -4493,6 +4821,10 @@ function syncReportButton() {
   const n = selectedRecordingNames().length;
   if (generateReportBtn) generateReportBtn.disabled = n === 0;
   if (bulkDeleteBtn) bulkDeleteBtn.disabled = n === 0 || IS_VIEWER;
+  document.querySelectorAll('.recording-row').forEach((row) => {
+    const cb = row.querySelector('.recording-select');
+    row.classList.toggle('selected', !!(cb && cb.checked));
+  });
 }
 
 function closeBulkDeleteDialog() {
@@ -4563,7 +4895,7 @@ async function submitBulkDelete() {
     body: JSON.stringify({ files: names, password }),
   });
   if (ok && data && data.failed_count === 0) {
-    window.location.href = '/?tab=data';
+    window.location.href = '/data';
     return;
   }
   if (status === 403 && data && data.error === 'bad_password') {
@@ -4585,7 +4917,7 @@ async function submitBulkDelete() {
     }
     if ((data.deleted_count || 0) > 0) {
       // Partial success — refresh so removed rows disappear.
-      setTimeout(() => { window.location.href = '/?tab=data'; }, 1600);
+      setTimeout(() => { window.location.href = '/data'; }, 1600);
       return;
     }
   } else {
@@ -7237,6 +7569,12 @@ function renderSystemHealth(data) {
     parts.push('refreshes every 3 s');
     meta.textContent = parts.join(' · ');
   }
+  const sidebarUp = document.getElementById('sidebar-uptime');
+  if (sidebarUp) {
+    sidebarUp.textContent = data && data.uptime_s != null
+      ? `up ${fmtUptime(data.uptime_s)}`
+      : '—';
+  }
 }
 
 async function pollSystemHealth() {
@@ -7262,6 +7600,16 @@ function stopSystemHealthPolling() {
 
 if (document.getElementById('panel-settings')?.classList.contains('active')) {
   startSystemHealthPolling();
+} else {
+  // Sidebar uptime even when Settings is not open.
+  (async () => {
+    const { ok, data } = await apiFetch('/api/system');
+    if (!ok || !data) return;
+    const sidebarUp = document.getElementById('sidebar-uptime');
+    if (sidebarUp && data.uptime_s != null) {
+      sidebarUp.textContent = `up ${fmtUptime(data.uptime_s)}`;
+    }
+  })();
 }
 
 applyViewerLocks();
