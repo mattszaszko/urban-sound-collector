@@ -132,6 +132,15 @@
     font-size:.58rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
     padding:.15rem .4rem;border-radius:4px;background:rgba(2,132,199,.14);color:var(--accent);
   }
+  .nav-group{margin-top:.15rem}
+  .nav-group-label{
+    display:flex;align-items:center;gap:.7rem;padding:.55rem .85rem;
+    font-size:.85rem;font-weight:650;color:var(--muted);
+  }
+  .nav-group-label svg{width:1.15rem;height:1.15rem;flex-shrink:0;opacity:.85}
+  .nav-group.is-open .nav-group-label{color:var(--text)}
+  .nav-sub{display:flex;flex-direction:column;gap:.15rem;padding:0 .35rem .35rem 1.15rem}
+  .nav-sub .nav-link{font-size:.78rem;font-weight:550;padding:.45rem .7rem}
   .sidebar-footer{
     flex-shrink:0;padding:.85rem 1rem 1rem;border-top:1px solid var(--border);
     background:color-mix(in srgb, var(--bg) 55%, var(--surface));
@@ -182,7 +191,7 @@
     padding:.25rem .55rem;border-radius:6px;
   }
   .main-content{flex:1 1 auto;overflow-y:auto;padding:1.5rem 1.75rem 2.5rem;min-height:0}
-  .main-inner{max-width:72rem;margin:0 auto}
+  .main-inner{width:100%;max-width:none;margin:0}
   .sidebar-backdrop{
     display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:25;
   }
@@ -877,8 +886,6 @@
   /* Record tab: always full-width stacked cards */
 
   @media(min-width:640px){
-    body{max-width:960px;margin:0 auto;padding:1.5rem}
-    header h1{font-size:1.25rem}
     .stat-grid{grid-template-columns:repeat(3,1fr)}
     .trigger-settings{grid-template-columns:repeat(3,1fr)}
     .live-chart-canvas-box{height:280px}
@@ -886,7 +893,6 @@
   }
 
   @media(min-width:960px){
-    body{max-width:1180px;padding:1.75rem 2rem}
     .stat-grid{grid-template-columns:repeat(6,1fr)}
     .live-chart-canvas-box{height:320px}
     #log-box{height:280px;font-size:.78rem}
@@ -898,10 +904,8 @@
   }
 
   @media(min-width:1280px){
-    body{max-width:1360px;padding:2rem 2.5rem}
     .live-chart-canvas-box{height:380px}
     #log-box{height:340px}
-    header h1{font-size:1.35rem}
   }
 </style>
 <script>
@@ -964,15 +968,21 @@
         </span>
         <span class="nav-pill">Past &amp; Reports</span>
       </a>
-      <a class="nav-link{% if nav == 'settings' %} active{% endif %}" href="/settings" data-nav="settings">
-        <span class="nav-link-main">
+      <div class="nav-group{% if settings_nav_open %} is-open{% endif %}" id="nav-settings-group">
+        <div class="nav-group-label">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
             <circle cx="12" cy="12" r="3" stroke-width="2"></circle>
           </svg>
           Settings
-        </span>
-      </a>
+        </div>
+        <div class="nav-sub" role="group" aria-label="Settings sections">
+          <a class="nav-link{% if nav == 'settings-system' %} active{% endif %}" href="/settings/system" data-nav="settings-system"{% if nav == 'settings-system' %} aria-current="page"{% endif %}>System Health</a>
+          <a class="nav-link{% if nav == 'settings-recording' %} active{% endif %}" href="/settings/recording" data-nav="settings-recording"{% if nav == 'settings-recording' %} aria-current="page"{% endif %}>Recording Settings</a>
+          <a class="nav-link{% if nav == 'settings-ml' %} active{% endif %}" href="/settings/ml" data-nav="settings-ml"{% if nav == 'settings-ml' %} aria-current="page"{% endif %}>ML Settings</a>
+          <a class="nav-link{% if nav == 'settings-data' %} active{% endif %}" href="/settings/data" data-nav="settings-data"{% if nav == 'settings-data' %} aria-current="page"{% endif %}>Data settings</a>
+        </div>
+      </div>
     </nav>
   </div>
   <div class="sidebar-footer">
@@ -1008,7 +1018,7 @@
     </button>
     <span class="topbar-crumb">Node telemetry</span>
     <span class="topbar-sep" aria-hidden="true">/</span>
-    <span class="topbar-path" id="topbar-path">{% if page == 'record' %}record{% elif page == 'data' %}data-store{% elif page == 'settings' %}settings{% elif page == 'analyze' %}inspect{% elif page == 'report' %}report{% else %}{{ page }}{% endif %}</span>
+    <span class="topbar-path" id="topbar-path">{% if page == 'record' %}record{% elif page == 'data' %}data-store{% elif page == 'settings-system' %}settings / system{% elif page == 'settings-recording' %}settings / recording{% elif page == 'settings-ml' %}settings / ml{% elif page == 'settings-data' %}settings / data{% elif page == 'analyze' %}inspect{% elif page == 'report' %}report{% else %}{{ page }}{% endif %}</span>
   </div>
   <div class="topbar-right">
     {% if user_role == 'viewer' %}
@@ -1250,66 +1260,6 @@
   </div>
 </div>
 {% if recordings %}
-<section class="data-card" id="report-options">
-  <div class="data-card-head">
-    <h3>Report options</h3>
-    <p>Applied when you generate a report. Chunk ≈ 1&nbsp;s.</p>
-  </div>
-  <div class="data-card-body">
-    <div class="report-options-grid">
-      <div>
-        <label for="rpt-opt-min-event">Min event length (chunks / ≈seconds)</label>
-        <input type="number" id="rpt-opt-min-event" min="0" step="1" value="2">
-        <div class="field-note">Shorter elevated episodes are ignored in “What is making the noise”.</div>
-      </div>
-      <div>
-        <label for="rpt-opt-max-gap">Quiet-chunk bridge (max_gap_chunks)</label>
-        <input type="number" id="rpt-opt-max-gap" min="0" step="1" value="2">
-        <div class="field-note">Max consecutive below-threshold chunks kept inside one event.</div>
-      </div>
-      <div style="grid-column:1 / -1">
-        <div style="font-size:.78rem;font-weight:600;margin-bottom:.35rem">Active threshold</div>
-        <div class="radio-group" id="rpt-opt-threshold-mode">
-          <label><input type="radio" name="rpt-threshold-mode" value="absolute" checked> Absolute dBA</label>
-          <label><input type="radio" name="rpt-threshold-mode" value="l90_offset"> L90 + offset</label>
-        </div>
-        <div class="report-threshold-fields active" id="rpt-opt-abs-fields">
-          <label for="rpt-opt-threshold-db">Absolute threshold (dBA)</label>
-          <input type="number" id="rpt-opt-threshold-db" step="0.5" value="45">
-          <div class="field-note">Chunk counts as elevated when dBA ≥ this value.</div>
-        </div>
-        <div class="report-threshold-fields" id="rpt-opt-l90-fields">
-          <label for="rpt-opt-l90-offset">Offset above selection L90 (dBA)</label>
-          <input type="number" id="rpt-opt-l90-offset" step="0.5" value="5">
-          <div class="field-note">Threshold = L90 of selected recordings + this offset (negative allowed).</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-<section class="data-card" id="export-options">
-  <div class="data-card-head data-card-head-compact">
-    <h3>Download options</h3>
-  </div>
-  <div class="data-card-body">
-    <div class="export-options-grid">
-      <label class="check-row">
-        <input type="checkbox" id="dl-include-spectrum" checked>
-        <div>
-          Include spectrum
-          <span>Z + A 1/3-octave bands (~bulk of each line). Uncheck for smaller files.</span>
-        </div>
-      </label>
-      <label class="check-row">
-        <input type="checkbox" id="dl-include-preprocess" checked>
-        <div>
-          Include gate diagnostics
-          <span>yamnet_preprocess (L90 floor, thresholds, applied gain).</span>
-        </div>
-      </label>
-    </div>
-  </div>
-</section>
 <div class="data-files-kicker">Files available on disk</div>
 <div class="data-files-list">
   {% for recording in recordings %}
@@ -1577,14 +1527,14 @@
   </div>
 </div>
 
-<!-- ── SETTINGS ── -->
-<div class="tab-panel{% if page == 'settings' %} active{% endif %}" id="panel-settings" role="tabpanel"{% if page != 'settings' %} hidden{% endif %}>
+<!-- ── SETTINGS: System Health ── -->
+<div class="tab-panel{% if page == 'settings-system' %} active{% endif %}" id="panel-settings-system" role="tabpanel"{% if page != 'settings-system' %} hidden{% endif %}>
   <div class="card" id="system-health-card">
-    <h2>This Pi · system health</h2>
+    <h2>System Health</h2>
     <div class="field-note" style="margin-bottom:.65rem">
       Live CPU, memory, temperature, storage, and internet. Warm colours mean the
       device is under pressure — yellow ≈ watch it, red ≈ close to limits /
-      throttling / weak link. Updates while this tab is open.
+      throttling / weak link. Updates while this page is open.
     </div>
     <div class="sys-health-grid" id="sys-health-grid">
       <div class="sys-meter unknown" id="sys-cpu">
@@ -1631,9 +1581,12 @@
     <div class="sys-health-flags" id="sys-health-flags" hidden></div>
     <div class="sys-health-meta" id="sys-health-meta"></div>
   </div>
+</div><!-- /panel-settings-system -->
 
+<!-- ── SETTINGS: Recording ── -->
+<div class="tab-panel{% if page == 'settings-recording' %} active{% endif %}" id="panel-settings-recording" role="tabpanel"{% if page != 'settings-recording' %} hidden{% endif %}>
   <div class="card">
-    <h2>Recording</h2>
+    <h2>Recording Settings</h2>
     <div class="field-note" style="margin-bottom:.75rem">
       These defaults are used when you start a recording from the Record tab.
     </div>
@@ -1687,10 +1640,13 @@
     </div>
     <div class="inline-status" id="settings-audio-format-status"></div>
   </div>
+</div><!-- /panel-settings-recording -->
 
-  <h2 class="settings-section-title">Heavy ML Settings</h2>
+<!-- ── SETTINGS: ML ── -->
+<div class="tab-panel{% if page == 'settings-ml' %} active{% endif %}" id="panel-settings-ml" role="tabpanel"{% if page != 'settings-ml' %} hidden{% endif %}>
+  <h2 class="settings-section-title">ML Settings</h2>
 
-  <div class="settings-tabs" role="tablist" aria-label="Heavy ML backend settings">
+  <div class="settings-tabs" role="tablist" aria-label="ML backend settings">
     <button type="button" class="settings-tab" role="tab" id="heavy-tab-triggers"
             aria-selected="true" data-heavy-tab="triggers">Triggers</button>
     <button type="button" class="settings-tab" role="tab" id="heavy-tab-clap"
@@ -1881,7 +1837,71 @@
     <div class="inline-status" id="dasm-window-status"></div>
   </div>
   </div><!-- /dasm panel -->
-</div><!-- /panel-settings -->
+</div><!-- /panel-settings-ml -->
+
+<!-- ── SETTINGS: Data ── -->
+<div class="tab-panel{% if page == 'settings-data' %} active{% endif %}" id="panel-settings-data" role="tabpanel"{% if page != 'settings-data' %} hidden{% endif %}>
+  <section class="data-card" id="report-options">
+    <div class="data-card-head">
+      <h3>Report options</h3>
+      <p>Applied when you generate a report from the Data page. Chunk ≈ 1&nbsp;s.</p>
+    </div>
+    <div class="data-card-body">
+      <div class="report-options-grid">
+        <div>
+          <label for="rpt-opt-min-event">Min event length (chunks / ≈seconds)</label>
+          <input type="number" id="rpt-opt-min-event" min="0" step="1" value="2">
+          <div class="field-note">Shorter elevated episodes are ignored in “What is making the noise”.</div>
+        </div>
+        <div>
+          <label for="rpt-opt-max-gap">Quiet-chunk bridge (max_gap_chunks)</label>
+          <input type="number" id="rpt-opt-max-gap" min="0" step="1" value="2">
+          <div class="field-note">Max consecutive below-threshold chunks kept inside one event.</div>
+        </div>
+        <div style="grid-column:1 / -1">
+          <div style="font-size:.78rem;font-weight:600;margin-bottom:.35rem">Active threshold</div>
+          <div class="radio-group" id="rpt-opt-threshold-mode">
+            <label><input type="radio" name="rpt-threshold-mode" value="absolute" checked> Absolute dBA</label>
+            <label><input type="radio" name="rpt-threshold-mode" value="l90_offset"> L90 + offset</label>
+          </div>
+          <div class="report-threshold-fields active" id="rpt-opt-abs-fields">
+            <label for="rpt-opt-threshold-db">Absolute threshold (dBA)</label>
+            <input type="number" id="rpt-opt-threshold-db" step="0.5" value="45">
+            <div class="field-note">Chunk counts as elevated when dBA ≥ this value.</div>
+          </div>
+          <div class="report-threshold-fields" id="rpt-opt-l90-fields">
+            <label for="rpt-opt-l90-offset">Offset above selection L90 (dBA)</label>
+            <input type="number" id="rpt-opt-l90-offset" step="0.5" value="5">
+            <div class="field-note">Threshold = L90 of selected recordings + this offset (negative allowed).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="data-card" id="export-options">
+    <div class="data-card-head data-card-head-compact">
+      <h3>Download options</h3>
+    </div>
+    <div class="data-card-body">
+      <div class="export-options-grid">
+        <label class="check-row">
+          <input type="checkbox" id="dl-include-spectrum" checked>
+          <div>
+            Include spectrum
+            <span>Z + A 1/3-octave bands (~bulk of each line). Uncheck for smaller files.</span>
+          </div>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="dl-include-preprocess" checked>
+          <div>
+            Include gate diagnostics
+            <span>yamnet_preprocess (L90 floor, thresholds, applied gain).</span>
+          </div>
+        </label>
+      </div>
+    </div>
+  </section>
+</div><!-- /panel-settings-data -->
 
 </div><!-- /.main-inner -->
 </main>
@@ -2148,19 +2168,34 @@ let reportBudgetView = 'total';
 const PAGE_PATHS = {
   record: '/record',
   data: '/data',
-  settings: '/settings',
+  'settings-system': '/settings/system',
+  'settings-recording': '/settings/recording',
+  'settings-ml': '/settings/ml',
+  'settings-data': '/settings/data',
 };
 const PAGE_CRUMBS = {
   record: 'record',
   data: 'data-store',
-  settings: 'settings',
+  'settings-system': 'settings / system',
+  'settings-recording': 'settings / recording',
+  'settings-ml': 'settings / ml',
+  'settings-data': 'settings / data',
   analyze: 'inspect',
   report: 'report',
 };
+const SETTINGS_PAGES = new Set([
+  'settings-system',
+  'settings-recording',
+  'settings-ml',
+  'settings-data',
+]);
 const tabPanels = {
   record: document.getElementById('panel-record'),
   data: document.getElementById('panel-data'),
-  settings: document.getElementById('panel-settings'),
+  'settings-system': document.getElementById('panel-settings-system'),
+  'settings-recording': document.getElementById('panel-settings-recording'),
+  'settings-ml': document.getElementById('panel-settings-ml'),
+  'settings-data': document.getElementById('panel-settings-data'),
   analyze: document.getElementById('panel-analyze'),
   report: document.getElementById('panel-report'),
 };
@@ -2173,7 +2208,12 @@ function currentPageName() {
 }
 
 function navActiveForPage(page) {
-  return (page === 'analyze' || page === 'report' || page === 'data') ? 'data' : page;
+  if (page === 'analyze' || page === 'report' || page === 'data') return 'data';
+  return page;
+}
+
+function isSettingsPage(page) {
+  return SETTINGS_PAGES.has(page);
 }
 
 function setSidebarOpen(open) {
@@ -2186,8 +2226,6 @@ function setSidebarOpen(open) {
 
 function showPage(name, { push = false } = {}) {
   const page = PAGE_PATHS[name] ? name : 'record';
-  // Full pages (inspect/report) are server-rendered; don't SPA-swap into them.
-  if (page !== 'record' && page !== 'data' && page !== 'settings') return;
 
   document.body.setAttribute('data-active-page', page);
   document.body.setAttribute('data-nav-active', navActiveForPage(page));
@@ -2206,6 +2244,9 @@ function showPage(name, { push = false } = {}) {
     else link.removeAttribute('aria-current');
   });
 
+  const settingsGroup = document.getElementById('nav-settings-group');
+  if (settingsGroup) settingsGroup.classList.toggle('is-open', isSettingsPage(page));
+
   const crumb = document.getElementById('topbar-path');
   if (crumb) crumb.textContent = PAGE_CRUMBS[page] || page;
 
@@ -2216,10 +2257,12 @@ function showPage(name, { push = false } = {}) {
   setSidebarOpen(false);
 
   queueMicrotask(() => {
-    if (page === 'settings') {
+    if (page === 'settings-ml') {
       if (typeof loadPrompts === 'function') loadPrompts();
       if (typeof loadTriggersPanel === 'function') loadTriggersPanel();
       if (typeof loadDasmSettings === 'function') loadDasmSettings();
+    }
+    if (page === 'settings-system') {
       if (typeof startSystemHealthPolling === 'function') startSystemHealthPolling();
     } else if (typeof stopSystemHealthPolling === 'function') {
       stopSystemHealthPolling();
@@ -2291,7 +2334,10 @@ function pageFromPathname(pathname) {
   const p = (pathname || '').replace(/\/+$/, '') || '/';
   if (p === '/record' || p === '/') return 'record';
   if (p === '/data') return 'data';
-  if (p === '/settings') return 'settings';
+  if (p === '/settings' || p === '/settings/system') return 'settings-system';
+  if (p === '/settings/recording') return 'settings-recording';
+  if (p === '/settings/ml') return 'settings-ml';
+  if (p === '/settings/data') return 'settings-data';
   if (p.startsWith('/analyze/')) return 'analyze';
   if (p === '/report') return 'report';
   return currentPageName();
@@ -7598,10 +7644,10 @@ function stopSystemHealthPolling() {
   systemHealthTimer = null;
 }
 
-if (document.getElementById('panel-settings')?.classList.contains('active')) {
+if (document.getElementById('panel-settings-system')?.classList.contains('active')) {
   startSystemHealthPolling();
 } else {
-  // Sidebar uptime even when Settings is not open.
+  // Sidebar uptime even when System Health is not open.
   (async () => {
     const { ok, data } = await apiFetch('/api/system');
     if (!ok || !data) return;
@@ -7610,6 +7656,11 @@ if (document.getElementById('panel-settings')?.classList.contains('active')) {
       sidebarUp.textContent = `up ${fmtUptime(data.uptime_s)}`;
     }
   })();
+}
+if (document.getElementById('panel-settings-ml')?.classList.contains('active')) {
+  if (typeof loadPrompts === 'function') loadPrompts();
+  if (typeof loadTriggersPanel === 'function') loadTriggersPanel();
+  if (typeof loadDasmSettings === 'function') loadDasmSettings();
 }
 
 applyViewerLocks();

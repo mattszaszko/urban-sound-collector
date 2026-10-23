@@ -1619,13 +1619,20 @@ def _safe_post_login_path(next_path: str | None) -> str:
     return path
 
 
+_SETTINGS_PAGES = {
+    "settings-system",
+    "settings-recording",
+    "settings-ml",
+    "settings-data",
+}
+
 _LEGACY_TAB_PATHS = {
     "record": "/record",
     "run": "/record",
     "data": "/data",
-    "settings": "/settings",
-    "prompts": "/settings",
-    "triggers": "/settings",
+    "settings": "/settings/system",
+    "prompts": "/settings/ml",
+    "triggers": "/settings/ml",
 }
 
 
@@ -1715,12 +1722,17 @@ def _index_context(
         page = "analyze"
     elif report_list:
         page = "report"
-    elif active_page in ("record", "data", "settings"):
+    elif active_page in ("record", "data") or active_page in _SETTINGS_PAGES:
         page = active_page
+    elif active_page == "settings":
+        page = "settings-system"
     else:
         page = "record"
-    # Sidebar: Inspect/Report live under Data.
-    nav_active = "data" if page in ("analyze", "report", "data") else page
+    # Sidebar: Inspect/Report under Data; settings subpages keep their own nav id.
+    if page in ("analyze", "report", "data"):
+        nav_active = "data"
+    else:
+        nav_active = page
     return dict(
         request=request,
         status=status,
@@ -1741,6 +1753,7 @@ def _index_context(
         error=error,
         active_page=page,
         nav_active=nav_active,
+        settings_nav_open=page in _SETTINGS_PAGES,
         analyze_recording=analyze_recording,
         report_recordings=report_list,
     )
@@ -1789,8 +1802,50 @@ async def page_settings(request: Request):
     denied = _require_auth_page(request)
     if denied:
         return denied
+    return RedirectResponse("/settings/system", status_code=303)
+
+
+@app.get("/settings/system", response_class=HTMLResponse)
+async def page_settings_system(request: Request):
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
     return _render(
-        "index.html", **_index_context(request, active_page="settings")
+        "index.html",
+        **_index_context(request, active_page="settings-system"),
+    )
+
+
+@app.get("/settings/recording", response_class=HTMLResponse)
+async def page_settings_recording(request: Request):
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
+    return _render(
+        "index.html",
+        **_index_context(request, active_page="settings-recording"),
+    )
+
+
+@app.get("/settings/ml", response_class=HTMLResponse)
+async def page_settings_ml(request: Request):
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
+    return _render(
+        "index.html",
+        **_index_context(request, active_page="settings-ml"),
+    )
+
+
+@app.get("/settings/data", response_class=HTMLResponse)
+async def page_settings_data(request: Request):
+    denied = _require_auth_page(request)
+    if denied:
+        return denied
+    return _render(
+        "index.html",
+        **_index_context(request, active_page="settings-data"),
     )
 
 
