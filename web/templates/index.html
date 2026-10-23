@@ -134,12 +134,15 @@
   }
   .nav-group{margin-top:.15rem}
   .nav-group-label{
-    display:flex;align-items:center;gap:.7rem;padding:.55rem .85rem;
-    font-size:.85rem;font-weight:650;color:var(--muted);
+    display:flex;align-items:center;gap:.7rem;width:100%;padding:.6rem .85rem;
+    border:1px solid transparent;border-radius:8px;background:transparent;
+    font:inherit;font-size:.85rem;font-weight:650;color:var(--muted);cursor:pointer;text-align:left;
   }
+  .nav-group-label:hover{background:var(--hover-tab);color:var(--text)}
   .nav-group-label svg{width:1.15rem;height:1.15rem;flex-shrink:0;opacity:.85}
   .nav-group.is-open .nav-group-label{color:var(--text)}
-  .nav-sub{display:flex;flex-direction:column;gap:.15rem;padding:0 .35rem .35rem 1.15rem}
+  .nav-sub{display:none;flex-direction:column;gap:.15rem;padding:.15rem .35rem .35rem 1.15rem}
+  .nav-group.is-open .nav-sub{display:flex}
   .nav-sub .nav-link{font-size:.78rem;font-weight:550;padding:.45rem .7rem}
   .sidebar-footer{
     flex-shrink:0;padding:.85rem 1rem 1rem;border-top:1px solid var(--border);
@@ -969,14 +972,16 @@
         <span class="nav-pill">Past &amp; Reports</span>
       </a>
       <div class="nav-group{% if settings_nav_open %} is-open{% endif %}" id="nav-settings-group">
-        <div class="nav-group-label">
+        <button type="button" class="nav-group-label" id="nav-settings-toggle"
+                aria-expanded="{{ 'true' if settings_nav_open else 'false' }}"
+                aria-controls="nav-settings-sub">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
             <circle cx="12" cy="12" r="3" stroke-width="2"></circle>
           </svg>
           Settings
-        </div>
-        <div class="nav-sub" role="group" aria-label="Settings sections">
+        </button>
+        <div class="nav-sub" id="nav-settings-sub" role="group" aria-label="Settings sections"{% if not settings_nav_open %} hidden{% endif %}>
           <a class="nav-link{% if nav == 'settings-system' %} active{% endif %}" href="/settings/system" data-nav="settings-system"{% if nav == 'settings-system' %} aria-current="page"{% endif %}>System Health</a>
           <a class="nav-link{% if nav == 'settings-recording' %} active{% endif %}" href="/settings/recording" data-nav="settings-recording"{% if nav == 'settings-recording' %} aria-current="page"{% endif %}>Recording Settings</a>
           <a class="nav-link{% if nav == 'settings-ml' %} active{% endif %}" href="/settings/ml" data-nav="settings-ml"{% if nav == 'settings-ml' %} aria-current="page"{% endif %}>ML Settings</a>
@@ -1016,8 +1021,6 @@
         <path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/>
       </svg>
     </button>
-    <span class="topbar-crumb">Node telemetry</span>
-    <span class="topbar-sep" aria-hidden="true">/</span>
     <span class="topbar-path" id="topbar-path">{% if page == 'record' %}record{% elif page == 'data' %}data-store{% elif page == 'settings-system' %}settings / system{% elif page == 'settings-recording' %}settings / recording{% elif page == 'settings-ml' %}settings / ml{% elif page == 'settings-data' %}settings / data{% elif page == 'analyze' %}inspect{% elif page == 'report' %}report{% else %}{{ page }}{% endif %}</span>
   </div>
   <div class="topbar-right">
@@ -2244,8 +2247,13 @@ function showPage(name, { push = false } = {}) {
     else link.removeAttribute('aria-current');
   });
 
+  const settingsOpen = isSettingsPage(page);
   const settingsGroup = document.getElementById('nav-settings-group');
-  if (settingsGroup) settingsGroup.classList.toggle('is-open', isSettingsPage(page));
+  const settingsToggle = document.getElementById('nav-settings-toggle');
+  const settingsSub = document.getElementById('nav-settings-sub');
+  if (settingsGroup) settingsGroup.classList.toggle('is-open', settingsOpen);
+  if (settingsToggle) settingsToggle.setAttribute('aria-expanded', settingsOpen ? 'true' : 'false');
+  if (settingsSub) settingsSub.hidden = !settingsOpen;
 
   const crumb = document.getElementById('topbar-path');
   if (crumb) crumb.textContent = PAGE_CRUMBS[page] || page;
@@ -2313,6 +2321,13 @@ function switchTab(name) {
       showPage(name, { push: true });
     });
   });
+  const settingsToggle = document.getElementById('nav-settings-toggle');
+  if (settingsToggle) {
+    settingsToggle.addEventListener('click', () => {
+      // Expand Settings and land on System Health by default.
+      showPage('settings-system', { push: true });
+    });
+  }
   window.addEventListener('popstate', (ev) => {
     const page = (ev.state && ev.state.page) || pageFromPathname(window.location.pathname);
     if (PAGE_PATHS[page]) showPage(page, { push: false });
