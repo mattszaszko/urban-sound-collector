@@ -114,6 +114,67 @@ def slim_event_point(
             except (TypeError, ValueError):
                 continue
 
+    dasm_status: str | None = None
+    dasm_label: str | None = None
+    dasm_conf: float | None = None
+    dasm_event_seconds: float | None = None
+    dasm_labels: list[dict[str, Any]] | None = None
+    dasm_raw = event.get("dasm")
+    if isinstance(dasm_raw, dict):
+        raw_status = dasm_raw.get("status")
+        if isinstance(raw_status, str):
+            dasm_status = raw_status
+        raw_lab = dasm_raw.get("top_label")
+        if isinstance(raw_lab, str):
+            dasm_label = raw_lab
+        try:
+            if dasm_raw.get("top_confidence") is not None:
+                dasm_conf = float(dasm_raw["top_confidence"])
+        except (TypeError, ValueError):
+            dasm_conf = None
+        try:
+            if dasm_raw.get("event_seconds") is not None:
+                dasm_event_seconds = float(dasm_raw["event_seconds"])
+        except (TypeError, ValueError):
+            dasm_event_seconds = None
+        raw_labels = dasm_raw.get("labels")
+        if isinstance(raw_labels, list) and dasm_status == "triggered":
+            # Keep a compact multilabel payload for chart overlays.
+            compact: list[dict[str, Any]] = []
+            for item in raw_labels:
+                if not isinstance(item, dict):
+                    continue
+                lab = item.get("label")
+                if not isinstance(lab, str) or not lab:
+                    continue
+                entry: dict[str, Any] = {"label": lab}
+                try:
+                    if item.get("clip_confidence") is not None:
+                        entry["clip_confidence"] = float(item["clip_confidence"])
+                except (TypeError, ValueError):
+                    pass
+                spans = item.get("spans")
+                if isinstance(spans, list):
+                    clean_spans = []
+                    for sp in spans:
+                        if not isinstance(sp, dict):
+                            continue
+                        try:
+                            clean_spans.append(
+                                {
+                                    "t0_s": float(sp["t0_s"]),
+                                    "t1_s": float(sp["t1_s"]),
+                                    "confidence": float(sp.get("confidence", 0.0)),
+                                }
+                            )
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                    if clean_spans:
+                        entry["spans"] = clean_spans
+                compact.append(entry)
+            if compact:
+                dasm_labels = compact
+
     chunk_index = event.get("chunk_index")
     try:
         chunk_i = int(chunk_index) if chunk_index is not None else None
@@ -134,6 +195,11 @@ def slim_event_point(
         "clap": clap_label,
         "clap_conf": clap_conf,
         "clap_event_seconds": clap_event_seconds,
+        "dasm_status": dasm_status,
+        "dasm": dasm_label,
+        "dasm_conf": dasm_conf,
+        "dasm_event_seconds": dasm_event_seconds,
+        "dasm_labels": dasm_labels,
     }
 
     # Compact A-weighted spectrum for chart coloring / Spectrum widget (timbre, not ML labels).
@@ -272,6 +338,34 @@ def clap_triggered_markers(
                 marker["event_seconds"] = float(secs)
         except (TypeError, ValueError):
             pass
+        out.append(marker)
+    return out
+
+
+def dasm_triggered_markers(
+    points: list[dict],
+    *,
+    min_confidence: float = 0.0,
+) -> list[dict]:
+    out: list[dict] = []
+    for p in points:
+        if p.get("dasm_status") != "triggered" or not p.get("dasm") or p.get("dba") is None:
+            continue
+        conf = _point_confidence(p, "dasm_conf")
+        if conf is not None and conf < float(min_confidence):
+            continue
+        marker: dict[str, Any] = {"t": p["t"], "dba": p["dba"], "label": p["dasm"]}
+        if conf is not None:
+            marker["confidence"] = conf
+        secs = p.get("dasm_event_seconds")
+        try:
+            if secs is not None and float(secs) > 0:
+                marker["event_seconds"] = float(secs)
+        except (TypeError, ValueError):
+            pass
+        labels = p.get("dasm_labels")
+        if isinstance(labels, list):
+            marker["labels"] = labels
         out.append(marker)
     return out
 

@@ -26,6 +26,12 @@ secrets/
 models/clap/*.onnx
 models/clap/tokenizer.json
 
+# DASM ONNX + base queries / bn0 (install from spike; see models/README.md)
+models/dasm/*.onnx
+models/dasm/*.npy
+models/dasm/*.npz
+models/dasm/bn0.npz
+
 
 # OS / editor
 .DS_Store

@@ -24,6 +24,7 @@ from core.audio_constants import (
 )
 from core.capture_alsa import AlsAudioCapture
 from core.classifier_clap import ClapClassifier
+from core.classifier_dasm import DasmClassifier
 from core.classifier_tflite import (
     DEFAULT_MODEL_PATH,
     MODEL_VERSION,
@@ -41,6 +42,7 @@ from core.clap_trigger import (
     evaluate_arm,
     load_trigger_config,
 )
+from core.dasm_capture import FixedDasmCapture
 from core.events import build_noise_event, new_recording_id, utc_now_iso
 from core.host_identity import default_device_id
 from core.loudness import DEFAULT_CALIB_OFFSET, LoudnessEngine
@@ -270,7 +272,17 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help=(
             "Enable event-driven CLAP zero-shot with dynamic energy slicing "
-            "(HPF + peak-norm + repeatpad before ONNX; requires rebuilt prompt embeddings)."
+            "(HPF + peak-norm + repeatpad before ONNX; requires rebuilt prompt embeddings). "
+            "Mutually exclusive with --enable-dasm."
+        ),
+    )
+    parser.add_argument(
+        "--enable-dasm",
+        action="store_true",
+        help=(
+            "Enable event-driven DASM open-vocab SED with a fixed ±5 s window "
+            "(shared Heavy ML triggers; ORT FP32 + baked query vectors). "
+            "Mutually exclusive with --enable-clap."
         ),
     )
     parser.add_argument(
@@ -403,6 +415,8 @@ def stream_live(
     enable_spectrum: bool = True,
     enable_clap: bool = False,
     clap_classifier: ClapClassifier | None = None,
+    enable_dasm: bool = False,
+    dasm_classifier: DasmClassifier | None = None,
     audio_path: Path | None = None,
     audio_format: str = DEFAULT_AUDIO_FORMAT,
 ) -> int:
@@ -414,6 +428,8 @@ def stream_live(
     Optional CLAP: dynamic energy slice after YAMNet wake (lookback onset,
     settle/max-duration offset, then repeatpad to 10 s CLAP input; same HPF
     as Branch B, then peak-norm; no RMS AGC).
+    Optional DASM: fixed ±5 s window after the same shared YAMNet arm rules;
+    ORT multilabel spans (exclusive with CLAP).
     Optional audio: ungained mono 16-bit PCM @ capture rate (FLAC or WAV).
     Startup: discard the first ~2 s of PCM (mic/ALSA settle pop) before
     any branch, audio file, or JSONL processing.
@@ -421,11 +437,15 @@ def stream_live(
     Returns:
         Number of events written.
     """
+    if enable_clap and enable_dasm:
+        raise ValueError("enable_clap and enable_dasm are mutually exclusive")
     chunk_index = 0
     events_written = 0
     gated_chunks = 0
     clap_triggers = 0
     clap_skips = 0
+    dasm_triggers = 0
+    dasm_skips = 0
     startup_discard_samples_left = int(
         round(CAPTURE_SAMPLE_RATE * CAPTURE_STARTUP_DISCARD_SECONDS)
     )
@@ -442,36 +462,57 @@ def stream_live(
     if enable_spectrum:
         spectrum_engine = SpectrumEngine(sample_rate=float(CAPTURE_SAMPLE_RATE))
 
-    clap_state = ClapTriggerState()
-    clap_config = None
+    heavy_state = ClapTriggerState()
+    heavy_config = None
     clap_job: DynamicClapCapture | None = None
+    dasm_job: FixedDasmCapture | None = None
     if enable_clap:
         if clap_classifier is None:
             raise ValueError("enable_clap requires a ClapClassifier instance")
-        clap_config = load_trigger_config()
+        heavy_config = load_trigger_config()
         clap_job = DynamicClapCapture(
             sample_rate=int(CAPTURE_SAMPLE_RATE),
-            lookback_seconds=float(clap_config.lookback_seconds),
-            pre_onset_pad_ms=float(clap_config.pre_onset_pad_ms),
-            end_settle_chunks=int(clap_config.end_settle_chunks),
-            max_event_seconds=float(clap_config.max_event_seconds),
-            onset_dba_margin_db=float(clap_config.onset_dba_margin_db),
-            peak_decay_db=float(clap_config.peak_decay_db),
+            lookback_seconds=float(heavy_config.lookback_seconds),
+            pre_onset_pad_ms=float(heavy_config.pre_onset_pad_ms),
+            end_settle_chunks=int(heavy_config.end_settle_chunks),
+            max_event_seconds=float(heavy_config.max_event_seconds),
+            onset_dba_margin_db=float(heavy_config.onset_dba_margin_db),
+            peak_decay_db=float(heavy_config.peak_decay_db),
         )
         logger.info(
             "CLAP enabled: dynamic_energy lookback=%ss pad=%sms settle=%s "
             "max_event=%ss margin_db=%s peak_decay_db=%s cooldown=%ss "
             "dba_threshold=%s trigger_labels=%s ambiguous_labels=%s",
-            clap_config.lookback_seconds,
-            clap_config.pre_onset_pad_ms,
-            clap_config.end_settle_chunks,
-            clap_config.max_event_seconds,
-            clap_config.onset_dba_margin_db,
-            clap_config.peak_decay_db,
-            clap_config.cooldown_seconds,
-            clap_config.dba_threshold,
-            len(clap_config.trigger_labels),
-            len(clap_config.ambiguous_labels),
+            heavy_config.lookback_seconds,
+            heavy_config.pre_onset_pad_ms,
+            heavy_config.end_settle_chunks,
+            heavy_config.max_event_seconds,
+            heavy_config.onset_dba_margin_db,
+            heavy_config.peak_decay_db,
+            heavy_config.cooldown_seconds,
+            heavy_config.dba_threshold,
+            len(heavy_config.trigger_labels),
+            len(heavy_config.ambiguous_labels),
+        )
+    if enable_dasm:
+        if dasm_classifier is None:
+            raise ValueError("enable_dasm requires a DasmClassifier instance")
+        heavy_config = load_trigger_config()
+        win = dasm_classifier.window
+        dasm_job = FixedDasmCapture(
+            sample_rate=int(CAPTURE_SAMPLE_RATE),
+            pre_roll_s=float(win.pre_roll_s),
+            post_roll_s=float(win.post_roll_s),
+        )
+        logger.info(
+            "DASM enabled: fixed_pm pre=%ss post=%ss cooldown=%ss "
+            "dba_threshold=%s trigger_labels=%s ambiguous_labels=%s",
+            win.pre_roll_s,
+            win.post_roll_s,
+            heavy_config.cooldown_seconds,
+            heavy_config.dba_threshold,
+            len(heavy_config.trigger_labels),
+            len(heavy_config.ambiguous_labels),
         )
 
     logger.info(
@@ -589,7 +630,7 @@ def stream_live(
             if (
                 enable_clap
                 and clap_classifier is not None
-                and clap_config is not None
+                and heavy_config is not None
                 and clap_job is not None
             ):
                 top_label = predictions[0]["label"] if predictions else "n/a"
@@ -635,7 +676,7 @@ def stream_live(
                                     "window": "dynamic_energy",
                                     "window_seconds": link.get("event_seconds"),
                                     "inference_ms": clap_result.inference_ms,
-                                    "cooldown_seconds": clap_config.cooldown_seconds,
+                                    "cooldown_seconds": heavy_config.cooldown_seconds,
                                 },
                             }
                             clap_triggers += 1
@@ -686,8 +727,8 @@ def stream_live(
                         dba_spl=dba_spl,
                         preroll_ready=clap_job.warm,
                         capture_active=False,
-                        config=clap_config,
-                        state=clap_state,
+                        config=heavy_config,
+                        state=heavy_state,
                     )
                     if should_arm:
                         clap_job.arm(
@@ -699,7 +740,7 @@ def stream_live(
                                 "trigger_dBA_spl": dba_spl,
                             }
                         )
-                        clap_state.last_arm_monotonic = time.monotonic()
+                        heavy_state.last_arm_monotonic = time.monotonic()
                         if clap_job.ready:
                             # Seed already hit max duration (rare) — infer now.
                             try:
@@ -719,7 +760,7 @@ def stream_live(
                                         "window": "dynamic_energy",
                                         "window_seconds": link.get("event_seconds"),
                                         "inference_ms": clap_result.inference_ms,
-                                        "cooldown_seconds": clap_config.cooldown_seconds,
+                                        "cooldown_seconds": heavy_config.cooldown_seconds,
                                     },
                                 }
                                 clap_triggers += 1
@@ -766,6 +807,131 @@ def stream_live(
                         if status in {CLAP_STATUS_SKIPPED, CLAP_STATUS_GATED}:
                             clap_skips += 1
 
+            dasm_payload = None
+            if (
+                enable_dasm
+                and dasm_classifier is not None
+                and heavy_config is not None
+                and dasm_job is not None
+            ):
+                top_label = predictions[0]["label"] if predictions else "n/a"
+                dba_spl = float(metrics["dBA_spl"])
+                created_at = event_created_at
+                prep_meta = prep.metadata or {}
+                if "gate_open" in prep_meta:
+                    gate_open = bool(prep_meta["gate_open"])
+                else:
+                    gate_open = not bool(prep.gated)
+                telem = ChunkTelemetry(
+                    gate_open=gate_open,
+                    dba_spl=dba_spl,
+                    raw_rms_dbfs=(
+                        float(prep_meta["raw_rms_dbfs"])
+                        if prep_meta.get("raw_rms_dbfs") is not None
+                        else None
+                    ),
+                    ambient_noise_floor_dbfs=(
+                        float(prep_meta["ambient_noise_floor_dbfs"])
+                        if prep_meta.get("ambient_noise_floor_dbfs") is not None
+                        else None
+                    ),
+                    chunk_index=chunk_index,
+                )
+                dasm_job.feed(pcm, telem)
+
+                if dasm_job.active:
+                    if dasm_job.ready:
+                        try:
+                            dasm_result = dasm_classifier.predict(dasm_job.waveform())
+                            link = dict(dasm_job.meta)
+                            event_s = float(link.get("event_seconds") or dasm_job.event_seconds)
+                            dasm_payload = {
+                                "status": CLAP_STATUS_TRIGGERED,
+                                "window_start_utc": link.get("trigger_created_at"),
+                                "window_end_utc": created_at,
+                                "event_seconds": event_s,
+                                "labels": dasm_result.labels,
+                                "top_label": dasm_result.top_label,
+                                "top_confidence": dasm_result.top_confidence,
+                                "model_name": dasm_result.model_name,
+                                "model_version": dasm_result.model_version,
+                                "inference_ms": dasm_result.inference_ms,
+                                "trigger_reason": link.get("trigger_reason"),
+                                "trigger_yamnet_label": link.get("trigger_yamnet_label"),
+                                "trigger_chunk_index": link.get("trigger_chunk_index"),
+                                "mel": dasm_result.mel_meta,
+                            }
+                            dasm_triggers += 1
+                            logger.info(
+                                "DASM triggered reason=%s top=%s ms=%s "
+                                "trigger_chunk=%s event_s=%s labels=%s",
+                                link.get("trigger_reason"),
+                                dasm_result.top_label,
+                                dasm_result.inference_ms,
+                                link.get("trigger_chunk_index"),
+                                event_s,
+                                len(dasm_result.labels),
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("DASM inference failed: %s", exc)
+                            dasm_payload = {
+                                "status": CLAP_STATUS_SKIPPED,
+                                "labels": [],
+                                "trigger_reason": f"error:{exc}",
+                            }
+                            dasm_skips += 1
+                        dasm_job.clear()
+                    else:
+                        dasm_payload = {
+                            "status": CLAP_STATUS_PENDING,
+                            "labels": [],
+                            "event_seconds": dasm_job.event_seconds,
+                            "trigger_reason": dasm_job.meta.get("trigger_reason"),
+                            "post_collected": dasm_job.post_collected_samples,
+                        }
+                else:
+                    should_arm, status, reason = evaluate_arm(
+                        gated=bool(prep.gated),
+                        top_label=str(top_label),
+                        dba_spl=dba_spl,
+                        preroll_ready=dasm_job.warm,
+                        capture_active=False,
+                        config=heavy_config,
+                        state=heavy_state,
+                    )
+                    if should_arm:
+                        dasm_job.arm(
+                            {
+                                "trigger_chunk_index": chunk_index,
+                                "trigger_created_at": created_at,
+                                "trigger_reason": reason,
+                                "trigger_yamnet_label": str(top_label),
+                                "trigger_dBA_spl": dba_spl,
+                            }
+                        )
+                        heavy_state.last_arm_monotonic = time.monotonic()
+                        dasm_payload = {
+                            "status": CLAP_STATUS_SCHEDULED,
+                            "labels": [],
+                            "event_seconds": dasm_job.event_seconds,
+                            "trigger_reason": reason,
+                            "window": "fixed_pm",
+                        }
+                        logger.info(
+                            "DASM scheduled reason=%s chunk=%s (fixed ±%ss)",
+                            reason,
+                            chunk_index,
+                            dasm_job.pre_roll_s,
+                        )
+                    else:
+                        dasm_payload = {
+                            "status": status,
+                            "labels": [],
+                            "trigger_reason": reason,
+                        }
+                        if status in {CLAP_STATUS_SKIPPED, CLAP_STATUS_GATED}:
+                            dasm_skips += 1
+
             result = build_noise_event(
                 device_id=device_id,
                 chunk_index=chunk_index,
@@ -778,6 +944,7 @@ def stream_live(
                 spectrum=spectrum,
                 yamnet_preprocess=prep.metadata,
                 clap=clap_payload,
+                dasm=dasm_payload,
                 created_at=event_created_at,
             )
             emit_event(
@@ -792,7 +959,8 @@ def stream_live(
             if events_written % 60 == 0:
                 logger.info(
                     "Progress: %s event(s) written (chunk_index=%s, top=%s, "
-                    "gated=%s/%s, clap_triggers=%s, clap_skips=%s, file=%s)",
+                    "gated=%s/%s, clap_triggers=%s, clap_skips=%s, "
+                    "dasm_triggers=%s, dasm_skips=%s, file=%s)",
                     events_written,
                     chunk_index - 1,
                     result.get("top_label"),
@@ -800,6 +968,8 @@ def stream_live(
                     events_written,
                     clap_triggers,
                     clap_skips,
+                    dasm_triggers,
+                    dasm_skips,
                     writer.path.name,
                 )
 
@@ -878,12 +1048,24 @@ def main(argv: List[str] | None = None) -> int:
             gate_subwindow_ms=args.yamnet_gate_subwindow_ms,
             gate_release_chunks=max(1, args.yamnet_gate_release_chunks),
         )
+        if args.enable_clap and args.enable_dasm:
+            logger.error("--enable-clap and --enable-dasm are mutually exclusive")
+            return 2
+
         clap_classifier = None
         if args.enable_clap:
             try:
                 clap_classifier = ClapClassifier(hpf_hz=args.yamnet_hpf_hz)
             except (FileNotFoundError, RuntimeError, ValueError) as exc:
                 logger.error("CLAP unavailable: %s", exc)
+                return 1
+
+        dasm_classifier = None
+        if args.enable_dasm:
+            try:
+                dasm_classifier = DasmClassifier(hpf_hz=args.yamnet_hpf_hz)
+            except (FileNotFoundError, RuntimeError, ValueError) as exc:
+                logger.error("DASM unavailable: %s", exc)
                 return 1
 
         audio_path: Path | None = None
@@ -912,6 +1094,8 @@ def main(argv: List[str] | None = None) -> int:
             enable_spectrum=not args.no_spectrum,
             enable_clap=bool(args.enable_clap),
             clap_classifier=clap_classifier,
+            enable_dasm=bool(args.enable_dasm),
+            dasm_classifier=dasm_classifier,
             audio_path=audio_path,
             audio_format=audio_format,
         )

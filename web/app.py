@@ -82,6 +82,9 @@ else:
 CONFIG_DIR = REPO_ROOT / "config"
 CLAP_PROMPTS_PATH = CONFIG_DIR / "clap_prompts.json"
 CLAP_TRIGGERS_PATH = CONFIG_DIR / "clap_triggers.json"
+DASM_PROMPTS_PATH = CONFIG_DIR / "dasm_prompts.json"
+DASM_WINDOW_PATH = CONFIG_DIR / "dasm_window.json"
+DASM_EMBEDDINGS_PATH = CONFIG_DIR / "dasm_query_embeddings.npz"
 YAMNET_CATALOG_PATH = CONFIG_DIR / "yamnet_label_catalog.json"
 
 # ---------------------------------------------------------------------------
@@ -1655,6 +1658,14 @@ async def index(request: Request):
     return _render("index.html", **_index_context(request))
 
 
+@app.get("/help/dasm-bake", response_class=HTMLResponse)
+async def help_dasm_bake(request: Request):
+    """Step-by-step explainer: PC bake → git → Pi pull for DASM embeddings."""
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    return _render("help_dasm_bake.html")
+
+
 @app.get("/analyze/{filename}", response_class=HTMLResponse)
 async def analyze_recording_page(filename: str, request: Request):
     if not is_authenticated(request):
@@ -1728,6 +1739,8 @@ async def api_start(
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
     gate_sensitivity_db: float = Form(DEFAULT_GATE_SENSITIVITY_DB),
     enable_clap: str = Form(""),
+    enable_dasm: str = Form(""),
+    heavy_ml: str = Form(""),
     record_audio: str = Form(""),
     audio_format: str = Form(""),
 ):
@@ -1784,7 +1797,25 @@ async def api_start(
     safe_name = _sanitize_recording_name(recording_name)
     output = RECORDINGS_DIR / f"{safe_name}-{_utc_now()}.jsonl"
     duration = _hours_to_timeout(hours)
-    clap_on = enable_clap in {"1", "true", "on", "yes"}
+    # Prefer exclusive heavy_ml selector; fall back to legacy enable_clap checkbox.
+    heavy = (heavy_ml or "").strip().lower()
+    if heavy in {"clap", "dasm", "off", ""}:
+        clap_on = heavy == "clap"
+        dasm_on = heavy == "dasm"
+    else:
+        clap_on = enable_clap in {"1", "true", "on", "yes"}
+        dasm_on = enable_dasm in {"1", "true", "on", "yes"}
+    if clap_on and dasm_on:
+        if wants_json:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "code": "heavy_ml_exclusive",
+                    "error": "CLAP and DASM cannot both be enabled.",
+                },
+                status_code=400,
+            )
+        return RedirectResponse("/?error=heavy_ml_exclusive", status_code=303)
     audio_on = record_audio in {"1", "true", "on", "yes"}
     fmt = normalize_audio_format(audio_format or AUDIO_FORMAT)
     cmd = [
@@ -1798,6 +1829,8 @@ async def api_start(
     ]
     if clap_on:
         cmd.append("--enable-clap")
+    if dasm_on:
+        cmd.append("--enable-dasm")
     if audio_on:
         cmd.extend(["--record-audio", "--audio-format", fmt])
     full_cmd = ["timeout", duration] + cmd
@@ -1816,6 +1849,8 @@ async def api_start(
                 "message": "Collector process started",
                 "output_file": str(output),
                 "enable_clap": clap_on,
+                "enable_dasm": dasm_on,
+                "heavy_ml": "clap" if clap_on else ("dasm" if dasm_on else "off"),
                 "record_audio": audio_on,
                 "audio_format": fmt if audio_on else None,
                 "startup_discard_s": float(CAPTURE_STARTUP_DISCARD_SECONDS),
@@ -2559,6 +2594,125 @@ async def api_yamnet_catalog_sync(request: Request):
             "themes": data.get("themes", []),
             "synced_at": data.get("synced_at"),
             "log": completed.stdout.strip(),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# DASM config APIs (prompts + window + status)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dasm/prompts")
+async def api_dasm_prompts_get(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.dasm_onnx import onnx_ready_status
+    from core.dasm_prompts import embedding_sync_status, load_prompt_pairs
+
+    pairs = load_prompt_pairs(DASM_PROMPTS_PATH) if DASM_PROMPTS_PATH.exists() else []
+    sync = embedding_sync_status(
+        pairs,
+        prompts_path=DASM_PROMPTS_PATH,
+        embeddings_path=DASM_EMBEDDINGS_PATH,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "prompts": [{"label": p.label, "prompt": p.prompt} for p in pairs],
+            "sync": sync,
+            "onnx": onnx_ready_status(),
+            "rebuild_hint": (
+                "No in-app rebuild. On a PC with the Transformer4SED spike + MGA-CLAP, "
+                "run: python scripts/bake_dasm_embeddings.py --spike-root <T4SED>, "
+                "commit config/dasm_query_embeddings.npz, then git pull on the Pi."
+            ),
+        }
+    )
+
+
+@app.put("/api/dasm/prompts")
+async def api_dasm_prompts_put(request: Request):
+    denied = _require_admin_for_clap_write(request)
+    if denied:
+        return denied
+    from core.dasm_prompts import DasmPromptPair, save_prompt_pairs
+
+    body = await request.json()
+    raw = body.get("prompts", [])
+    try:
+        pairs = [
+            DasmPromptPair(
+                label=str(x["label"]).strip(), prompt=str(x["prompt"]).strip()
+            )
+            for x in raw
+        ]
+        save_prompt_pairs(pairs, DASM_PROMPTS_PATH)
+    except (KeyError, TypeError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "count": len(pairs)})
+
+
+@app.get("/api/dasm/window")
+async def api_dasm_window_get(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.dasm_prompts import load_window_config
+
+    cfg = load_window_config(DASM_WINDOW_PATH)
+    return JSONResponse(
+        {
+            "ok": True,
+            "pre_roll_s": cfg.pre_roll_s,
+            "post_roll_s": cfg.post_roll_s,
+            "frame_threshold": cfg.frame_threshold,
+            "min_span_s": cfg.min_span_s,
+            "frames_per_second": cfg.frames_per_second,
+        }
+    )
+
+
+@app.put("/api/dasm/window")
+async def api_dasm_window_put(request: Request):
+    denied = _require_admin_for_clap_write(request)
+    if denied:
+        return denied
+    from core.dasm_prompts import DasmWindowConfig, save_window_config
+
+    body = await request.json()
+    try:
+        cfg = DasmWindowConfig(
+            pre_roll_s=float(body.get("pre_roll_s", 5.0)),
+            post_roll_s=float(body.get("post_roll_s", 5.0)),
+            frame_threshold=float(body.get("frame_threshold", 0.35)),
+            min_span_s=float(body.get("min_span_s", 0.15)),
+            frames_per_second=float(body.get("frames_per_second", 50.0)),
+        ).normalized()
+        save_window_config(cfg, DASM_WINDOW_PATH)
+    except (TypeError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/dasm/status")
+async def api_dasm_status(request: Request):
+    denied = _require_auth_json(request)
+    if denied:
+        return denied
+    from core.dasm_onnx import onnx_ready_status
+    from core.dasm_prompts import embedding_sync_status, load_prompt_pairs
+
+    pairs = load_prompt_pairs(DASM_PROMPTS_PATH) if DASM_PROMPTS_PATH.exists() else []
+    return JSONResponse(
+        {
+            "ok": True,
+            "onnx": onnx_ready_status(),
+            "sync": embedding_sync_status(
+                pairs,
+                prompts_path=DASM_PROMPTS_PATH,
+                embeddings_path=DASM_EMBEDDINGS_PATH,
+            ),
         }
     )
 

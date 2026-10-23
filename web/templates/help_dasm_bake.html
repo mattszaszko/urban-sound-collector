@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How DASM prompts work — Urban Sound Collector</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    color-scheme:dark;
+    --bg:#0f172a;--surface:#1e293b;--border:#334155;
+    --text:#f1f5f9;--muted:#94a3b8;--accent:#0ea5e9;--accent-hover:#38bdf8;
+    --accent-soft:rgba(14,165,233,.18);--code-bg:#0b1220;
+    --step-num:#0ea5e9;--ok:#22c55e;--warn:#f59e0b;
+  }
+  html[data-theme="light"]{
+    color-scheme:light;
+    --bg:#f1f5f9;--surface:#ffffff;--border:#cbd5e1;
+    --text:#0f172a;--muted:#64748b;--accent:#0284c7;--accent-hover:#0369a1;
+    --accent-soft:rgba(2,132,199,.14);--code-bg:#e2e8f0;
+    --step-num:#0284c7;--ok:#16a34a;--warn:#d97706;
+  }
+  body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);
+       min-height:100vh;padding:1rem 1.25rem 3rem;line-height:1.55;max-width:42rem;margin:0 auto}
+  header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}
+  header h1{font-size:1.25rem;font-weight:700;color:var(--accent);line-height:1.3}
+  header p{font-size:.85rem;color:var(--muted);margin-top:.35rem}
+  .header-actions{display:flex;gap:.5rem;flex-shrink:0;align-items:center}
+  a.back,button.theme{font-size:.8rem;color:var(--muted);text-decoration:none;
+    border:1px solid var(--border);background:var(--surface);padding:.35rem .65rem;
+    border-radius:6px;cursor:pointer;font-family:inherit}
+  a.back:hover,button.theme:hover{color:var(--text);border-color:var(--accent)}
+  .lede{font-size:.95rem;color:var(--text);margin-bottom:1.25rem;padding:1rem;
+        background:var(--surface);border:1px solid var(--border);border-radius:10px}
+  .lede strong{color:var(--accent)}
+  h2{font-size:1rem;margin:1.75rem 0 .75rem;color:var(--text)}
+  .why{font-size:.88rem;color:var(--muted);margin-bottom:1.5rem}
+  .why code{font-size:.8rem}
+  .step{display:grid;grid-template-columns:2.25rem 1fr;gap:.85rem;margin-bottom:1.35rem;
+        padding-bottom:1.35rem;border-bottom:1px solid var(--border)}
+  .step:last-of-type{border-bottom:0}
+  .step-n{width:2.25rem;height:2.25rem;border-radius:50%;background:var(--accent-soft);
+          color:var(--step-num);font-weight:700;font-size:.95rem;display:flex;
+          align-items:center;justify-content:center;flex-shrink:0}
+  .step h3{font-size:.95rem;font-weight:650;margin-bottom:.35rem}
+  .step p,.step li{font-size:.88rem;color:var(--muted)}
+  .step ul{margin:.4rem 0 0 1.1rem}
+  .step li{margin:.25rem 0}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;
+      padding:.75rem .9rem;overflow-x:auto;font-size:.78rem;line-height:1.45;
+      margin:.65rem 0 0;color:var(--text)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .callout{margin-top:1.5rem;padding:1rem;border-radius:10px;border:1px solid var(--border);
+           background:var(--surface);font-size:.88rem;color:var(--muted)}
+  .callout strong{color:var(--text)}
+  .pill{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.03em;
+        text-transform:uppercase;padding:.15rem .45rem;border-radius:4px;margin-right:.35rem}
+  .pill-pi{background:rgba(34,197,94,.18);color:var(--ok)}
+  .pill-pc{background:rgba(245,158,11,.18);color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>How DASM prompt embeddings work</h1>
+    <p>PC bake → git → Pi pull. No MGA-CLAP on the collector.</p>
+  </div>
+  <div class="header-actions">
+    <button type="button" class="theme" id="theme-toggle" aria-label="Toggle color mode">Theme</button>
+    <a class="back" href="/?tab=settings">← Settings</a>
+  </div>
+</header>
+
+<div class="lede">
+  DASM open-vocab labels are edited in the app, but the <strong>query vectors</strong>
+  that the Pi needs are baked on a separate machine (your PC), committed to git, then
+  pulled onto the Pi. That keeps the heavy text encoder (MGA-CLAP / BERT) off the
+  Raspberry Pi so runtime stays ONNX + numpy only.
+</div>
+
+<p class="why">
+  CLAP can rebuild embeddings in the browser because its text tower is a small ONNX
+  model already on the Pi. DASM’s text tower is far larger, so we never ship it with
+  the collector. Changing a prompt without re-baking leaves the sync badge
+  <em>out of sync</em> until you run the bake script and pull the new
+  <code>config/dasm_query_embeddings.npz</code>.
+</p>
+
+<h2>Step by step</h2>
+
+<div class="step">
+  <div class="step-n">1</div>
+  <div>
+    <h3><span class="pill pill-pi">Pi</span> Edit and save prompts</h3>
+    <p>
+      Open <strong>Settings → Heavy ML → DASM</strong>. Add or change label / prompt
+      rows, then <strong>Save prompts</strong>. That writes
+      <code>config/dasm_prompts.json</code> on the Pi.
+    </p>
+    <ul>
+      <li>Use clear short labels (shown on charts).</li>
+      <li>The prompt text is what MGA-CLAP will encode (e.g. <code>sound of siren</code>).</li>
+      <li>Saving alone does <em>not</em> update embeddings — expect “Bake on PC, then pull” until step 4.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-n">2</div>
+  <div>
+    <h3><span class="pill pill-pc">PC</span> Sync the prompts file to your bake machine</h3>
+    <p>
+      Get the updated <code>config/dasm_prompts.json</code> onto the PC that has the
+      Phase&nbsp;0 spike tree (Transformer4SED + MGA-CLAP + <code>htast_mga.pt</code>).
+      Common options:
+    </p>
+    <ul>
+      <li>Commit/push from the Pi (or copy the file), then pull on the PC; or</li>
+      <li>Edit the same JSON on the PC if that checkout is already the source of truth.</li>
+    </ul>
+    <p style="margin-top:.5rem">
+      You need the spike once for baking — the product venv on the Pi is not enough
+      for this step.
+    </p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-n">3</div>
+  <div>
+    <h3><span class="pill pill-pc">PC</span> Bake embeddings</h3>
+    <p>
+      From the <strong>urban-sound-collector</strong> repo, run the product bake script
+      with the spike interpreter (it has torch / MGA-CLAP):
+    </p>
+<pre>/path/to/Transformer4SED/.venv/bin/python scripts/bake_dasm_embeddings.py \
+  --spike-root /path/to/Transformer4SED</pre>
+    <p style="margin-top:.55rem">
+      That reads <code>config/dasm_prompts.json</code> and writes
+      <code>config/dasm_query_embeddings.npz</code> (small file, safe to commit).
+      Optional dry-run without loading the model:
+    </p>
+<pre>python scripts/bake_dasm_embeddings.py --check</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-n">4</div>
+  <div>
+    <h3><span class="pill pill-pc">PC</span> Commit and push</h3>
+    <p>Version the prompts and embeddings together so they stay in sync:</p>
+<pre>git add config/dasm_prompts.json config/dasm_query_embeddings.npz
+git commit -m "Update DASM prompt embeddings"
+git push</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-n">5</div>
+  <div>
+    <h3><span class="pill pill-pi">Pi</span> Pull and run</h3>
+    <p>On the Pi:</p>
+<pre>cd ~/urban-sound-collector   # your checkout path
+git pull</pre>
+    <p style="margin-top:.55rem">
+      Refresh Settings → DASM. The badge should show <strong>Embeddings in sync</strong>
+      and <strong>ONNX ready</strong> (after the one-time model install below).
+      Then <strong>Start → Heavy ML: DASM</strong>.
+    </p>
+  </div>
+</div>
+
+<h2>One-time on the Pi (models)</h2>
+<div class="step">
+  <div class="step-n">★</div>
+  <div>
+    <h3>Install ONNX + base queries</h3>
+    <p>
+      Embedding bake does not install the SED graph. Once per device, copy from the
+      spike export into <code>models/dasm/</code> (gitignored — large files):
+    </p>
+<pre>mkdir -p models/dasm
+cp …/onnx_export/dasm_text_fp32.onnx models/dasm/
+cp …/base_query.npy models/dasm/
+# optional: bn0.npz for mel parity</pre>
+    <p style="margin-top:.55rem">
+      Details: <code>models/README.md</code> and <code>docs/DASM-SPIKE.md</code>.
+      Also ensure <code>onnxruntime</code> is in the Pi product venv.
+    </p>
+  </div>
+</div>
+
+<div class="callout">
+  <strong>Checklist when something looks wrong</strong><br>
+  • Badge “Bake on PC, then pull” → prompts hash ≠ embeddings; re-bake and pull.<br>
+  • “ONNX missing” → <code>models/dasm/dasm_text_fp32.onnx</code> or <code>base_query.npy</code> not installed.<br>
+  • Start fails with exclusive heavy ML → CLAP and DASM cannot both be on; pick one.<br>
+  • Bake fails missing spike → set <code>--spike-root</code> or <code>DASM_SPIKE_ROOT</code> to the Transformer4SED tree.
+</div>
+
+<script>
+(function () {
+  const KEY = 'usc-color-mode';
+  const root = document.documentElement;
+  function apply(mode) {
+    root.setAttribute('data-theme', mode === 'light' ? 'light' : 'dark');
+  }
+  try {
+    apply(localStorage.getItem(KEY) || 'dark');
+  } catch {
+    apply('dark');
+  }
+  const btn = document.getElementById('theme-toggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      apply(next);
+      try { localStorage.setItem(KEY, next); } catch { /* ignore */ }
+    });
+  }
+})();
+</script>
+</body>
+</html>

@@ -201,13 +201,36 @@ Keep `onnx_export/` if you want Phase 1 without re-exporting. The spike venv / J
 
 ---
 
-## Open items before Phase 1
+## Open items
 
 - [ ] Re-run ORT RSS / latency on a **2GB** Pi (or document DASM as 4GB+ only).
-- [ ] Mel frontend in product: numpy / ORT-friendly preprocess matching training features.
+- [ ] Mel frontend parity: product uses numpy log-mel + optional `bn0.npz`; extract bn0 on the spike with `scripts/dasm_spike/extract_dasm_bn0.py`.
 - [ ] Better INT8 (static PTQ / QDQ) only if FP32 RSS fails 2GB — dynamic quant was a regression on this Pi.
-- [ ] Wire exclusive backend + shared Heavy ML triggers; reports ignore DASM (per product plan).
+- [x] Phase 1 core: `core/dasm_*.py`, `classifier_dasm.py`, `--enable-dasm` xor `--enable-clap`, nested JSONL `dasm` payload.
+- [x] Phase 2: Heavy ML Settings UI + Live/Inspect overlays (local; not committed yet).
 
-## Natural next (Phase 1)
+## Phase 1 runtime (product)
 
-Wire `core/dasm_onnx.py`, ±5 s capture, exclusive CLAP | DASM in `main.py`, shared Heavy ML triggers, JSONL `dasm` payload — using FP32 ONNX + baked query pack as the runtime.
+```bash
+# Install assets into models/dasm/ (see models/README.md), then:
+python main.py --enable-dasm --record-audio …
+```
+
+Mutually exclusive with `--enable-clap`. Shared arming via `evaluate_arm` / `config/clap_triggers.json`.
+
+### Prompt bake workflow (PC → git → Pi)
+
+Open-vocab vectors are **not** rebuilt on the Pi. Edit prompts in the UI /
+`config/dasm_prompts.json`, bake on a machine with the spike tree, commit the npz:
+
+```bash
+# On PC (spike venv + --spike-root):
+python scripts/bake_dasm_embeddings.py --spike-root /path/to/Transformer4SED
+git add config/dasm_prompts.json config/dasm_query_embeddings.npz
+git commit && git push
+# On Pi: git pull
+```
+
+Details: `models/README.md`. Spike-only pack script remains
+`scripts/dasm_spike/bake_dasm_queries.py` (Phase 0); product uses
+`scripts/bake_dasm_embeddings.py`.

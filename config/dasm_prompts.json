@@ -1,0 +1,29 @@
+{
+  "prompt_prefix": "sound of ",
+  "prompts": [
+    {
+      "label": "siren",
+      "prompt": "sound of siren"
+    },
+    {
+      "label": "alarm",
+      "prompt": "sound of alarm"
+    },
+    {
+      "label": "dog",
+      "prompt": "sound of dog"
+    },
+    {
+      "label": "music",
+      "prompt": "sound of music"
+    },
+    {
+      "label": "bird",
+      "prompt": "sound of bird"
+    },
+    {
+      "label": "horn",
+      "prompt": "sound of car horn"
+    }
+  ]
+}

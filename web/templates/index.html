@@ -26,6 +26,8 @@
     --error-banner-text:#fca5a5;--yam-point:#22c55e;--yam-border:#14532d;
     --yam-label:#86efac;--clap-point:#f59e0b;--clap-border:#78350f;
     --clap-label:#fcd34d;--clap-window:rgba(245,158,11,.22);--playhead:#f472b6;
+    --dasm-point:#38bdf8;--dasm-border:#0c4a6e;--dasm-label:#7dd3fc;
+    --dasm-window:rgba(56,189,248,.2);--dasm-span:rgba(56,189,248,.55);
     --band-quiet:rgba(34,197,94,.14);--band-converse:rgba(234,179,8,.14);
     --band-busy:rgba(249,115,22,.16);--band-loud:rgba(239,68,68,.18);
     --band-quiet-mark:#4ade80;--band-converse-mark:#eab308;
@@ -58,6 +60,8 @@
     --error-banner-text:#b91c1c;--yam-point:#16a34a;--yam-border:#166534;
     --yam-label:#15803d;--clap-point:#d97706;--clap-border:#92400e;
     --clap-label:#b45309;--clap-window:rgba(217,119,6,.2);--playhead:#db2777;
+    --dasm-point:#0284c7;--dasm-border:#075985;--dasm-label:#0369a1;
+    --dasm-window:rgba(2,132,199,.18);--dasm-span:rgba(2,132,199,.5);
     --band-quiet:rgba(22,163,74,.12);--band-converse:rgba(202,138,4,.12);
     --band-busy:rgba(234,88,12,.14);--band-loud:rgba(220,38,38,.16);
     --band-quiet-mark:#16a34a;--band-converse-mark:#ca8a04;
@@ -180,6 +184,14 @@
   .swatch.dot{border-radius:50%}
   .swatch.band{width:14px;height:10px;border-radius:2px;background:var(--clap-window);
                border:1px solid var(--clap-point)}
+  .swatch.band-dasm{background:var(--dasm-window);border-color:var(--dasm-point)}
+  .heavy-ml-choice{display:flex;flex-direction:column;gap:.55rem;margin-top:1rem}
+  .heavy-ml-choice .check-row{margin:0}
+  .settings-tabs{display:flex;gap:.4rem;margin:1rem 0 .75rem;flex-wrap:wrap}
+  .settings-tab{border:1px solid var(--border);background:var(--panel);color:var(--text);
+                border-radius:8px;padding:.4rem .85rem;cursor:pointer;font:inherit;font-size:.85rem}
+  .settings-tab[aria-selected="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  .settings-tab-panel[hidden]{display:none}
   .swatch.bracket{width:16px;height:8px;border:2px solid #22c55e;border-bottom:none;
                   border-radius:2px 2px 0 0;background:transparent;box-sizing:border-box}
   .chart-conf-row{display:flex;flex-wrap:wrap;gap:.55rem 1.1rem;align-items:center;
@@ -859,7 +871,7 @@
       </div>
     </div>
     <div class="stat">
-      <div class="stat-label">Last CLAP</div>
+      <div class="stat-label">Last heavy ML</div>
       <div class="stat-value" id="stat-clap" style="font-size:.85rem">—</div>
     </div>
     <div class="stat">
@@ -889,6 +901,8 @@
         <span><i class="swatch bracket" aria-hidden="true"></i>YAMNet label run</span>
         <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
         <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
+        <span><i class="swatch dot" style="background:var(--dasm-point)"></i>DASM</span>
+        <span><i class="swatch band band-dasm" aria-hidden="true"></i>DASM window</span>
       </div>
       <div class="chart-conf-row" id="live-chart-conf-row">
         <label for="live-yam-conf-min">Hide YAMNet below
@@ -897,6 +911,10 @@
         </label>
         <label for="live-clap-conf-min" id="live-clap-conf-wrap" hidden>Hide CLAP below
           <input type="number" id="live-clap-conf-min" min="0" max="1" step="0.05" value="0.55">
+          conf
+        </label>
+        <label for="live-dasm-conf-min" id="live-dasm-conf-wrap" hidden>Hide DASM below
+          <input type="number" id="live-dasm-conf-min" min="0" max="1" step="0.05" value="0.35">
           conf
         </label>
       </div>
@@ -931,13 +949,29 @@
            value="{{ default_gate_sensitivity_db }}">
     <input type="hidden" name="audio_format" id="start-audio-format" value="{{ audio_format }}">
 
-    <label class="check-row" style="margin-top:1rem">
-      <input type="checkbox" name="enable_clap" value="on">
-      <div>
-        Enable CLAP
-        <span>Uses CLAP on trigger labels. Requires rebuilt embeddings (Settings → CLAP).</span>
-      </div>
-    </label>
+    <div class="heavy-ml-choice" role="radiogroup" aria-label="Heavy ML backend">
+      <label class="check-row">
+        <input type="radio" name="heavy_ml" value="off" checked>
+        <div>
+          Heavy ML: Off
+          <span>YAMNet only. No CLAP or DASM.</span>
+        </div>
+      </label>
+      <label class="check-row">
+        <input type="radio" name="heavy_ml" value="clap">
+        <div>
+          Heavy ML: CLAP
+          <span>Dynamic energy snippets on shared triggers. Requires rebuilt CLAP embeddings.</span>
+        </div>
+      </label>
+      <label class="check-row">
+        <input type="radio" name="heavy_ml" value="dasm">
+        <div>
+          Heavy ML: DASM
+          <span>Fixed ±5&nbsp;s multilabel window. Requires models/dasm + baked query vectors.</span>
+        </div>
+      </label>
+    </div>
 
     <label class="check-row" style="margin-top:.75rem">
       <input type="checkbox" name="record_audio" value="on">
@@ -1139,6 +1173,8 @@
       <span><i class="swatch bracket" aria-hidden="true"></i>YAMNet label run</span>
       <span><i class="swatch dot" style="background:#f59e0b"></i>CLAP</span>
       <span><i class="swatch band" aria-hidden="true"></i>CLAP window</span>
+      <span><i class="swatch dot" style="background:var(--dasm-point)"></i>DASM</span>
+      <span><i class="swatch band band-dasm" aria-hidden="true"></i>DASM window</span>
     </div>
     <div class="chart-conf-row" id="ov-chart-conf-row">
       <label for="ov-yam-conf-min">Hide YAMNet below
@@ -1147,6 +1183,10 @@
       </label>
       <label for="ov-clap-conf-min" id="ov-clap-conf-wrap" hidden>Hide CLAP below
         <input type="number" id="ov-clap-conf-min" min="0" max="1" step="0.05" value="0.55">
+        conf
+      </label>
+      <label for="ov-dasm-conf-min" id="ov-dasm-conf-wrap" hidden>Hide DASM below
+        <input type="number" id="ov-dasm-conf-min" min="0" max="1" step="0.05" value="0.35">
         conf
       </label>
     </div>
@@ -1433,8 +1473,18 @@
     <div class="inline-status" id="settings-audio-format-status"></div>
   </div>
 
-  <h2 class="settings-section-title">CLAP settings</h2>
+  <h2 class="settings-section-title">Heavy ML Settings</h2>
 
+  <div class="settings-tabs" role="tablist" aria-label="Heavy ML backend settings">
+    <button type="button" class="settings-tab" role="tab" id="heavy-tab-triggers"
+            aria-selected="true" data-heavy-tab="triggers">Triggers</button>
+    <button type="button" class="settings-tab" role="tab" id="heavy-tab-clap"
+            aria-selected="false" data-heavy-tab="clap">CLAP</button>
+    <button type="button" class="settings-tab" role="tab" id="heavy-tab-dasm"
+            aria-selected="false" data-heavy-tab="dasm">DASM</button>
+  </div>
+
+  <div class="settings-tab-panel" data-heavy-panel="clap" hidden>
   <div class="card">
     <h2>CLAP prompts</h2>
     <div class="status-row" id="prompts-sync-row">
@@ -1467,56 +1517,69 @@
     </div>
     <div class="inline-status" id="prompts-status"></div>
   </div>
-
   <div class="card">
-    <h2>CLAP triggers</h2>
+    <h2>CLAP snippet / capture</h2>
     <div class="field-note" style="margin-bottom:.75rem">
-      Map YAMNet labels to CLAP modes. Off = ignore, Trigger = arm on that label,
-      Ambiguous = arm only when also loud (dBA threshold). Capture slices from
-      gate/energy onset (lookback) until peak decays by the peak-decay margin,
-      the gate closes, or max duration — then <code>repeatpad</code>s short clips.
-      No label carry — only <code>triggered</code> rows have CLAP labels.
+      Dynamic energy slicing for CLAP only (lookback onset → settle / max duration).
+      Shared trigger labels and cooldown live under the <strong>Triggers</strong> tab.
+    </div>
+    <div class="trigger-settings">
+      <div>
+        <label for="trig-lookback">Lookback (seconds)</label>
+        <input type="number" id="trig-lookback" min="1" step="0.5" value="4">
+        <div class="field-note">How far back we search for when the event really started.</div>
+      </div>
+      <div>
+        <label for="trig-pad">Pre-onset pad (ms)</label>
+        <input type="number" id="trig-pad" min="0" step="10" value="150">
+        <div class="field-note">Extra audio kept just before the detected start.</div>
+      </div>
+      <div>
+        <label for="trig-settle">End settle (chunks)</label>
+        <input type="number" id="trig-settle" min="1" step="1" value="2">
+        <div class="field-note">Chunks that must look “ended” before we stop capturing.</div>
+      </div>
+      <div>
+        <label for="trig-max-event">Max event (seconds)</label>
+        <input type="number" id="trig-max-event" min="0.5" step="0.5" value="5">
+        <div class="field-note">Hard cap on CLAP clip length.</div>
+      </div>
+      <div>
+        <label for="trig-onset-margin">Onset margin (dB)</label>
+        <input type="number" id="trig-onset-margin" min="0" step="0.5" value="3">
+        <div class="field-note">Elevated vs ambient floor when finding the start.</div>
+      </div>
+      <div>
+        <label for="trig-peak-decay">Peak decay (dB)</label>
+        <input type="number" id="trig-peak-decay" min="0" step="0.5" value="5">
+        <div class="field-note">Stop once loudness drops this far below the event peak.</div>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:.75rem">
+      <button type="button" class="btn btn-start" id="clap-capture-save-btn">Save CLAP capture</button>
+    </div>
+    <div class="inline-status" id="clap-capture-status"></div>
+  </div>
+  </div><!-- /clap panel -->
+
+  <div class="settings-tab-panel" data-heavy-panel="triggers">
+  <div class="card">
+    <h2>Heavy ML Triggers</h2>
+    <div class="field-note" style="margin-bottom:.75rem">
+      Shared by CLAP and DASM. Off = ignore, Trigger = arm on that YAMNet label,
+      Ambiguous = arm only when also loud (dBA threshold). Cooldown applies to
+      whichever heavy backend is selected on Start.
     </div>
     <div class="trigger-settings">
       <div>
         <label for="trig-cooldown">Cooldown (seconds)</label>
         <input type="number" id="trig-cooldown" min="0" step="0.5" value="5">
-        <div class="field-note">Minimum wait after one CLAP capture starts before another can start. Stops rapid re-triggers on the same sound.</div>
+        <div class="field-note">Minimum wait after one heavy-ML capture starts before another can start.</div>
       </div>
       <div>
         <label for="trig-dba">dBA threshold</label>
         <input type="number" id="trig-dba" min="0" step="0.5" value="55">
-        <div class="field-note">For Ambiguous labels only: CLAP arms only when loudness is at least this level. Trigger labels ignore this.</div>
-      </div>
-      <div>
-        <label for="trig-lookback">Lookback (seconds)</label>
-        <input type="number" id="trig-lookback" min="1" step="0.5" value="4">
-        <div class="field-note">How far back in recent audio we search for when the event really started (so the clip includes the beginning, not just the trigger moment).</div>
-      </div>
-      <div>
-        <label for="trig-pad">Pre-onset pad (ms)</label>
-        <input type="number" id="trig-pad" min="0" step="10" value="150">
-        <div class="field-note">Extra audio kept just before the detected start, so the attack of the sound isn’t cut off.</div>
-      </div>
-      <div>
-        <label for="trig-settle">End settle (chunks)</label>
-        <input type="number" id="trig-settle" min="1" step="1" value="2">
-        <div class="field-note">How many ~1&nbsp;s chunks in a row must look “ended” (quieter than the peak, or gate closed) before we stop capturing.</div>
-      </div>
-      <div>
-        <label for="trig-max-event">Max event (seconds)</label>
-        <input type="number" id="trig-max-event" min="0.5" step="0.5" value="5">
-        <div class="field-note">Hard cap on clip length. Stops a long wind swell or continuous noise from filling the whole CLAP window.</div>
-      </div>
-      <div>
-        <label for="trig-onset-margin">Onset margin (dB)</label>
-        <input type="number" id="trig-onset-margin" min="0" step="0.5" value="3">
-        <div class="field-note">When finding the start: treat audio as “elevated” once it’s this many dB above the recent ambient floor.</div>
-      </div>
-      <div>
-        <label for="trig-peak-decay">Peak decay (dB)</label>
-        <input type="number" id="trig-peak-decay" min="0" step="0.5" value="5">
-        <div class="field-note">When ending: stop once loudness has dropped this many dB below the event’s loudest point (even if the gate is still open).</div>
+        <div class="field-note">For Ambiguous labels only: arm only when loudness is at least this level.</div>
       </div>
     </div>
     <label for="trig-search">Filter labels</label>
@@ -1533,6 +1596,74 @@
   <div id="themes-container">
     <div class="empty" id="themes-placeholder">Loading catalog…</div>
   </div>
+  </div><!-- /triggers panel -->
+
+  <div class="settings-tab-panel" data-heavy-panel="dasm" hidden>
+  <div class="card">
+    <h2>DASM prompts</h2>
+    <div class="status-row" id="dasm-prompts-sync-row">
+      <span class="badge idle" id="dasm-prompts-sync-badge"><span class="dot"></span>Loading…</span>
+      <span class="badge idle" id="dasm-prompts-onnx-badge"><span class="dot"></span>ONNX…</span>
+      <span style="color:var(--muted);font-size:.75rem" id="dasm-prompts-sync-detail"></span>
+    </div>
+    <div class="field-note" style="margin-bottom:.75rem">
+      Save prompts here; bake embeddings on a PC (no in-app Rebuild), commit the npz,
+      then <code>git pull</code> on the Pi.
+      <a href="/help/dasm-bake" target="_blank" rel="noopener noreferrer"
+         style="color:var(--accent);font-weight:600;margin-left:.15rem">How it works →</a>
+    </div>
+    <table class="prompt-table">
+      <thead>
+        <tr>
+          <th class="col-label">Label</th>
+          <th>Prompt</th>
+          <th class="col-actions"></th>
+        </tr>
+      </thead>
+      <tbody id="dasm-prompts-tbody"></tbody>
+    </table>
+    <div class="btn-row">
+      <button type="button" class="btn btn-secondary" id="dasm-prompts-add-btn">+ Add row</button>
+      <button type="button" class="btn btn-start" id="dasm-prompts-save-btn">Save prompts</button>
+      <a class="btn btn-secondary" href="/help/dasm-bake" target="_blank" rel="noopener noreferrer"
+         id="dasm-how-it-works" style="text-decoration:none;display:inline-flex;align-items:center">How it works</a>
+      <button type="button" class="btn btn-secondary" id="dasm-prompts-export-btn">↓ Export JSON</button>
+      <button type="button" class="btn btn-secondary" id="dasm-prompts-import-btn">↑ Import JSON</button>
+      <input type="file" id="dasm-prompts-import-file" accept="application/json,.json" hidden>
+    </div>
+    <div class="inline-status" id="dasm-prompts-status"></div>
+  </div>
+  <div class="card">
+    <h2>DASM window</h2>
+    <div class="field-note" style="margin-bottom:.75rem">
+      Fixed window around the arm instant: <code>[t − pre, t + post]</code>
+      (defaults ±5&nbsp;s → 10&nbsp;s total).
+    </div>
+    <div class="trigger-settings">
+      <div>
+        <label for="dasm-pre-roll">Pre-roll (seconds)</label>
+        <input type="number" id="dasm-pre-roll" min="0.1" step="0.5" value="5">
+      </div>
+      <div>
+        <label for="dasm-post-roll">Post-roll (seconds)</label>
+        <input type="number" id="dasm-post-roll" min="0.1" step="0.5" value="5">
+      </div>
+      <div>
+        <label for="dasm-frame-thr">Frame threshold</label>
+        <input type="number" id="dasm-frame-thr" min="0" max="1" step="0.05" value="0.35">
+        <div class="field-note">Span detection threshold on frame scores.</div>
+      </div>
+      <div>
+        <label for="dasm-min-span">Min span (seconds)</label>
+        <input type="number" id="dasm-min-span" min="0" step="0.05" value="0.15">
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:.75rem">
+      <button type="button" class="btn btn-start" id="dasm-window-save-btn">Save window</button>
+    </div>
+    <div class="inline-status" id="dasm-window-status"></div>
+  </div>
+  </div><!-- /dasm panel -->
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
@@ -1790,12 +1921,40 @@ function switchTab(name) {
     if (name === 'settings') {
       if (typeof loadPrompts === 'function') loadPrompts();
       if (typeof loadTriggersPanel === 'function') loadTriggersPanel();
+      if (typeof loadDasmSettings === 'function') loadDasmSettings();
       if (typeof startSystemHealthPolling === 'function') startSystemHealthPolling();
     } else if (typeof stopSystemHealthPolling === 'function') {
       stopSystemHealthPolling();
     }
   });
 }
+
+(function initHeavySettingsTabs() {
+  const tabs = document.querySelectorAll('[data-heavy-tab]');
+  const panels = document.querySelectorAll('[data-heavy-panel]');
+  if (!tabs.length || !panels.length) return;
+  function showHeavyTab(name) {
+    tabs.forEach((btn) => {
+      const on = btn.getAttribute('data-heavy-tab') === name;
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach((panel) => {
+      panel.hidden = panel.getAttribute('data-heavy-panel') !== name;
+    });
+    if (name === 'dasm' && typeof loadDasmSettings === 'function') {
+      loadDasmSettings();
+    }
+    if (name === 'clap' && typeof loadPrompts === 'function') {
+      loadPrompts();
+    }
+    if (name === 'triggers' && typeof loadTriggersPanel === 'function') {
+      loadTriggersPanel();
+    }
+  }
+  tabs.forEach((btn) => {
+    btn.addEventListener('click', () => showHeavyTab(btn.getAttribute('data-heavy-tab')));
+  });
+})();
 
 tabBtns.forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -2016,9 +2175,18 @@ function applyViewerLocks() {
     'prompts-save-btn',
     'prompts-rebuild-btn',
     'prompts-import-btn',
+    'clap-capture-save-btn',
     'triggers-save-btn',
     'triggers-import-btn',
     'catalog-refresh-btn',
+    'dasm-prompts-add-btn',
+    'dasm-prompts-save-btn',
+    'dasm-prompts-import-btn',
+    'dasm-window-save-btn',
+    'dasm-pre-roll',
+    'dasm-post-roll',
+    'dasm-frame-thr',
+    'dasm-min-span',
     'settings-device-id',
     'settings-alsa-device',
     'settings-gate-sensitivity',
@@ -2246,10 +2414,35 @@ function clapMarkers(points, minConfidence) {
   return out;
 }
 
+function dasmMarkers(points, minConfidence) {
+  const floor = Number(minConfidence);
+  const minConf = Number.isFinite(floor) ? floor : 0;
+  const out = [];
+  for (const p of points) {
+    if (p.dasm_status !== 'triggered' || !p.dasm || p.dba == null) continue;
+    const conf = p.dasm_conf == null ? null : Number(p.dasm_conf);
+    if (conf != null && Number.isFinite(conf) && conf < minConf) continue;
+    const marker = {
+      x: Date.parse(p.t),
+      y: p.dba,
+      label: p.dasm,
+      labels: Array.isArray(p.dasm_labels) ? p.dasm_labels : [],
+    };
+    if (!Number.isFinite(marker.x)) continue;
+    if (Number.isFinite(conf)) marker.confidence = conf;
+    const secs = Number(p.dasm_event_seconds);
+    if (Number.isFinite(secs) && secs > 0) marker.event_seconds = secs;
+    out.push(marker);
+  }
+  return out;
+}
+
 const DEFAULT_YAM_CONF_MIN = 0.30;
 const DEFAULT_CLAP_CONF_MIN = 0.55;
+const DEFAULT_DASM_CONF_MIN = 0.35;
 const YAM_CONF_KEY = 'usc-yam-conf-min';
 const CLAP_CONF_KEY = 'usc-clap-conf-min';
+const DASM_CONF_KEY = 'usc-dasm-conf-min';
 
 function readConfThreshold(key, fallback) {
   try {
@@ -2271,9 +2464,11 @@ function writeConfThreshold(key, value) {
 
 let yamConfMin = readConfThreshold(YAM_CONF_KEY, DEFAULT_YAM_CONF_MIN);
 let clapConfMin = readConfThreshold(CLAP_CONF_KEY, DEFAULT_CLAP_CONF_MIN);
+let dasmConfMin = readConfThreshold(DASM_CONF_KEY, DEFAULT_DASM_CONF_MIN);
 let liveSeriesPoints = [];
 let liveSeriesWindowS = 120;
 let overviewHasClap = false;
+let overviewHasDasm = false;
 
 function syncConfInputs() {
   ['live-yam-conf-min', 'ov-yam-conf-min'].forEach((id) => {
@@ -2284,6 +2479,15 @@ function syncConfInputs() {
     const el = document.getElementById(id);
     if (el) el.value = String(clapConfMin);
   });
+  ['live-dasm-conf-min', 'ov-dasm-conf-min'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = String(dasmConfMin);
+  });
+}
+
+function selectedHeavyMl() {
+  const el = document.querySelector('#start-recording-form [name="heavy_ml"]:checked');
+  return el ? String(el.value) : 'off';
 }
 
 function setClapConfVisible(visible) {
@@ -2291,6 +2495,19 @@ function setClapConfVisible(visible) {
     const el = document.getElementById(id);
     if (el) el.hidden = !visible;
   });
+}
+
+function setDasmConfVisible(visible) {
+  ['live-dasm-conf-wrap', 'ov-dasm-conf-wrap'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !visible;
+  });
+}
+
+function syncHeavyConfVisibility() {
+  const heavy = selectedHeavyMl();
+  setClapConfVisible(heavy === 'clap' || overviewHasClap);
+  setDasmConfVisible(heavy === 'dasm' || overviewHasDasm);
 }
 
 function refreshChartsForConf() {
@@ -2325,23 +2542,31 @@ function wireConfInputs() {
     syncConfInputs();
     refreshChartsForConf();
   };
+  const onDasm = (ev) => {
+    const v = Number(ev.target.value);
+    if (!Number.isFinite(v)) return;
+    dasmConfMin = Math.max(0, Math.min(1, v));
+    writeConfThreshold(DASM_CONF_KEY, dasmConfMin);
+    syncConfInputs();
+    refreshChartsForConf();
+  };
   const liveYam = document.getElementById('live-yam-conf-min');
   const ovYam = document.getElementById('ov-yam-conf-min');
   const liveClap = document.getElementById('live-clap-conf-min');
   const ovClap = document.getElementById('ov-clap-conf-min');
+  const liveDasm = document.getElementById('live-dasm-conf-min');
+  const ovDasm = document.getElementById('ov-dasm-conf-min');
   if (liveYam) liveYam.addEventListener('change', onYam);
   if (ovYam) ovYam.addEventListener('change', onYam);
   if (liveClap) liveClap.addEventListener('change', onClap);
   if (ovClap) ovClap.addEventListener('change', onClap);
+  if (liveDasm) liveDasm.addEventListener('change', onDasm);
+  if (ovDasm) ovDasm.addEventListener('change', onDasm);
 
-  const clapCheck = document.querySelector('#start-recording-form [name="enable_clap"]');
-  if (clapCheck) {
-    const syncLiveClap = () => setClapConfVisible(!!clapCheck.checked || overviewHasClap);
-    clapCheck.addEventListener('change', syncLiveClap);
-    syncLiveClap();
-  } else {
-    setClapConfVisible(overviewHasClap);
-  }
+  document.querySelectorAll('#start-recording-form [name="heavy_ml"]').forEach((el) => {
+    el.addEventListener('change', syncHeavyConfVisibility);
+  });
+  syncHeavyConfVisibility();
 }
 
 const labelMarkerPlugin = {
@@ -2418,48 +2643,110 @@ const yamnetBracketPlugin = {
   },
 };
 
-/** Shade [marker.x − event_seconds, marker.x] for each CLAP point that has a window. */
+/** Shade [marker.x − event_seconds, marker.x] for CLAP / DASM capture windows. */
 const clapWindowBandsPlugin = {
   id: 'clapWindowBands',
   beforeDatasetsDraw(chart) {
     const { ctx, chartArea, scales } = chart;
     if (!chartArea || !scales.x) return;
-    const clapDs = chart.data.datasets.find((ds) => ds.label === 'CLAP');
-    if (!clapDs || !Array.isArray(clapDs.data) || !clapDs.data.length) return;
+    const bands = [
+      { label: 'CLAP', fill: '--clap-window', stroke: '--clap-point', text: '--clap-label' },
+      { label: 'DASM', fill: '--dasm-window', stroke: '--dasm-point', text: '--dasm-label' },
+    ];
     const xScale = scales.x;
     ctx.save();
     ctx.beginPath();
     ctx.rect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
     ctx.clip();
-    for (const pt of clapDs.data) {
-      const secs = Number(pt && pt.event_seconds);
+    for (const band of bands) {
+      const ds = chart.data.datasets.find((d) => d.label === band.label);
+      if (!ds || !Array.isArray(ds.data) || !ds.data.length) continue;
+      for (const pt of ds.data) {
+        const secs = Number(pt && pt.event_seconds);
+        const endMs = Number(pt && pt.x);
+        if (!Number.isFinite(secs) || secs <= 0 || !Number.isFinite(endMs)) continue;
+        const startMs = endMs - secs * 1000;
+        const x0 = Math.max(chartArea.left, xScale.getPixelForValue(startMs));
+        const x1 = Math.min(chartArea.right, xScale.getPixelForValue(endMs));
+        if (x1 <= x0) continue;
+        ctx.fillStyle = cssVar(band.fill);
+        ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
+        ctx.strokeStyle = cssVar(band.stroke);
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x0, chartArea.top);
+        ctx.lineTo(x0, chartArea.bottom);
+        ctx.moveTo(x1, chartArea.top);
+        ctx.lineTo(x1, chartArea.bottom);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        const label = Number.isInteger(secs) || Math.abs(secs - Math.round(secs)) < 0.05
+          ? `${Math.round(secs)} s`
+          : `${secs.toFixed(1)} s`;
+        const midX = (x0 + x1) / 2;
+        ctx.font = '600 10px system-ui,sans-serif';
+        ctx.fillStyle = cssVar(band.text);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, midX, chartArea.bottom - 3);
+      }
+    }
+    ctx.restore();
+  },
+};
+
+/** Draw multilabel DASM spans (t0_s/t1_s relative to window start) as thin bars. */
+const dasmSpansPlugin = {
+  id: 'dasmSpans',
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.x || !scales.y) return;
+    const dasmDs = chart.data.datasets.find((ds) => ds.label === 'DASM');
+    if (!dasmDs || !Array.isArray(dasmDs.data) || !dasmDs.data.length) return;
+    const xScale = scales.x;
+    const yScale = scales.y;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+    ctx.clip();
+    ctx.strokeStyle = cssVar('--dasm-span');
+    ctx.fillStyle = cssVar('--dasm-label');
+    ctx.lineWidth = 2;
+    ctx.font = '600 9px system-ui,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    for (const pt of dasmDs.data) {
       const endMs = Number(pt && pt.x);
-      if (!Number.isFinite(secs) || secs <= 0 || !Number.isFinite(endMs)) continue;
-      const startMs = endMs - secs * 1000;
-      const x0 = Math.max(chartArea.left, xScale.getPixelForValue(startMs));
-      const x1 = Math.min(chartArea.right, xScale.getPixelForValue(endMs));
-      if (x1 <= x0) continue;
-      ctx.fillStyle = cssVar('--clap-window');
-      ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
-      ctx.strokeStyle = cssVar('--clap-point');
-      ctx.globalAlpha = 0.55;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x0, chartArea.top);
-      ctx.lineTo(x0, chartArea.bottom);
-      ctx.moveTo(x1, chartArea.top);
-      ctx.lineTo(x1, chartArea.bottom);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      const label = Number.isInteger(secs) || Math.abs(secs - Math.round(secs)) < 0.05
-        ? `${Math.round(secs)} s`
-        : `${secs.toFixed(1)} s`;
-      const midX = (x0 + x1) / 2;
-      ctx.font = '600 10px system-ui,sans-serif';
-      ctx.fillStyle = cssVar('--clap-label');
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(label, midX, chartArea.bottom - 3);
+      const winSecs = Number(pt && pt.event_seconds);
+      const yv = Number(pt && pt.y);
+      if (!Number.isFinite(endMs) || !Number.isFinite(winSecs) || winSecs <= 0) continue;
+      const winStart = endMs - winSecs * 1000;
+      const labels = Array.isArray(pt.labels) ? pt.labels : [];
+      let row = 0;
+      for (const lab of labels) {
+        const spans = Array.isArray(lab && lab.spans) ? lab.spans : [];
+        for (const sp of spans) {
+          const t0 = Number(sp && sp.t0_s);
+          const t1 = Number(sp && sp.t1_s);
+          if (!Number.isFinite(t0) || !Number.isFinite(t1) || t1 <= t0) continue;
+          const x0 = Math.max(chartArea.left, xScale.getPixelForValue(winStart + t0 * 1000));
+          const x1 = Math.min(chartArea.right, xScale.getPixelForValue(winStart + t1 * 1000));
+          if (x1 <= x0) continue;
+          const yBase = Number.isFinite(yv)
+            ? yScale.getPixelForValue(yv)
+            : chartArea.bottom - 12;
+          const y = Math.min(chartArea.bottom - 4, yBase + 10 + row * 8);
+          ctx.beginPath();
+          ctx.moveTo(x0, y);
+          ctx.lineTo(x1, y);
+          ctx.stroke();
+          if (lab.label) {
+            ctx.fillText(truncateLabel(lab.label, 14), x0 + 2, y - 2);
+          }
+          row += 1;
+        }
+      }
     }
     ctx.restore();
   },
@@ -2470,7 +2757,7 @@ function ensureLoudnessChart() {
   if (typeof Chart === 'undefined') return null;
   const canvas = document.getElementById('live-loudness-chart');
   if (!canvas) return null;
-  Chart.register(labelMarkerPlugin, yamnetBracketPlugin, clapWindowBandsPlugin);
+  Chart.register(labelMarkerPlugin, yamnetBracketPlugin, clapWindowBandsPlugin, dasmSpansPlugin);
   loudnessChart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
@@ -2521,6 +2808,19 @@ function ensureLoudnessChart() {
           borderWidth: 1,
           showPointLabels: true,
           pointLabelColor: cssVar('--clap-label'),
+        },
+        {
+          label: 'DASM',
+          type: 'scatter',
+          data: [],
+          showLine: false,
+          pointRadius: 5,
+          pointHoverRadius: 6,
+          backgroundColor: cssVar('--dasm-point'),
+          borderColor: cssVar('--dasm-border'),
+          borderWidth: 1,
+          showPointLabels: true,
+          pointLabelColor: cssVar('--dasm-label'),
         },
       ],
     },
@@ -2628,19 +2928,29 @@ function updateLoudnessChart(payload) {
   }
   const yam = yamnetLabelSpans(points, yamConfMin);
   const clap = clapMarkers(points, clapConfMin);
-  const clapEnabled = !!(document.querySelector('#start-recording-form [name="enable_clap"]') || {}).checked
-    || points.some((p) => p.clap_status || p.clap);
-  setClapConfVisible(clapEnabled || overviewHasClap);
+  const dasm = dasmMarkers(points, dasmConfMin);
+  const heavy = selectedHeavyMl();
+  const liveHasClap = points.some((p) => p.clap_status || p.clap);
+  const liveHasDasm = points.some((p) => p.dasm_status || p.dasm);
+  setClapConfVisible(heavy === 'clap' || liveHasClap || overviewHasClap);
+  setDasmConfVisible(heavy === 'dasm' || liveHasDasm || overviewHasDasm);
 
   chart.data.datasets[0].data = dba;
   chart.data.datasets[1].data = l90;
   chart.data.datasets[2].data = yam;
   chart.data.datasets[3].data = clap;
+  if (chart.data.datasets[4]) chart.data.datasets[4].data = dasm;
   chart.options.scales.x.min = start;
   chart.options.scales.x.max = end;
 
   const ys = []
-    .concat(dba.map((p) => p.y), l90.map((p) => p.y), yam.map((p) => p.y), clap.map((p) => p.y))
+    .concat(
+      dba.map((p) => p.y),
+      l90.map((p) => p.y),
+      yam.map((p) => p.y),
+      clap.map((p) => p.y),
+      dasm.map((p) => p.y),
+    )
     .filter((v) => typeof v === 'number' && Number.isFinite(v));
   if (ys.length) {
     const lo = Math.min(...ys);
@@ -2653,16 +2963,23 @@ function updateLoudnessChart(payload) {
 
   const clapEl = document.getElementById('stat-clap');
   if (clapEl) {
-    let lastClap = '—';
+    let lastHeavy = '—';
     for (let i = points.length - 1; i >= 0; i -= 1) {
-      if (points[i].clap_status === 'triggered' && points[i].clap) {
-        const conf = points[i].clap_conf == null ? null : Number(points[i].clap_conf);
+      const p = points[i];
+      if (p.dasm_status === 'triggered' && p.dasm) {
+        const conf = p.dasm_conf == null ? null : Number(p.dasm_conf);
+        if (conf != null && Number.isFinite(conf) && conf < dasmConfMin) continue;
+        lastHeavy = p.dasm;
+        break;
+      }
+      if (p.clap_status === 'triggered' && p.clap) {
+        const conf = p.clap_conf == null ? null : Number(p.clap_conf);
         if (conf != null && Number.isFinite(conf) && conf < clapConfMin) continue;
-        lastClap = points[i].clap;
+        lastHeavy = p.clap;
         break;
       }
     }
-    clapEl.textContent = lastClap;
+    clapEl.textContent = lastHeavy;
   }
 }
 
@@ -2760,7 +3077,7 @@ function sleepMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForFirstChunk({ enableClap, discardSeconds }) {
+async function waitForFirstChunk({ enableClap, enableDasm, discardSeconds }) {
   const discardMs = Math.max(0, Number(discardSeconds) || 2) * 1000;
   const startedAt = Date.now();
   const deadline = startedAt + 90000;
@@ -2813,9 +3130,11 @@ async function waitForFirstChunk({ enableClap, discardSeconds }) {
     } else if (elapsed < 2500) {
       setStartProgress({
         title: 'Starting recording',
-        message: enableClap
-          ? 'Loading YAMNet and CLAP models…'
-          : 'Loading YAMNet model…',
+        message: enableDasm
+          ? 'Loading YAMNet and DASM models…'
+          : (enableClap
+            ? 'Loading YAMNet and CLAP models…'
+            : 'Loading YAMNet model…'),
         busy: true,
       });
     } else if (elapsed < 2500 + discardMs + 1500) {
@@ -2853,7 +3172,7 @@ if (startRecordingForm) {
       startRecordingBtn.disabled = true;
       startRecordingBtn.classList.add('btn-disabled');
     }
-    const enableClap = !!(startRecordingForm.querySelector('[name="enable_clap"]') || {}).checked;
+    const heavy = selectedHeavyMl();
     syncStartSettingsFromForm();
     setStartProgress({
       title: 'Starting recording',
@@ -2909,7 +3228,8 @@ if (startRecordingForm) {
     });
 
     const wait = await waitForFirstChunk({
-      enableClap: !!(startData.enable_clap || enableClap),
+      enableClap: !!(startData.enable_clap) || heavy === 'clap',
+      enableDasm: !!(startData.enable_dasm) || heavy === 'dasm',
       discardSeconds: startData.startup_discard_s,
     });
     if (!wait.ok) {
@@ -3020,7 +3340,13 @@ function ensureOverviewChart() {
   if (typeof Chart === 'undefined') return null;
   const canvas = document.getElementById('overview-loudness-chart');
   if (!canvas) return null;
-  Chart.register(labelMarkerPlugin, yamnetBracketPlugin, clapWindowBandsPlugin, overviewPlayheadPlugin);
+  Chart.register(
+    labelMarkerPlugin,
+    yamnetBracketPlugin,
+    clapWindowBandsPlugin,
+    dasmSpansPlugin,
+    overviewPlayheadPlugin,
+  );
   overviewChart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
@@ -3069,6 +3395,18 @@ function ensureOverviewChart() {
           borderWidth: 1,
           showPointLabels: true,
           pointLabelColor: cssVar('--clap-label'),
+        },
+        {
+          label: 'DASM',
+          type: 'scatter',
+          data: [],
+          showLine: false,
+          pointRadius: 5,
+          backgroundColor: cssVar('--dasm-point'),
+          borderColor: cssVar('--dasm-border'),
+          borderWidth: 1,
+          showPointLabels: true,
+          pointLabelColor: cssVar('--dasm-label'),
         },
       ],
     },
@@ -3191,15 +3529,23 @@ function updateOverviewChartWindow(playheadMs) {
   const l90 = filterSeriesInWindow(overviewSeries.l90, min, max);
   const yam = filterSeriesInWindow(overviewSeries.yam, min, max);
   const clap = filterSeriesInWindow(overviewSeries.clap, min, max);
+  const dasm = filterSeriesInWindow(overviewSeries.dasm || [], min, max);
   chart.data.datasets[0].data = dba;
   chart.data.datasets[1].data = l90;
   chart.data.datasets[2].data = yam;
   chart.data.datasets[3].data = clap;
+  if (chart.data.datasets[4]) chart.data.datasets[4].data = dasm;
   chart.options.scales.x.min = min;
   chart.options.scales.x.max = max;
 
   const ys = []
-    .concat(dba.map((p) => p.y), l90.map((p) => p.y), yam.map((p) => p.y), clap.map((p) => p.y))
+    .concat(
+      dba.map((p) => p.y),
+      l90.map((p) => p.y),
+      yam.map((p) => p.y),
+      clap.map((p) => p.y),
+      dasm.map((p) => p.y),
+    )
     .filter((v) => typeof v === 'number' && Number.isFinite(v));
   if (ys.length) {
     const lo = Math.min(...ys);
@@ -3409,11 +3755,10 @@ function rebuildOverviewLabelSeries() {
   const source = overviewWindowPoints || [];
   overviewSeries.yam = yamnetLabelSpans(source, yamConfMin);
   overviewSeries.clap = clapMarkers(source, clapConfMin);
+  overviewSeries.dasm = dasmMarkers(source, dasmConfMin);
   overviewHasClap = source.some((p) => p.clap_status || p.clap);
-  setClapConfVisible(
-    overviewHasClap
-    || !!(document.querySelector('#start-recording-form [name="enable_clap"]') || {}).checked
-  );
+  overviewHasDasm = source.some((p) => p.dasm_status || p.dasm);
+  syncHeavyConfVisibility();
 }
 
 function buildOverviewSeriesFromWindow(data) {
@@ -3433,7 +3778,7 @@ function buildOverviewSeriesFromWindow(data) {
     if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
   }
   overviewWindowPoints = source;
-  overviewSeries = { dba, l90, yam: [], clap: [] };
+  overviewSeries = { dba, l90, yam: [], clap: [], dasm: [] };
   rebuildOverviewLabelSeries();
 
   let min = null;
@@ -5886,6 +6231,226 @@ document.getElementById('prompts-rebuild-btn').addEventListener('click', async (
   await loadPrompts();
 });
 
+// ── DASM settings ─────────────────────────────────────────────────
+const dasmPromptsTbody = document.getElementById('dasm-prompts-tbody');
+const dasmPromptsStatus = document.getElementById('dasm-prompts-status');
+const dasmPromptsSyncBadge = document.getElementById('dasm-prompts-sync-badge');
+const dasmPromptsOnnxBadge = document.getElementById('dasm-prompts-onnx-badge');
+const dasmPromptsSyncDetail = document.getElementById('dasm-prompts-sync-detail');
+const dasmWindowStatus = document.getElementById('dasm-window-status');
+let dasmSettingsLoaded = false;
+
+function renderDasmSync(sync, onnx) {
+  if (!dasmPromptsSyncBadge) return;
+  if (!sync) {
+    dasmPromptsSyncBadge.className = 'badge idle';
+    dasmPromptsSyncBadge.innerHTML = '<span class="dot"></span>Unknown';
+    if (dasmPromptsSyncDetail) dasmPromptsSyncDetail.textContent = '';
+  } else {
+    const inSync = !!sync.in_sync;
+    dasmPromptsSyncBadge.className = 'badge ' + (inSync ? 'ok' : 'warn');
+    dasmPromptsSyncBadge.innerHTML =
+      '<span class="dot"></span>' + (inSync ? 'Embeddings in sync' : 'Bake on PC, then pull');
+    let detail =
+      `${sync.prompt_count || 0} prompts · ${sync.embedding_count || 0} embeddings` +
+      (sync.prompts_hash ? ` · hash ${sync.prompts_hash}` : '');
+    if (sync.compat_error) detail += ` · ${sync.compat_error}`;
+    if (dasmPromptsSyncDetail) dasmPromptsSyncDetail.textContent = detail;
+  }
+  if (dasmPromptsOnnxBadge) {
+    if (!onnx) {
+      dasmPromptsOnnxBadge.className = 'badge idle';
+      dasmPromptsOnnxBadge.innerHTML = '<span class="dot"></span>ONNX unknown';
+    } else if (onnx.ready) {
+      dasmPromptsOnnxBadge.className = 'badge ok';
+      dasmPromptsOnnxBadge.innerHTML = '<span class="dot"></span>ONNX ready';
+      dasmPromptsOnnxBadge.title = onnx.model_version
+        ? `${onnx.model_name} · ${onnx.model_version}`
+        : (onnx.model_name || 'ONNX');
+    } else {
+      dasmPromptsOnnxBadge.className = 'badge warn';
+      dasmPromptsOnnxBadge.innerHTML = '<span class="dot"></span>ONNX missing';
+      dasmPromptsOnnxBadge.title = onnx.hint || (onnx.missing || []).join(', ');
+    }
+  }
+}
+
+function addDasmPromptRow(label = '', prompt = '') {
+  if (!dasmPromptsTbody) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td class="col-label"><input type="text" class="prompt-label" placeholder="label"></td>' +
+    '<td><textarea class="prompt-text" rows="2" placeholder="text prompt"></textarea></td>' +
+    '<td class="col-actions"><button type="button" class="btn-danger-sm prompt-del">Delete</button></td>';
+  tr.querySelector('.prompt-label').value = label;
+  tr.querySelector('.prompt-text').value = prompt;
+  tr.querySelector('.prompt-del').addEventListener('click', () => {
+    if (guardViewerAction()) return;
+    tr.remove();
+  });
+  dasmPromptsTbody.appendChild(tr);
+  if (IS_VIEWER) {
+    tr.querySelectorAll('input, textarea, button').forEach((el) => {
+      lockForViewer(el, { block: el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' });
+    });
+  }
+}
+
+function collectDasmPrompts() {
+  const rows = [];
+  if (!dasmPromptsTbody) return rows;
+  dasmPromptsTbody.querySelectorAll('tr').forEach((tr) => {
+    const label = tr.querySelector('.prompt-label').value.trim();
+    const prompt = tr.querySelector('.prompt-text').value.trim();
+    if (label || prompt) rows.push({ label, prompt });
+  });
+  return rows;
+}
+
+async function loadDasmPrompts() {
+  if (!dasmPromptsTbody) return;
+  setInlineStatus(dasmPromptsStatus, 'Loading…');
+  const { ok, data } = await apiFetch('/api/dasm/prompts');
+  if (!ok || !data || !data.ok) {
+    setInlineStatus(dasmPromptsStatus, (data && data.error) || 'Failed to load DASM prompts', 'err');
+    return;
+  }
+  dasmPromptsTbody.innerHTML = '';
+  (data.prompts || []).forEach((p) => addDasmPromptRow(p.label, p.prompt));
+  if (!dasmPromptsTbody.children.length) addDasmPromptRow();
+  renderDasmSync(data.sync, data.onnx);
+  setInlineStatus(dasmPromptsStatus, '');
+  applyViewerLocks();
+}
+
+async function loadDasmWindow() {
+  const { ok, data } = await apiFetch('/api/dasm/window');
+  if (!ok || !data || !data.ok) {
+    setInlineStatus(dasmWindowStatus, (data && data.error) || 'Failed to load window', 'err');
+    return;
+  }
+  const pre = document.getElementById('dasm-pre-roll');
+  const post = document.getElementById('dasm-post-roll');
+  const thr = document.getElementById('dasm-frame-thr');
+  const minSpan = document.getElementById('dasm-min-span');
+  if (pre) pre.value = data.pre_roll_s ?? 5;
+  if (post) post.value = data.post_roll_s ?? 5;
+  if (thr) thr.value = data.frame_threshold ?? 0.35;
+  if (minSpan) minSpan.value = data.min_span_s ?? 0.15;
+  setInlineStatus(dasmWindowStatus, '');
+}
+
+async function loadDasmSettings() {
+  await Promise.all([loadDasmPrompts(), loadDasmWindow()]);
+  dasmSettingsLoaded = true;
+}
+
+async function saveDasmPromptsToServer(prompts, statusMsg) {
+  if (IS_VIEWER) return false;
+  setInlineStatus(dasmPromptsStatus, 'Saving…');
+  const { ok, data } = await apiFetch('/api/dasm/prompts', {
+    method: 'PUT',
+    body: JSON.stringify({ prompts }),
+  });
+  if (!ok || !data || !data.ok) {
+    const msg = (data && data.error) || 'Save failed';
+    setInlineStatus(dasmPromptsStatus, msg, 'err');
+    alert(msg);
+    return false;
+  }
+  setInlineStatus(
+    dasmPromptsStatus,
+    statusMsg ||
+      `Saved ${data.count} prompt(s). On a PC: bake_dasm_embeddings.py → commit npz → pull on Pi.`,
+    'ok'
+  );
+  await loadDasmPrompts();
+  return true;
+}
+
+const dasmPromptsAddBtn = document.getElementById('dasm-prompts-add-btn');
+if (dasmPromptsAddBtn) {
+  dasmPromptsAddBtn.addEventListener('click', () => {
+    if (guardViewerAction()) return;
+    addDasmPromptRow();
+  });
+}
+
+const dasmPromptsSaveBtn = document.getElementById('dasm-prompts-save-btn');
+if (dasmPromptsSaveBtn) {
+  dasmPromptsSaveBtn.addEventListener('click', async () => {
+    if (guardViewerAction()) return;
+    await saveDasmPromptsToServer(collectDasmPrompts());
+  });
+}
+
+const dasmPromptsExportBtn = document.getElementById('dasm-prompts-export-btn');
+if (dasmPromptsExportBtn) {
+  dasmPromptsExportBtn.addEventListener('click', () => {
+    const prompts = collectDasmPrompts();
+    downloadJson('dasm_prompts.json', { prompts });
+    setInlineStatus(dasmPromptsStatus, `Exported ${prompts.length} prompt(s).`, 'ok');
+  });
+}
+
+const dasmPromptsImportBtn = document.getElementById('dasm-prompts-import-btn');
+const dasmPromptsImportFile = document.getElementById('dasm-prompts-import-file');
+if (dasmPromptsImportBtn && dasmPromptsImportFile) {
+  dasmPromptsImportBtn.addEventListener('click', () => {
+    if (guardViewerAction()) return;
+    dasmPromptsImportFile.click();
+  });
+  dasmPromptsImportFile.addEventListener('change', async (ev) => {
+    if (guardViewerAction()) return;
+    const input = ev.target;
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const raw = await readJsonFile(file);
+      const prompts = normalizePromptsPayload(raw);
+      if (!confirm(`Replace DASM prompts with ${prompts.length} from "${file.name}" and save?`)) {
+        return;
+      }
+      dasmPromptsTbody.innerHTML = '';
+      prompts.forEach((p) => addDasmPromptRow(p.label, p.prompt));
+      await saveDasmPromptsToServer(
+        prompts,
+        `Imported and saved ${prompts.length} prompt(s). Bake on PC, commit npz, pull on Pi.`
+      );
+    } catch (err) {
+      const msg = err && err.message ? err.message : 'Import failed';
+      setInlineStatus(dasmPromptsStatus, msg, 'err');
+      alert(msg);
+    }
+  });
+}
+
+const dasmWindowSaveBtn = document.getElementById('dasm-window-save-btn');
+if (dasmWindowSaveBtn) {
+  dasmWindowSaveBtn.addEventListener('click', async () => {
+    if (guardViewerAction()) return;
+    setInlineStatus(dasmWindowStatus, 'Saving…');
+    const body = {
+      pre_roll_s: parseFloat(document.getElementById('dasm-pre-roll').value) || 5,
+      post_roll_s: parseFloat(document.getElementById('dasm-post-roll').value) || 5,
+      frame_threshold: parseFloat(document.getElementById('dasm-frame-thr').value) || 0.35,
+      min_span_s: parseFloat(document.getElementById('dasm-min-span').value) || 0.15,
+    };
+    const { ok, data } = await apiFetch('/api/dasm/window', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    if (!ok || !data || !data.ok) {
+      const msg = (data && data.error) || 'Save failed';
+      setInlineStatus(dasmWindowStatus, msg, 'err');
+      alert(msg);
+      return;
+    }
+    setInlineStatus(dasmWindowStatus, 'Window settings saved.', 'ok');
+  });
+}
+
 // ── Triggers tab ──────────────────────────────────────────────────
 const themesContainer = document.getElementById('themes-container');
 const triggersStatus = document.getElementById('triggers-status');
@@ -6252,9 +6817,27 @@ document.getElementById('catalog-refresh-btn').addEventListener('click', async (
   await loadCatalogAndApply();
 });
 
-// Prefetch prompts + triggers data on page load (silent)
+// Prefetch prompts + triggers + DASM data on page load (silent)
 loadPrompts().catch(() => {});
 loadTriggersPanel().catch(() => {});
+loadDasmSettings().catch(() => {});
+
+const clapCaptureSaveBtn = document.getElementById('clap-capture-save-btn');
+const clapCaptureStatus = document.getElementById('clap-capture-status');
+if (clapCaptureSaveBtn) {
+  clapCaptureSaveBtn.addEventListener('click', async () => {
+    if (guardViewerAction()) return;
+    const ok = await saveTriggersToServer(
+      collectTriggersPayload(),
+      'CLAP capture settings saved (shared trigger file).'
+    );
+    if (ok) {
+      setInlineStatus(clapCaptureStatus, 'CLAP capture settings saved.', 'ok');
+    } else {
+      setInlineStatus(clapCaptureStatus, 'Save failed.', 'err');
+    }
+  });
+}
 
 const displayOffsetInput = document.getElementById('settings-display-db-offset');
 const displayOffsetSave = document.getElementById('settings-display-offset-save');
