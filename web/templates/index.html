@@ -443,8 +443,11 @@
                   background:color-mix(in srgb, var(--bg) 60%, var(--surface))}
   .data-card-head-compact{padding:.65rem 1.15rem}
   .data-card-head h3{margin:0;font-size:.85rem;font-weight:650;color:var(--text);text-transform:none;letter-spacing:0}
-  .data-card-head p{margin:.2rem 0 0;font-size:.72rem;color:var(--muted)}
+  .data-card-head p{margin:.2rem 0 0;font-size:.72rem;color:var(--muted);line-height:1.45}
+  .data-card-head p code{font-size:.68rem}
   .data-card-body{padding:1.1rem 1.15rem}
+  .data-card-body > .status-row{margin-bottom:.75rem}
+  #panel-settings-ml .settings-tabs{margin-top:0}
   .export-options-grid{display:grid;grid-template-columns:1fr;gap:1rem}
   @media (min-width:720px){.export-options-grid{grid-template-columns:1fr 1fr}}
   .data-files-kicker{font-size:.7rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
@@ -1710,165 +1713,169 @@
 
 <!-- ── SETTINGS: System Health ── -->
 <div class="tab-panel{% if page == 'settings-system' %} active{% endif %}" id="panel-settings-system" role="tabpanel"{% if page != 'settings-system' %} hidden{% endif %}>
-  <div class="card" id="system-health-card">
-    <h2>System Health</h2>
-    <div class="field-note" style="margin-bottom:.65rem">
-      Live CPU, memory, temperature, storage, and internet. Warm colours mean the
-      device is under pressure — yellow ≈ watch it, red ≈ close to limits /
-      throttling / weak link. Updates while this page is open.
+  <section class="data-card" id="system-health-card">
+    <div class="data-card-head">
+      <h3>System Health</h3>
+      <p>
+        Live CPU, memory, temperature, storage, and internet. Warm colours mean the
+        device is under pressure — yellow ≈ watch it, red ≈ close to limits /
+        throttling / weak link. Updates while this page is open.
+      </p>
     </div>
-    <div class="sys-health-grid" id="sys-health-grid">
-      <div class="sys-meter unknown" id="sys-cpu">
-        <div class="sys-meter-head">
-          <span class="sys-meter-label">CPU</span>
-          <span class="sys-meter-value" id="sys-cpu-val">—</span>
+    <div class="data-card-body">
+      <div class="sys-health-grid" id="sys-health-grid">
+        <div class="sys-meter unknown" id="sys-cpu">
+          <div class="sys-meter-head">
+            <span class="sys-meter-label">CPU</span>
+            <span class="sys-meter-value" id="sys-cpu-val">—</span>
+          </div>
+          <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-cpu-fill"></div></div>
+          <div class="sys-meter-note" id="sys-cpu-note">Waiting…</div>
         </div>
-        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-cpu-fill"></div></div>
-        <div class="sys-meter-note" id="sys-cpu-note">Waiting…</div>
-      </div>
-      <div class="sys-meter unknown" id="sys-mem">
-        <div class="sys-meter-head">
-          <span class="sys-meter-label">Memory</span>
-          <span class="sys-meter-value" id="sys-mem-val">—</span>
+        <div class="sys-meter unknown" id="sys-mem">
+          <div class="sys-meter-head">
+            <span class="sys-meter-label">Memory</span>
+            <span class="sys-meter-value" id="sys-mem-val">—</span>
+          </div>
+          <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-mem-fill"></div></div>
+          <div class="sys-meter-note" id="sys-mem-note">Waiting…</div>
         </div>
-        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-mem-fill"></div></div>
-        <div class="sys-meter-note" id="sys-mem-note">Waiting…</div>
-      </div>
-      <div class="sys-meter unknown" id="sys-temp">
-        <div class="sys-meter-head">
-          <span class="sys-meter-label">CPU temp</span>
-          <span class="sys-meter-value" id="sys-temp-val">—</span>
+        <div class="sys-meter unknown" id="sys-temp">
+          <div class="sys-meter-head">
+            <span class="sys-meter-label">CPU temp</span>
+            <span class="sys-meter-value" id="sys-temp-val">—</span>
+          </div>
+          <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-temp-fill"></div></div>
+          <div class="sys-meter-note" id="sys-temp-note">Waiting…</div>
         </div>
-        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-temp-fill"></div></div>
-        <div class="sys-meter-note" id="sys-temp-note">Waiting…</div>
-      </div>
-      <div class="sys-meter unknown" id="sys-disk">
-        <div class="sys-meter-head">
-          <span class="sys-meter-label">Disk used</span>
-          <span class="sys-meter-value" id="sys-disk-val">—</span>
+        <div class="sys-meter unknown" id="sys-disk">
+          <div class="sys-meter-head">
+            <span class="sys-meter-label">Disk used</span>
+            <span class="sys-meter-value" id="sys-disk-val">—</span>
+          </div>
+          <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-disk-fill"></div></div>
+          <div class="sys-meter-note" id="sys-disk-note">Waiting…</div>
         </div>
-        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-disk-fill"></div></div>
-        <div class="sys-meter-note" id="sys-disk-note">Waiting…</div>
-      </div>
-      <div class="sys-meter unknown" id="sys-net">
-        <div class="sys-meter-head">
-          <span class="sys-meter-label">Internet</span>
-          <span class="sys-meter-value" id="sys-net-val">—</span>
+        <div class="sys-meter unknown" id="sys-net">
+          <div class="sys-meter-head">
+            <span class="sys-meter-label">Internet</span>
+            <span class="sys-meter-value" id="sys-net-val">—</span>
+          </div>
+          <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-net-fill"></div></div>
+          <div class="sys-meter-note" id="sys-net-note">Waiting…</div>
         </div>
-        <div class="sys-meter-track"><div class="sys-meter-fill" id="sys-net-fill"></div></div>
-        <div class="sys-meter-note" id="sys-net-note">Waiting…</div>
       </div>
+      <div class="sys-health-flags" id="sys-health-flags" hidden></div>
+      <div class="sys-health-meta" id="sys-health-meta"></div>
     </div>
-    <div class="sys-health-flags" id="sys-health-flags" hidden></div>
-    <div class="sys-health-meta" id="sys-health-meta"></div>
-  </div>
+  </section>
 </div><!-- /panel-settings-system -->
 
 <!-- ── SETTINGS: Recording Options ── -->
 <div class="tab-panel{% if page == 'settings-recording' %} active{% endif %}" id="panel-settings-recording" role="tabpanel"{% if page != 'settings-recording' %} hidden{% endif %}>
-  <div class="card">
-    <h2>Recording Options</h2>
-    <div class="field-note" style="margin-bottom:.75rem">
-      These defaults apply when you start a recording from Record.
+  <section class="data-card">
+    <div class="data-card-head">
+      <h3>Recording Options</h3>
+      <p>These defaults apply when you start a recording from Record.</p>
     </div>
-
-    <div class="heavy-ml-choice" id="settings-heavy-ml" role="radiogroup" aria-label="Heavy ML backend">
-      <label class="check-row">
-        <input type="radio" name="settings_heavy_ml" value="off" checked>
-        <div>
-          Heavy ML: Off
-          <span>YAMNet only. No CLAP or DASM.</span>
-        </div>
-      </label>
-      <label class="check-row">
-        <input type="radio" name="settings_heavy_ml" value="clap">
-        <div>
-          Heavy ML: CLAP
-          <span>Dynamic energy snippets on shared triggers. Requires rebuilt CLAP embeddings.</span>
-        </div>
-      </label>
-      <label class="check-row">
-        <input type="radio" name="settings_heavy_ml" value="dasm">
-        <div>
-          Heavy ML: DASM
-          <span>Fixed ±5&nbsp;s multilabel window. Requires models/dasm + baked query vectors.</span>
-        </div>
-      </label>
-    </div>
-
-    <label class="check-row" style="margin-top:1rem">
-      <input type="checkbox" id="settings-record-audio" value="on">
-      <div>
-        Record audio
-        <span id="record-audio-hint">
-          Saves ungained mic audio next to the JSONL. Format below
-          (default FLAC — lossless, usually much smaller than WAV).
-        </span>
+    <div class="data-card-body">
+      <div class="heavy-ml-choice" id="settings-heavy-ml" role="radiogroup" aria-label="Heavy ML backend">
+        <label class="check-row">
+          <input type="radio" name="settings_heavy_ml" value="off" checked>
+          <div>
+            Heavy ML: Off
+            <span>YAMNet only. No CLAP or DASM.</span>
+          </div>
+        </label>
+        <label class="check-row">
+          <input type="radio" name="settings_heavy_ml" value="clap">
+          <div>
+            Heavy ML: CLAP
+            <span>Dynamic energy snippets on shared triggers. Requires rebuilt CLAP embeddings.</span>
+          </div>
+        </label>
+        <label class="check-row">
+          <input type="radio" name="settings_heavy_ml" value="dasm">
+          <div>
+            Heavy ML: DASM
+            <span>Fixed ±5&nbsp;s multilabel window. Requires models/dasm + baked query vectors.</span>
+          </div>
+        </label>
       </div>
-    </label>
 
-    <label for="settings-audio-format" style="margin-top:1.1rem">Recorded audio format</label>
-    <select id="settings-audio-format">
-      <option value="flac"{% if audio_format == 'flac' %} selected{% endif %}>FLAC (lossless, smaller — default)</option>
-      <option value="wav"{% if audio_format == 'wav' %} selected{% endif %}>WAV (uncompressed PCM)</option>
-    </select>
-    <div class="field-note">
-      Used when <strong>Record audio</strong> is enabled above.
-      Both are ungained mono 16-bit @ 48&nbsp;kHz — FLAC is lossless compression
-      (often ~40–60% of WAV size). Saved to <code>.env</code> as
-      <code>AUDIO_FORMAT</code>. Requires <code>soundfile</code> +
-      <code>libsndfile1</code> on the Pi for FLAC.
-    </div>
-    <div class="btn-row" style="margin-top:.5rem">
-      <button type="button" class="btn btn-start" id="settings-audio-format-save"
-              style="width:auto;margin:0;max-width:16rem">Save audio format</button>
-    </div>
-    <div class="inline-status" id="settings-audio-format-status"></div>
-  </div>
+      <label class="check-row" style="margin-top:1rem">
+        <input type="checkbox" id="settings-record-audio" value="on">
+        <div>
+          Record audio
+          <span id="record-audio-hint">
+            Saves ungained mic audio next to the JSONL. Format below
+            (default FLAC — lossless, usually much smaller than WAV).
+          </span>
+        </div>
+      </label>
 
-  <div class="card">
-    <h2>Capture defaults</h2>
-    <div class="field-note" style="margin-bottom:.75rem">
-      Device, gate, and display calibration for this node.
+      <label for="settings-audio-format" style="margin-top:1.1rem">Recorded audio format</label>
+      <select id="settings-audio-format">
+        <option value="flac"{% if audio_format == 'flac' %} selected{% endif %}>FLAC (lossless, smaller — default)</option>
+        <option value="wav"{% if audio_format == 'wav' %} selected{% endif %}>WAV (uncompressed PCM)</option>
+      </select>
+      <div class="field-note">
+        Used when <strong>Record audio</strong> is enabled above.
+        Both are ungained mono 16-bit @ 48&nbsp;kHz — FLAC is lossless compression
+        (often ~40–60% of WAV size). Saved to <code>.env</code> as
+        <code>AUDIO_FORMAT</code>. Requires <code>soundfile</code> +
+        <code>libsndfile1</code> on the Pi for FLAC.
+      </div>
+      <div class="btn-row" style="margin-top:.5rem">
+        <button type="button" class="btn btn-start" id="settings-audio-format-save"
+                style="width:auto;margin:0;max-width:16rem">Save audio format</button>
+      </div>
+      <div class="inline-status" id="settings-audio-format-status"></div>
     </div>
+  </section>
 
-    <label for="settings-device-id">Device ID</label>
-    <input type="text" id="settings-device-id" value="{{ default_device_id }}">
-
-    <label for="settings-alsa-device">ALSA device</label>
-    <input type="text" id="settings-alsa-device" value="{{ default_alsa_device }}">
-
-    <label for="settings-gate-sensitivity">Gate sensitivity (dB above ambient)</label>
-    <input type="number" id="settings-gate-sensitivity" step="0.5" min="1" max="30"
-           value="{{ default_gate_sensitivity_db }}">
-    <div class="field-note">
-      L90 dynamic gate: open = ambient floor (10th percentile over ~5 min) + this
-      offset (default 5 dB). Gate closes after 2 consecutive chunks below open
-      or when the signal is too cold. AGC tracks the L90 floor. Peak 200&nbsp;ms
-      sub-windows and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
+  <section class="data-card">
+    <div class="data-card-head">
+      <h3>Capture defaults</h3>
+      <p>Device, gate, and display calibration for this node.</p>
     </div>
+    <div class="data-card-body">
+      <label for="settings-device-id">Device ID</label>
+      <input type="text" id="settings-device-id" value="{{ default_device_id }}">
 
-    <label for="settings-display-db-offset">Display dBA offset (dB)</label>
-    <input type="number" id="settings-display-db-offset" step="0.1" min="-40" max="40"
-           value="{{ display_db_offset }}">
-    <div class="field-note">
-      Added to dBA / LAFmax in the live UI, Inspect, and reports only — raw JSONL
-      values are unchanged. Use to align this Pi with another device
-      (e.g. <code>-5.4</code>). Range ±40. Saved to <code>.env</code> as
-      <code>DISPLAY_DB_OFFSET</code>.
+      <label for="settings-alsa-device">ALSA device</label>
+      <input type="text" id="settings-alsa-device" value="{{ default_alsa_device }}">
+
+      <label for="settings-gate-sensitivity">Gate sensitivity (dB above ambient)</label>
+      <input type="number" id="settings-gate-sensitivity" step="0.5" min="1" max="30"
+             value="{{ default_gate_sensitivity_db }}">
+      <div class="field-note">
+        L90 dynamic gate: open = ambient floor (10th percentile over ~5 min) + this
+        offset (default 5 dB). Gate closes after 2 consecutive chunks below open
+        or when the signal is too cold. AGC tracks the L90 floor. Peak 200&nbsp;ms
+        sub-windows and a 4&nbsp;dB ΔRMS jump can also open the gate for short impulses.
+      </div>
+
+      <label for="settings-display-db-offset">Display dBA offset (dB)</label>
+      <input type="number" id="settings-display-db-offset" step="0.1" min="-40" max="40"
+             value="{{ display_db_offset }}">
+      <div class="field-note">
+        Added to dBA / LAFmax in the live UI, Inspect, and reports only — raw JSONL
+        values are unchanged. Use to align this Pi with another device
+        (e.g. <code>-5.4</code>). Range ±40. Saved to <code>.env</code> as
+        <code>DISPLAY_DB_OFFSET</code>.
+      </div>
+      <div class="btn-row" style="margin-top:.5rem">
+        <button type="button" class="btn btn-start" id="settings-display-offset-save"
+                style="width:auto;margin:0;max-width:16rem">Save display offset</button>
+      </div>
+      <div class="inline-status" id="settings-display-offset-status"></div>
     </div>
-    <div class="btn-row" style="margin-top:.5rem">
-      <button type="button" class="btn btn-start" id="settings-display-offset-save"
-              style="width:auto;margin:0;max-width:16rem">Save display offset</button>
-    </div>
-    <div class="inline-status" id="settings-display-offset-status"></div>
-  </div>
+  </section>
 </div><!-- /panel-settings-recording -->
 
 <!-- ── SETTINGS: ML ── -->
 <div class="tab-panel{% if page == 'settings-ml' %} active{% endif %}" id="panel-settings-ml" role="tabpanel"{% if page != 'settings-ml' %} hidden{% endif %}>
-  <h2 class="settings-section-title">ML Settings</h2>
-
   <div class="settings-tabs" role="tablist" aria-label="ML backend settings">
     <button type="button" class="settings-tab" role="tab" id="heavy-tab-triggers"
             aria-selected="true" data-heavy-tab="triggers">Triggers</button>
@@ -1879,186 +1886,206 @@
   </div>
 
   <div class="settings-tab-panel" data-heavy-panel="clap" hidden>
-  <div class="card">
-    <h2>CLAP prompts</h2>
-    <div class="status-row" id="prompts-sync-row">
-      <span class="badge idle" id="prompts-sync-badge"><span class="dot"></span>Loading…</span>
-      <span class="badge idle" id="prompts-onnx-badge"><span class="dot"></span>ONNX…</span>
-      <span style="color:var(--muted);font-size:.75rem" id="prompts-sync-detail"></span>
+  <section class="data-card">
+    <div class="data-card-head">
+      <h3>CLAP prompts</h3>
+      <p>
+        Each row is a label + text prompt used for CLAP embeddings. Install ONNX models
+        (<code>python scripts/download_clap_models.py</code>), save prompts, then rebuild
+        embeddings before enabling CLAP on a recording.
+      </p>
     </div>
-    <div class="field-note" style="margin-bottom:.75rem">
-      Each row is a label + text prompt used for CLAP embeddings. Install ONNX models
-      (<code>python scripts/download_clap_models.py</code>), save prompts, then rebuild
-      embeddings before enabling CLAP on a recording.
+    <div class="data-card-body">
+      <div class="status-row" id="prompts-sync-row">
+        <span class="badge idle" id="prompts-sync-badge"><span class="dot"></span>Loading…</span>
+        <span class="badge idle" id="prompts-onnx-badge"><span class="dot"></span>ONNX…</span>
+        <span style="color:var(--muted);font-size:.75rem" id="prompts-sync-detail"></span>
+      </div>
+      <table class="prompt-table">
+        <thead>
+          <tr>
+            <th class="col-label">Label</th>
+            <th>Prompt</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="prompts-tbody"></tbody>
+      </table>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" id="prompts-add-btn">+ Add row</button>
+        <button type="button" class="btn btn-start" id="prompts-save-btn">Save prompts</button>
+        <button type="button" class="btn btn-secondary" id="prompts-rebuild-btn">Rebuild embeddings</button>
+        <button type="button" class="btn btn-secondary" id="prompts-export-btn">↓ Export JSON</button>
+        <button type="button" class="btn btn-secondary" id="prompts-import-btn">↑ Import JSON</button>
+        <input type="file" id="prompts-import-file" accept="application/json,.json" hidden>
+      </div>
+      <div class="inline-status" id="prompts-status"></div>
     </div>
-    <table class="prompt-table">
-      <thead>
-        <tr>
-          <th class="col-label">Label</th>
-          <th>Prompt</th>
-          <th class="col-actions"></th>
-        </tr>
-      </thead>
-      <tbody id="prompts-tbody"></tbody>
-    </table>
-    <div class="btn-row">
-      <button type="button" class="btn btn-secondary" id="prompts-add-btn">+ Add row</button>
-      <button type="button" class="btn btn-start" id="prompts-save-btn">Save prompts</button>
-      <button type="button" class="btn btn-secondary" id="prompts-rebuild-btn">Rebuild embeddings</button>
-      <button type="button" class="btn btn-secondary" id="prompts-export-btn">↓ Export JSON</button>
-      <button type="button" class="btn btn-secondary" id="prompts-import-btn">↑ Import JSON</button>
-      <input type="file" id="prompts-import-file" accept="application/json,.json" hidden>
+  </section>
+  <section class="data-card">
+    <div class="data-card-head">
+      <h3>CLAP snippet / capture</h3>
+      <p>
+        Dynamic energy slicing for CLAP only (lookback onset → settle / max duration).
+        Shared trigger labels and cooldown live under the <strong>Triggers</strong> tab.
+      </p>
     </div>
-    <div class="inline-status" id="prompts-status"></div>
-  </div>
-  <div class="card">
-    <h2>CLAP snippet / capture</h2>
-    <div class="field-note" style="margin-bottom:.75rem">
-      Dynamic energy slicing for CLAP only (lookback onset → settle / max duration).
-      Shared trigger labels and cooldown live under the <strong>Triggers</strong> tab.
+    <div class="data-card-body">
+      <div class="trigger-settings">
+        <div>
+          <label for="trig-lookback">Lookback (seconds)</label>
+          <input type="number" id="trig-lookback" min="1" step="0.5" value="4">
+          <div class="field-note">How far back we search for when the event really started.</div>
+        </div>
+        <div>
+          <label for="trig-pad">Pre-onset pad (ms)</label>
+          <input type="number" id="trig-pad" min="0" step="10" value="150">
+          <div class="field-note">Extra audio kept just before the detected start.</div>
+        </div>
+        <div>
+          <label for="trig-settle">End settle (chunks)</label>
+          <input type="number" id="trig-settle" min="1" step="1" value="2">
+          <div class="field-note">Chunks that must look “ended” before we stop capturing.</div>
+        </div>
+        <div>
+          <label for="trig-max-event">Max event (seconds)</label>
+          <input type="number" id="trig-max-event" min="0.5" step="0.5" value="5">
+          <div class="field-note">Hard cap on CLAP clip length.</div>
+        </div>
+        <div>
+          <label for="trig-onset-margin">Onset margin (dB)</label>
+          <input type="number" id="trig-onset-margin" min="0" step="0.5" value="3">
+          <div class="field-note">Elevated vs ambient floor when finding the start.</div>
+        </div>
+        <div>
+          <label for="trig-peak-decay">Peak decay (dB)</label>
+          <input type="number" id="trig-peak-decay" min="0" step="0.5" value="5">
+          <div class="field-note">Stop once loudness drops this far below the event peak.</div>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:.75rem">
+        <button type="button" class="btn btn-start" id="clap-capture-save-btn">Save CLAP capture</button>
+      </div>
+      <div class="inline-status" id="clap-capture-status"></div>
     </div>
-    <div class="trigger-settings">
-      <div>
-        <label for="trig-lookback">Lookback (seconds)</label>
-        <input type="number" id="trig-lookback" min="1" step="0.5" value="4">
-        <div class="field-note">How far back we search for when the event really started.</div>
-      </div>
-      <div>
-        <label for="trig-pad">Pre-onset pad (ms)</label>
-        <input type="number" id="trig-pad" min="0" step="10" value="150">
-        <div class="field-note">Extra audio kept just before the detected start.</div>
-      </div>
-      <div>
-        <label for="trig-settle">End settle (chunks)</label>
-        <input type="number" id="trig-settle" min="1" step="1" value="2">
-        <div class="field-note">Chunks that must look “ended” before we stop capturing.</div>
-      </div>
-      <div>
-        <label for="trig-max-event">Max event (seconds)</label>
-        <input type="number" id="trig-max-event" min="0.5" step="0.5" value="5">
-        <div class="field-note">Hard cap on CLAP clip length.</div>
-      </div>
-      <div>
-        <label for="trig-onset-margin">Onset margin (dB)</label>
-        <input type="number" id="trig-onset-margin" min="0" step="0.5" value="3">
-        <div class="field-note">Elevated vs ambient floor when finding the start.</div>
-      </div>
-      <div>
-        <label for="trig-peak-decay">Peak decay (dB)</label>
-        <input type="number" id="trig-peak-decay" min="0" step="0.5" value="5">
-        <div class="field-note">Stop once loudness drops this far below the event peak.</div>
-      </div>
-    </div>
-    <div class="btn-row" style="margin-top:.75rem">
-      <button type="button" class="btn btn-start" id="clap-capture-save-btn">Save CLAP capture</button>
-    </div>
-    <div class="inline-status" id="clap-capture-status"></div>
-  </div>
+  </section>
   </div><!-- /clap panel -->
 
   <div class="settings-tab-panel" data-heavy-panel="triggers">
-  <div class="card">
-    <h2>Heavy ML Triggers</h2>
-    <div class="field-note" style="margin-bottom:.75rem">
-      Shared by CLAP and DASM. Off = ignore, Trigger = arm on that YAMNet label,
-      Ambiguous = arm only when also loud (dBA threshold). Cooldown applies to
-      whichever heavy backend is selected on Start.
+  <section class="data-card">
+    <div class="data-card-head">
+      <h3>Heavy ML Triggers</h3>
+      <p>
+        Shared by CLAP and DASM. Off = ignore, Trigger = arm on that YAMNet label,
+        Ambiguous = arm only when also loud (dBA threshold). Cooldown applies to
+        whichever heavy backend is selected on Start.
+      </p>
     </div>
-    <div class="trigger-settings">
-      <div>
-        <label for="trig-cooldown">Cooldown (seconds)</label>
-        <input type="number" id="trig-cooldown" min="0" step="0.5" value="5">
-        <div class="field-note">Minimum wait after one heavy-ML capture starts before another can start.</div>
+    <div class="data-card-body">
+      <div class="trigger-settings">
+        <div>
+          <label for="trig-cooldown">Cooldown (seconds)</label>
+          <input type="number" id="trig-cooldown" min="0" step="0.5" value="5">
+          <div class="field-note">Minimum wait after one heavy-ML capture starts before another can start.</div>
+        </div>
+        <div>
+          <label for="trig-dba">dBA threshold</label>
+          <input type="number" id="trig-dba" min="0" step="0.5" value="55">
+          <div class="field-note">For Ambiguous labels only: arm only when loudness is at least this level.</div>
+        </div>
       </div>
-      <div>
-        <label for="trig-dba">dBA threshold</label>
-        <input type="number" id="trig-dba" min="0" step="0.5" value="55">
-        <div class="field-note">For Ambiguous labels only: arm only when loudness is at least this level.</div>
+      <label for="trig-search">Filter labels</label>
+      <input type="search" id="trig-search" placeholder="Search display names…">
+      <div class="btn-row" style="margin-top:.75rem">
+        <button type="button" class="btn btn-start" id="triggers-save-btn">Save triggers</button>
+        <button type="button" class="btn btn-secondary" id="catalog-refresh-btn">Refresh catalog</button>
+        <button type="button" class="btn btn-secondary" id="triggers-export-btn">↓ Export JSON</button>
+        <button type="button" class="btn btn-secondary" id="triggers-import-btn">↑ Import JSON</button>
+        <input type="file" id="triggers-import-file" accept="application/json,.json" hidden>
       </div>
+      <div class="inline-status" id="triggers-status"></div>
     </div>
-    <label for="trig-search">Filter labels</label>
-    <input type="search" id="trig-search" placeholder="Search display names…">
-    <div class="btn-row" style="margin-top:.75rem">
-      <button type="button" class="btn btn-start" id="triggers-save-btn">Save triggers</button>
-      <button type="button" class="btn btn-secondary" id="catalog-refresh-btn">Refresh catalog</button>
-      <button type="button" class="btn btn-secondary" id="triggers-export-btn">↓ Export JSON</button>
-      <button type="button" class="btn btn-secondary" id="triggers-import-btn">↑ Import JSON</button>
-      <input type="file" id="triggers-import-file" accept="application/json,.json" hidden>
-    </div>
-    <div class="inline-status" id="triggers-status"></div>
-  </div>
+  </section>
   <div id="themes-container">
     <div class="empty" id="themes-placeholder">Loading catalog…</div>
   </div>
   </div><!-- /triggers panel -->
 
   <div class="settings-tab-panel" data-heavy-panel="dasm" hidden>
-  <div class="card">
-    <h2>DASM prompts</h2>
-    <div class="status-row" id="dasm-prompts-sync-row">
-      <span class="badge idle" id="dasm-prompts-sync-badge"><span class="dot"></span>Loading…</span>
-      <span class="badge idle" id="dasm-prompts-onnx-badge"><span class="dot"></span>ONNX…</span>
-      <span style="color:var(--muted);font-size:.75rem" id="dasm-prompts-sync-detail"></span>
+  <section class="data-card">
+    <div class="data-card-head">
+      <h3>DASM prompts</h3>
+      <p>
+        Save prompts here; bake embeddings on a PC (no in-app Rebuild), commit the npz,
+        then <code>git pull</code> on the Pi. Up to <strong>16</strong> open-vocab prompts
+        (unused slots are padded at inference; ONNX must be exported with
+        <code>--n-extra 16</code>).
+        <a href="/help/dasm-bake" target="_blank" rel="noopener noreferrer"
+           style="color:var(--accent);font-weight:600;margin-left:.15rem">How it works →</a>
+      </p>
     </div>
-    <div class="field-note" style="margin-bottom:.75rem">
-      Save prompts here; bake embeddings on a PC (no in-app Rebuild), commit the npz,
-      then <code>git pull</code> on the Pi. Up to <strong>16</strong> open-vocab prompts
-      (unused slots are padded at inference; ONNX must be exported with
-      <code>--n-extra 16</code>).
-      <a href="/help/dasm-bake" target="_blank" rel="noopener noreferrer"
-         style="color:var(--accent);font-weight:600;margin-left:.15rem">How it works →</a>
-    </div>
-    <table class="prompt-table">
-      <thead>
-        <tr>
-          <th class="col-label">Label</th>
-          <th>Prompt</th>
-          <th class="col-actions"></th>
-        </tr>
-      </thead>
-      <tbody id="dasm-prompts-tbody"></tbody>
-    </table>
-    <div class="btn-row">
-      <button type="button" class="btn btn-secondary" id="dasm-prompts-add-btn">+ Add row</button>
-      <button type="button" class="btn btn-start" id="dasm-prompts-save-btn">Save prompts</button>
-      <a class="btn btn-secondary" href="/help/dasm-bake" target="_blank" rel="noopener noreferrer"
-         id="dasm-how-it-works" style="text-decoration:none;display:inline-flex;align-items:center">How it works</a>
-      <button type="button" class="btn btn-secondary" id="dasm-prompts-export-btn">↓ Export JSON</button>
-      <button type="button" class="btn btn-secondary" id="dasm-prompts-import-btn">↑ Import JSON</button>
-      <input type="file" id="dasm-prompts-import-file" accept="application/json,.json" hidden>
-    </div>
-    <div class="inline-status" id="dasm-prompts-status"></div>
-  </div>
-  <div class="card">
-    <h2>DASM window</h2>
-    <div class="field-note" style="margin-bottom:.75rem">
-      Fixed window around the arm instant: <code>[t − pre, t + post]</code>
-      (defaults ±5&nbsp;s → 10&nbsp;s total).
-    </div>
-    <div class="trigger-settings">
-      <div>
-        <label for="dasm-pre-roll">Pre-roll (seconds)</label>
-        <input type="number" id="dasm-pre-roll" min="0.1" step="0.5" value="5">
+    <div class="data-card-body">
+      <div class="status-row" id="dasm-prompts-sync-row">
+        <span class="badge idle" id="dasm-prompts-sync-badge"><span class="dot"></span>Loading…</span>
+        <span class="badge idle" id="dasm-prompts-onnx-badge"><span class="dot"></span>ONNX…</span>
+        <span style="color:var(--muted);font-size:.75rem" id="dasm-prompts-sync-detail"></span>
       </div>
-      <div>
-        <label for="dasm-post-roll">Post-roll (seconds)</label>
-        <input type="number" id="dasm-post-roll" min="0.1" step="0.5" value="5">
+      <table class="prompt-table">
+        <thead>
+          <tr>
+            <th class="col-label">Label</th>
+            <th>Prompt</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="dasm-prompts-tbody"></tbody>
+      </table>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" id="dasm-prompts-add-btn">+ Add row</button>
+        <button type="button" class="btn btn-start" id="dasm-prompts-save-btn">Save prompts</button>
+        <a class="btn btn-secondary" href="/help/dasm-bake" target="_blank" rel="noopener noreferrer"
+           id="dasm-how-it-works" style="text-decoration:none;display:inline-flex;align-items:center">How it works</a>
+        <button type="button" class="btn btn-secondary" id="dasm-prompts-export-btn">↓ Export JSON</button>
+        <button type="button" class="btn btn-secondary" id="dasm-prompts-import-btn">↑ Import JSON</button>
+        <input type="file" id="dasm-prompts-import-file" accept="application/json,.json" hidden>
       </div>
-      <div>
-        <label for="dasm-frame-thr">Frame threshold</label>
-        <input type="number" id="dasm-frame-thr" min="0" max="1" step="0.05" value="0.35">
-        <div class="field-note">Span detection threshold on frame scores.</div>
-      </div>
-      <div>
-        <label for="dasm-min-span">Min span (seconds)</label>
-        <input type="number" id="dasm-min-span" min="0" step="0.05" value="0.15">
-      </div>
+      <div class="inline-status" id="dasm-prompts-status"></div>
     </div>
-    <div class="btn-row" style="margin-top:.75rem">
-      <button type="button" class="btn btn-start" id="dasm-window-save-btn">Save window</button>
+  </section>
+  <section class="data-card">
+    <div class="data-card-head">
+      <h3>DASM window</h3>
+      <p>
+        Fixed window around the arm instant: <code>[t − pre, t + post]</code>
+        (defaults ±5&nbsp;s → 10&nbsp;s total).
+      </p>
     </div>
-    <div class="inline-status" id="dasm-window-status"></div>
-  </div>
+    <div class="data-card-body">
+      <div class="trigger-settings">
+        <div>
+          <label for="dasm-pre-roll">Pre-roll (seconds)</label>
+          <input type="number" id="dasm-pre-roll" min="0.1" step="0.5" value="5">
+        </div>
+        <div>
+          <label for="dasm-post-roll">Post-roll (seconds)</label>
+          <input type="number" id="dasm-post-roll" min="0.1" step="0.5" value="5">
+        </div>
+        <div>
+          <label for="dasm-frame-thr">Frame threshold</label>
+          <input type="number" id="dasm-frame-thr" min="0" max="1" step="0.05" value="0.35">
+          <div class="field-note">Span detection threshold on frame scores.</div>
+        </div>
+        <div>
+          <label for="dasm-min-span">Min span (seconds)</label>
+          <input type="number" id="dasm-min-span" min="0" step="0.05" value="0.15">
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:.75rem">
+        <button type="button" class="btn btn-start" id="dasm-window-save-btn">Save window</button>
+      </div>
+      <div class="inline-status" id="dasm-window-status"></div>
+    </div>
+  </section>
   </div><!-- /dasm panel -->
 </div><!-- /panel-settings-ml -->
 
