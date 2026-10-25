@@ -186,13 +186,25 @@ def _sanitize_recording_name(name: str) -> str:
 
 def _hours_to_timeout(hours: float) -> str:
     """Convert hours to a GNU timeout duration string."""
-    if hours <= 0:
-        hours = 1.0
-    # Prefer whole hours; otherwise use minutes for fractional values.
-    if abs(hours - round(hours)) < 1e-9:
-        return f"{int(round(hours))}h"
-    minutes = max(1, int(round(hours * 60)))
-    return f"{minutes}m"
+    return _duration_to_timeout(hours, 0.0)
+
+
+def _duration_to_timeout(hours: float = 0.0, minutes: float = 0.0) -> str:
+    """Convert hours + minutes to a GNU timeout duration string."""
+    try:
+        h = float(hours)
+    except (TypeError, ValueError):
+        h = 0.0
+    try:
+        m = float(minutes)
+    except (TypeError, ValueError):
+        m = 0.0
+    total_minutes = int(round(max(0.0, h) * 60.0 + max(0.0, m)))
+    if total_minutes <= 0:
+        total_minutes = 60
+    if total_minutes % 60 == 0:
+        return f"{total_minutes // 60}h"
+    return f"{total_minutes}m"
 
 
 def _read_jsonl_event(path: Path, *, last: bool) -> dict | None:
@@ -673,16 +685,24 @@ def _list_recordings() -> list[dict]:
         audio_format = (
             audio_path.suffix.lower().lstrip(".") if has_audio and audio_path else None
         )
+        if first_at is not None:
+            started_ts = int(first_at.timestamp())
+        else:
+            started_ts = int(p.stat().st_mtime)
         entry: dict = {
             "name": p.name,
+            "size_bytes": int(size),
             "size_label": _format_bytes(size),
             "lines": lines,
+            "started_ts": started_ts,
             "started_display": started_display,
+            "duration_s": int(duration_s) if duration_s is not None else None,
             "duration_label": _format_duration(duration_s),
             "heavy_ml": heavy_ml,
             "has_audio": has_audio,
             "audio_name": audio_path.name if has_audio and audio_path else None,
             "audio_format": audio_format,
+            "audio_size_bytes": int(audio_size) if has_audio else 0,
             "audio_size_label": _format_bytes(audio_size) if has_audio else None,
             # Legacy keys kept for older UI/clients.
             "has_wav": has_audio,
@@ -1929,6 +1949,8 @@ def _forbid_viewer_redirect(
 async def api_start(
     request: Request,
     hours: float = Form(8.0),
+    minutes: float = Form(0.0),
+    continuous: str = Form(""),
     recording_name: str = Form("recording"),
     device_id: str = Form(DEFAULT_DEVICE_ID),
     alsa_device: str = Form(DEFAULT_ALSA_DEVICE),
@@ -1991,7 +2013,8 @@ async def api_start(
 
     safe_name = _sanitize_recording_name(recording_name)
     output = RECORDINGS_DIR / f"{safe_name}-{_utc_now()}.jsonl"
-    duration = _hours_to_timeout(hours)
+    continuous_on = continuous in {"1", "true", "on", "yes"}
+    duration = None if continuous_on else _duration_to_timeout(hours, minutes)
     # Prefer exclusive heavy_ml selector; fall back to legacy enable_clap checkbox.
     heavy = (heavy_ml or "").strip().lower()
     if heavy in {"clap", "dasm", "off", ""}:
@@ -2028,7 +2051,8 @@ async def api_start(
         cmd.append("--enable-dasm")
     if audio_on:
         cmd.extend(["--record-audio", "--audio-format", fmt])
-    full_cmd = ["timeout", duration] + cmd
+    # Continuous runs until Stop; otherwise GNU timeout wraps the collector.
+    full_cmd = cmd if continuous_on else ["timeout", str(duration)] + cmd
 
     subprocess.Popen(
         full_cmd,
@@ -2043,6 +2067,8 @@ async def api_start(
                 "code": "started",
                 "message": "Collector process started",
                 "output_file": str(output),
+                "continuous": continuous_on,
+                "timeout": duration,
                 "enable_clap": clap_on,
                 "enable_dasm": dasm_on,
                 "heavy_ml": "clap" if clap_on else ("dasm" if dasm_on else "off"),
@@ -2546,7 +2572,12 @@ async def api_recordings_delete(
 
 @app.post("/api/recordings/delete-bulk")
 async def api_recordings_delete_bulk(request: Request):
-    """Admin-only bulk delete; requires re-typing the admin password."""
+    """Admin-only bulk delete.
+
+    Deleting a single selected file trusts the existing admin session (no
+    password re-type). Deleting two or more requires re-typing the admin
+    password as an extra confirmation step.
+    """
     denied = _require_admin_json(request)
     if denied:
         return denied
@@ -2557,13 +2588,6 @@ async def api_recordings_delete_bulk(request: Request):
         return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
     if not isinstance(body, dict):
         return JSONResponse({"ok": False, "error": "bad_request"}, status_code=400)
-
-    password = body.get("password")
-    if not isinstance(password, str) or verify_login("admin", password) is None:
-        return JSONResponse(
-            {"ok": False, "error": "bad_password", "message": "Incorrect admin password"},
-            status_code=403,
-        )
 
     files_raw = body.get("files") or []
     if not isinstance(files_raw, list) or not files_raw:
@@ -2580,6 +2604,31 @@ async def api_recordings_delete_bulk(request: Request):
             },
             status_code=400,
         )
+
+    # Unique non-empty names (same filtering as the delete loop below).
+    unique_names = []
+    seen_names: set[str] = set()
+    for raw_name in files_raw:
+        if not isinstance(raw_name, str):
+            continue
+        name = raw_name.strip()
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        unique_names.append(name)
+
+    require_password = len(unique_names) >= 2
+    if require_password:
+        password = body.get("password")
+        if not isinstance(password, str) or verify_login("admin", password) is None:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "bad_password",
+                    "message": "Incorrect admin password",
+                },
+                status_code=403,
+            )
 
     deleted: list[str] = []
     failed: list[dict[str, str]] = []

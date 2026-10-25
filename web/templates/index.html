@@ -312,6 +312,11 @@
   .swatch.band-dasm{background:var(--dasm-window);border-color:var(--dasm-point)}
   .heavy-ml-choice{display:flex;flex-direction:column;gap:.55rem;margin-top:1rem}
   .heavy-ml-choice .check-row{margin:0}
+  .duration-fields{display:flex;flex-wrap:wrap;gap:.65rem 1rem;align-items:flex-end;margin:.15rem 0 .35rem}
+  .duration-field{display:flex;flex-direction:column;gap:.25rem}
+  .duration-field input{width:5.5rem;margin:0}
+  .duration-field .duration-unit{font-size:.72rem;color:var(--muted);text-transform:none;letter-spacing:0}
+  .duration-fields.is-disabled{opacity:.45;pointer-events:none}
   .settings-tabs{display:flex;gap:.4rem;margin:1rem 0 .75rem;flex-wrap:wrap}
   .settings-tab{border:1px solid var(--border);background:var(--panel);color:var(--text);
                 border-radius:8px;padding:.4rem .85rem;cursor:pointer;font:inherit;font-size:.85rem}
@@ -444,37 +449,54 @@
   @media (min-width:720px){.export-options-grid{grid-template-columns:1fr 1fr}}
   .data-files-kicker{font-size:.7rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
                      color:var(--muted);margin:1rem 0 .55rem;padding:0 .15rem}
-  .data-files-list{display:flex;flex-direction:column;gap:.65rem}
-  .recording-row{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;
-           justify-content:space-between;padding:.9rem 1rem;font-size:.8rem;
-           background:var(--surface);border:1px solid var(--border);border-radius:12px;
-           transition:border-color .15s ease, box-shadow .15s ease, background .15s ease}
-  .recording-row:hover{border-color:color-mix(in srgb, var(--border) 40%, var(--muted))}
-  .recording-row.selected{
-    background:var(--selected-row);border-color:var(--accent);
-    box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  .recordings-table-wrap{
+    width:100%;overflow:auto;border:1px solid var(--border);border-radius:10px;
+    background:var(--surface);
   }
-  .recording-info{display:flex;gap:.65rem;align-items:flex-start;min-width:0;flex:1 1 14rem}
-  .recording-name{color:var(--text);word-break:break-all;
-                  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-                  font-size:.82rem;font-weight:650}
-  .recording-selected-pill{
-    display:inline-flex;align-items:center;margin-left:.35rem;padding:.05rem .35rem;
-    font-size:.58rem;font-weight:650;border-radius:4px;border:1px solid rgba(2,132,199,.35);
-    background:rgba(2,132,199,.12);color:var(--accent);vertical-align:middle;
+  .recordings-table{
+    width:100%;border-collapse:collapse;font-size:.8rem;min-width:52rem;
   }
-  .recording-row:not(.selected) .recording-selected-pill{display:none !important}
-  .recording-meta{color:var(--muted);white-space:normal;
-                  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.72rem;margin-top:.25rem}
-  .recording-actions{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
-  .recording-actions a,.recording-actions form,.recording-actions button{cursor:pointer}
-  .dl-btn,.del-btn,.view-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
+  .recordings-table th,.recordings-table td{
+    padding:.65rem .7rem;border-bottom:1px solid var(--border);text-align:left;
+    vertical-align:middle;
+  }
+  .recordings-table thead th{
+    position:sticky;top:0;z-index:1;background:color-mix(in srgb, var(--bg) 55%, var(--surface));
+    color:var(--muted);font-size:.68rem;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;white-space:nowrap;user-select:none;
+  }
+  .recordings-table tbody tr{transition:background .12s ease}
+  .recordings-table tbody tr:hover{background:var(--hover-tab)}
+  .recordings-table tbody tr.selected{background:var(--selected-row)}
+  .recordings-table tbody tr:last-child td{border-bottom:0}
+  .recordings-table .col-check{width:2.4rem;text-align:center}
+  .recordings-table .col-check input{margin:0;vertical-align:middle}
+  .recordings-table .col-name{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-weight:650;color:var(--text);word-break:break-all;max-width:18rem;
+  }
+  .recordings-table .col-num,.recordings-table .col-size{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .recordings-table .col-muted{color:var(--muted);white-space:nowrap}
+  .recordings-table .col-actions{white-space:nowrap}
+  .recordings-table .th-sort{
+    appearance:none;border:0;background:transparent;color:inherit;font:inherit;
+    letter-spacing:inherit;text-transform:inherit;padding:0;margin:0;cursor:pointer;
+    display:inline-flex;align-items:center;gap:.3rem;
+  }
+  .recordings-table .th-sort:hover{color:var(--text)}
+  .recordings-table .th-sort .sort-ind{opacity:.35;font-size:.75em}
+  .recordings-table .th-sort[aria-sort="ascending"] .sort-ind,
+  .recordings-table .th-sort[aria-sort="descending"] .sort-ind{opacity:1;color:var(--accent)}
+  .recordings-table .th-sort[aria-sort="ascending"] .sort-ind::after{content:'▲'}
+  .recordings-table .th-sort[aria-sort="descending"] .sort-ind::after{content:'▼'}
+  .recordings-table .th-sort:not([aria-sort]) .sort-ind::after{content:'↕'}
+  .recording-actions{display:inline-flex;flex-wrap:wrap;gap:.3rem;align-items:center}
+  .dl-btn,.view-btn{padding:.25rem .6rem;background:var(--bg);border:1px solid var(--border);
           border-radius:6px;color:var(--accent);text-decoration:none;
           font-size:.75rem;white-space:nowrap;cursor:pointer;font-family:inherit}
   .dl-btn:hover,.view-btn:hover{border-color:var(--accent)}
   .view-btn{color:var(--text)}
-  .del-btn{color:var(--red);border-color:var(--border)}
-  .del-btn:hover{border-color:var(--red)}
+  .bulk-delete-password-wrap[hidden]{display:none !important}
   #panel-analyze{display:none}
   #panel-analyze.active{display:block}
   /* Page visibility driven by .active on panels (active_page / client nav) */
@@ -507,8 +529,65 @@
     content:'';display:inline-block;width:.55rem;height:.55rem;margin-left:.45rem;
     border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;
     animation:spin .8s linear infinite;vertical-align:-.05rem}
-  #start-progress{margin-top:1rem}
   @keyframes spin{to{transform:rotate(360deg)}}
+  #control-form-view[hidden],#control-loader-view[hidden]{display:none !important}
+  .start-loader{display:flex;flex-direction:column;gap:1.1rem;min-height:16rem}
+  .start-loader-head{display:flex;flex-direction:column;gap:.35rem}
+  .start-loader-head h2{margin:0}
+  .start-loader-sub{font-size:.82rem;color:var(--muted);line-height:1.4;margin:0}
+  .start-loader-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.55rem}
+  .start-loader-step{
+    display:grid;grid-template-columns:2.1rem 1fr;gap:.75rem;align-items:start;
+    padding:.65rem .75rem;border:1px solid var(--border);border-radius:10px;
+    background:var(--bg);color:var(--muted);transition:border-color .2s,background .2s,color .2s,opacity .2s;
+  }
+  .start-loader-step.is-pending{opacity:.55}
+  .start-loader-step.is-active{
+    opacity:1;color:var(--text);border-color:var(--accent);background:var(--accent-soft);
+  }
+  .start-loader-step.is-done{opacity:1;color:var(--text);border-color:var(--border)}
+  .start-loader-step.is-error{
+    opacity:1;color:var(--text);border-color:var(--danger-border);background:var(--bg);
+  }
+  .start-loader-icon{
+    width:2.1rem;height:2.1rem;border-radius:8px;display:grid;place-items:center;
+    background:var(--panel);border:1px solid var(--border);flex-shrink:0;
+  }
+  .start-loader-step.is-active .start-loader-icon{
+    border-color:var(--accent);background:var(--panel);
+  }
+  .start-loader-step.is-done .start-loader-icon{
+    border-color:color-mix(in srgb, var(--accent) 45%, var(--border));
+    color:var(--accent);
+  }
+  .start-loader-step.is-error .start-loader-icon{
+    border-color:var(--danger-border);color:var(--red);
+  }
+  .start-loader-icon svg{width:1.05rem;height:1.05rem;stroke:currentColor;fill:none;
+                         stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .start-loader-icon .start-loader-spin{
+    width:.95rem;height:.95rem;border:2px solid var(--border);border-top-color:var(--accent);
+    border-radius:50%;animation:spin .75s linear infinite;
+  }
+  .start-loader-copy{min-width:0;padding-top:.15rem}
+  .start-loader-title{font-size:.86rem;font-weight:650;color:inherit;line-height:1.3}
+  .start-loader-detail{font-size:.75rem;color:var(--muted);line-height:1.4;margin-top:.2rem}
+  .start-loader-step.is-active .start-loader-detail{color:var(--text);opacity:.8}
+  .start-loader-error{
+    margin:0;padding:.75rem .85rem;border:1px solid var(--danger-border);border-radius:10px;
+    background:var(--bg);font-size:.8rem;line-height:1.45;color:var(--danger-soft);
+  }
+  .start-loader-error[hidden]{display:none !important}
+  .start-loader-error strong{display:block;color:var(--text);margin-bottom:.25rem}
+  .start-loader-error code{font-size:.72rem;color:var(--red);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .start-loader-actions{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:.15rem}
+  .start-loader-actions[hidden]{display:none !important}
+  .start-form-error{
+    margin:.75rem 0 0;padding:.65rem .75rem;border:1px solid var(--danger-border);
+    border-radius:8px;background:var(--bg);font-size:.8rem;color:var(--danger-soft);line-height:1.4;
+  }
+  .start-form-error[hidden]{display:none !important}
   .report-header-line{font-size:1.05rem;font-weight:700;margin-bottom:.35rem}
   .report-sub{font-size:.78rem;color:var(--muted);margin-bottom:.75rem}
   .report-meta{display:flex;flex-wrap:wrap;gap:.4rem .55rem;align-items:center}
@@ -983,7 +1062,7 @@
         </button>
         <div class="nav-sub" id="nav-settings-sub" role="group" aria-label="Settings sections"{% if not settings_nav_open %} hidden{% endif %}>
           <a class="nav-link{% if nav == 'settings-system' %} active{% endif %}" href="/settings/system" data-nav="settings-system"{% if nav == 'settings-system' %} aria-current="page"{% endif %}>System Health</a>
-          <a class="nav-link{% if nav == 'settings-recording' %} active{% endif %}" href="/settings/recording" data-nav="settings-recording"{% if nav == 'settings-recording' %} aria-current="page"{% endif %}>Recording Settings</a>
+          <a class="nav-link{% if nav == 'settings-recording' %} active{% endif %}" href="/settings/recording" data-nav="settings-recording"{% if nav == 'settings-recording' %} aria-current="page"{% endif %}>Recording Options</a>
           <a class="nav-link{% if nav == 'settings-ml' %} active{% endif %}" href="/settings/ml" data-nav="settings-ml"{% if nav == 'settings-ml' %} aria-current="page"{% endif %}>ML Settings</a>
           <a class="nav-link{% if nav == 'settings-data' %} active{% endif %}" href="/settings/data" data-nav="settings-data"{% if nav == 'settings-data' %} aria-current="page"{% endif %}>Data settings</a>
         </div>
@@ -1021,7 +1100,7 @@
         <path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/>
       </svg>
     </button>
-    <span class="topbar-path" id="topbar-path">{% if page == 'record' %}record{% elif page == 'data' %}data-store{% elif page == 'settings-system' %}settings / system{% elif page == 'settings-recording' %}settings / recording{% elif page == 'settings-ml' %}settings / ml{% elif page == 'settings-data' %}settings / data{% elif page == 'analyze' %}inspect{% elif page == 'report' %}report{% else %}{{ page }}{% endif %}</span>
+    <span class="topbar-path" id="topbar-path">{% if page == 'record' %}record{% elif page == 'data' %}data-store{% elif page == 'settings-system' %}settings / system{% elif page == 'settings-recording' %}settings / options{% elif page == 'settings-ml' %}settings / ml{% elif page == 'settings-data' %}settings / data{% elif page == 'analyze' %}inspect{% elif page == 'report' %}report{% else %}{{ page }}{% endif %}</span>
   </div>
   <div class="topbar-right">
     {% if user_role == 'viewer' %}
@@ -1158,68 +1237,128 @@
 
 <!-- ── CONTROL (visible until live; full width) ── -->
 <div class="card" id="control-card"{% if status.recording and (status.chunk_count or 0) >= 1 %} hidden{% endif %}>
-  <h2>Control</h2>
+  <div id="control-form-view">
+    <h2>Control</h2>
 
-  <form method="post" action="/api/start" id="start-recording-form">
-    <label>Duration (hours)</label>
-    <input type="number" name="hours" value="8" min="0.25" max="336" step="0.25">
-
-    <label>Output file name</label>
-    <input type="text" name="recording_name" value="{{ default_recording_name }}"
-           placeholder="recording" pattern="[A-Za-z0-9_-]+"
-           title="Letters, numbers, hyphens and underscores only">
-    <div class="field-note">
-      Saved as <code style="color:var(--accent)">recordings/&lt;name&gt;-YYYY-MM-DDTHH-MMZ.jsonl</code>
-      (UTC start time appended automatically)
-    </div>
-
-    <input type="hidden" name="device_id" id="start-device-id" value="{{ default_device_id }}">
-    <input type="hidden" name="alsa_device" id="start-alsa-device" value="{{ default_alsa_device }}">
-    <input type="hidden" name="gate_sensitivity_db" id="start-gate-sensitivity"
-           value="{{ default_gate_sensitivity_db }}">
-    <input type="hidden" name="audio_format" id="start-audio-format" value="{{ audio_format }}">
-
-    <div class="heavy-ml-choice" role="radiogroup" aria-label="Heavy ML backend">
-      <label class="check-row">
-        <input type="radio" name="heavy_ml" value="off" checked>
-        <div>
-          Heavy ML: Off
-          <span>YAMNet only. No CLAP or DASM.</span>
+    <form method="post" action="/api/start" id="start-recording-form">
+      <label>Duration</label>
+      <div class="duration-fields" id="start-duration-fields">
+        <div class="duration-field">
+          <input type="number" name="hours" id="start-hours" value="8" min="0" max="336" step="1"
+                 inputmode="numeric" aria-label="Hours">
+          <span class="duration-unit">hours</span>
         </div>
-      </label>
-      <label class="check-row">
-        <input type="radio" name="heavy_ml" value="clap">
-        <div>
-          Heavy ML: CLAP
-          <span>Dynamic energy snippets on shared triggers. Requires rebuilt CLAP embeddings.</span>
+        <div class="duration-field">
+          <input type="number" name="minutes" id="start-minutes" value="0" min="0" max="59" step="1"
+                 inputmode="numeric" aria-label="Minutes">
+          <span class="duration-unit">minutes</span>
         </div>
-      </label>
-      <label class="check-row">
-        <input type="radio" name="heavy_ml" value="dasm">
-        <div>
-          Heavy ML: DASM
-          <span>Fixed ±5&nbsp;s multilabel window. Requires models/dasm + baked query vectors.</span>
-        </div>
-      </label>
-    </div>
-
-    <label class="check-row" style="margin-top:.75rem">
-      <input type="checkbox" name="record_audio" value="on">
-      <div>
-        Record audio
-        <span id="record-audio-hint">
-          Saves ungained mic audio next to the JSONL. Format is set in Settings
-          (default FLAC — lossless, usually much smaller than WAV).
-        </span>
       </div>
-    </label>
+      <label class="check-row" style="margin-top:.35rem">
+        <input type="checkbox" name="continuous" id="start-continuous" value="on">
+        <div>
+          Continuous
+          <span>Run until you stop the recording manually. Hours and minutes are ignored.</span>
+        </div>
+      </label>
+      <div class="field-note" id="start-duration-note" style="margin-top:.35rem">
+        Max scheduled length is 14 days (336&nbsp;h). Use Continuous for open-ended sessions.
+      </div>
 
-    <button class="btn btn-start" type="submit" id="start-recording-btn">▶ Start recording</button>
-  </form>
-  <div class="report-progress" id="start-progress" hidden>
-    <div class="report-progress-title" id="start-progress-title">Starting recording</div>
-    <div class="report-progress-msg" id="start-progress-msg">Preparing…</div>
-    <div class="report-progress-code" id="start-progress-code" hidden></div>
+      <label>Output file name</label>
+      <input type="text" name="recording_name" value="{{ default_recording_name }}"
+             placeholder="recording" pattern="[A-Za-z0-9_-]+"
+             title="Letters, numbers, hyphens and underscores only">
+      <div class="field-note">
+        Saved as <code style="color:var(--accent)">recordings/&lt;name&gt;-YYYY-MM-DDTHH-MMZ.jsonl</code>
+        (UTC start time appended automatically)
+      </div>
+
+      <input type="hidden" name="device_id" id="start-device-id" value="{{ default_device_id }}">
+      <input type="hidden" name="alsa_device" id="start-alsa-device" value="{{ default_alsa_device }}">
+      <input type="hidden" name="gate_sensitivity_db" id="start-gate-sensitivity"
+             value="{{ default_gate_sensitivity_db }}">
+      <input type="hidden" name="audio_format" id="start-audio-format" value="{{ audio_format }}">
+      <input type="hidden" name="heavy_ml" id="start-heavy-ml" value="off">
+      <input type="hidden" name="record_audio" id="start-record-audio" value="">
+
+      <div class="field-note" style="margin-top:.85rem">
+        Heavy ML and audio capture are configured under
+        <a href="/settings/recording" data-nav="settings-recording">Settings → Recording Options</a>.
+      </div>
+
+      <div class="start-form-error" id="start-form-error" hidden></div>
+      <button class="btn btn-start" type="submit" id="start-recording-btn">▶ Start recording</button>
+    </form>
+  </div>
+
+  <div id="control-loader-view" hidden>
+    <div class="start-loader" id="start-loader" role="status" aria-live="polite">
+      <div class="start-loader-head">
+        <h2 id="start-loader-heading">Starting recording</h2>
+        <p class="start-loader-sub" id="start-loader-sub">Preparing the collector…</p>
+      </div>
+      <ol class="start-loader-steps" id="start-loader-steps">
+        <li class="start-loader-step is-pending" data-step="request">
+          <div class="start-loader-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </div>
+          <div class="start-loader-copy">
+            <div class="start-loader-title">Send start request</div>
+            <div class="start-loader-detail" data-step-detail>Contacting the node…</div>
+          </div>
+        </li>
+        <li class="start-loader-step is-pending" data-step="launch">
+          <div class="start-loader-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <div class="start-loader-copy">
+            <div class="start-loader-title">Launch collector</div>
+            <div class="start-loader-detail" data-step-detail>Starting the capture process…</div>
+          </div>
+        </li>
+        <li class="start-loader-step is-pending" data-step="models">
+          <div class="start-loader-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6M9 15h6M9 12h6"/></svg>
+          </div>
+          <div class="start-loader-copy">
+            <div class="start-loader-title" data-step-title>Load models</div>
+            <div class="start-loader-detail" data-step-detail>Warming up YAMNet…</div>
+          </div>
+        </li>
+        <li class="start-loader-step is-pending" data-step="settle">
+          <div class="start-loader-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 19v4M8 23h8"/></svg>
+          </div>
+          <div class="start-loader-copy">
+            <div class="start-loader-title">Settle microphone</div>
+            <div class="start-loader-detail" data-step-detail>Discarding startup noise…</div>
+          </div>
+        </li>
+        <li class="start-loader-step is-pending" data-step="chunk">
+          <div class="start-loader-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M3 12h3l2-5 3 10 2-6 2 3h6"/></svg>
+          </div>
+          <div class="start-loader-copy">
+            <div class="start-loader-title">Wait for first chunk</div>
+            <div class="start-loader-detail" data-step-detail>Listening for the first loudness sample…</div>
+          </div>
+        </li>
+        <li class="start-loader-step is-pending" data-step="live">
+          <div class="start-loader-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <div class="start-loader-copy">
+            <div class="start-loader-title">Open live view</div>
+            <div class="start-loader-detail" data-step-detail>Handing off to the live chart…</div>
+          </div>
+        </li>
+      </ol>
+      <div class="start-loader-error" id="start-loader-error" hidden></div>
+      <div class="start-loader-actions" id="start-loader-actions" hidden>
+        <button type="button" class="btn" id="start-loader-dismiss">Back to controls</button>
+      </div>
+    </div>
   </div>
 </div>
 </div><!-- /record-layout -->
@@ -1252,10 +1391,6 @@
     </div>
     {% if recordings %}
     <div class="data-toolbar">
-      <label class="check-row" style="margin:0;cursor:pointer">
-        <input type="checkbox" id="recordings-select-all" class="recording-check">
-        <div>Select all</div>
-      </label>
       <button type="button" class="btn" id="generate-report-btn" disabled>Generate report</button>
       <button type="button" class="btn-danger-sm" id="bulk-delete-btn" disabled>Delete selected</button>
     </div>
@@ -1264,46 +1399,89 @@
 </div>
 {% if recordings %}
 <div class="data-files-kicker">Files available on disk</div>
-<div class="data-files-list">
-  {% for recording in recordings %}
-  <div class="recording-row" data-recording-name="{{ recording.name }}" data-has-wav="{{ '1' if recording.has_wav else '0' }}">
-    <div class="recording-info">
-      <input type="checkbox" class="recording-check recording-select" value="{{ recording.name }}" aria-label="Select {{ recording.name }}">
-      <div>
-        <div class="recording-name">{{ recording.name }}
+<div class="recordings-table-wrap">
+  <table class="recordings-table" id="recordings-table">
+    <thead>
+      <tr>
+        <th class="col-check" scope="col">
+          <input type="checkbox" id="recordings-select-all" class="recording-check"
+                 aria-label="Select all recordings">
+        </th>
+        <th scope="col">
+          <button type="button" class="th-sort" data-sort="name">Name <span class="sort-ind" aria-hidden="true"></span></button>
+        </th>
+        <th scope="col">
+          <button type="button" class="th-sort" data-sort="started" aria-sort="descending">Started <span class="sort-ind" aria-hidden="true"></span></button>
+        </th>
+        <th scope="col">
+          <button type="button" class="th-sort" data-sort="duration">Duration <span class="sort-ind" aria-hidden="true"></span></button>
+        </th>
+        <th scope="col">
+          <button type="button" class="th-sort" data-sort="events">Events <span class="sort-ind" aria-hidden="true"></span></button>
+        </th>
+        <th scope="col">
+          <button type="button" class="th-sort" data-sort="size">Size <span class="sort-ind" aria-hidden="true"></span></button>
+        </th>
+        <th scope="col">
+          <button type="button" class="th-sort" data-sort="ml">ML <span class="sort-ind" aria-hidden="true"></span></button>
+        </th>
+        <th scope="col">
+          <button type="button" class="th-sort" data-sort="audio">Audio <span class="sort-ind" aria-hidden="true"></span></button>
+        </th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="recordings-tbody">
+      {% for recording in recordings %}
+      <tr class="recording-row"
+          data-recording-name="{{ recording.name }}"
+          data-has-wav="{{ '1' if recording.has_wav or recording.has_audio else '0' }}"
+          data-sort-name="{{ recording.name|lower }}"
+          data-sort-started="{{ recording.started_ts }}"
+          data-sort-duration="{{ recording.duration_s if recording.duration_s is not none else -1 }}"
+          data-sort-events="{{ recording.lines }}"
+          data-sort-size="{{ recording.size_bytes }}"
+          data-sort-ml="{{ recording.heavy_ml }}"
+          data-sort-audio="{{ recording.audio_size_bytes if recording.has_audio or recording.has_wav else -1 }}">
+        <td class="col-check">
+          <input type="checkbox" class="recording-check recording-select" value="{{ recording.name }}"
+                 aria-label="Select {{ recording.name }}">
+        </td>
+        <td class="col-name">{{ recording.name }}</td>
+        <td class="col-muted">{{ recording.started_display }}</td>
+        <td class="col-muted col-num">{{ recording.duration_label or '—' }}</td>
+        <td class="col-num">{{ recording.lines }}</td>
+        <td class="col-size">{{ recording.size_label }}</td>
+        <td>
           {% if recording.heavy_ml == 'clap' %}
             <span class="heavy-ml-badge clap">CLAP</span>
           {% elif recording.heavy_ml == 'dasm' %}
             <span class="heavy-ml-badge dasm">DASM</span>
+          {% else %}
+            <span class="col-muted">YAMNet</span>
           {% endif %}
-          <span class="recording-selected-pill" hidden>Selected</span>
-        </div>
-        <div class="recording-meta">
-          {{ recording.started_display }}
-          {% if recording.duration_label %} · {{ recording.duration_label }}{% endif %}
-          · {{ recording.lines }} events · {{ recording.size_label }}
+        </td>
+        <td class="col-muted">
           {% if recording.has_audio or recording.has_wav %}
-            · audio{% if recording.audio_format %} {{ recording.audio_format|upper }}{% endif %}
-            {{ recording.audio_size_label or recording.wav_size_label }}
+            {% if recording.audio_format %}{{ recording.audio_format|upper }} {% endif %}{{ recording.audio_size_label or recording.wav_size_label }}
+          {% else %}
+            —
           {% endif %}
-        </div>
-      </div>
-    </div>
-    <div class="recording-actions">
-      <a class="view-btn" href="/analyze/{{ recording.name }}">Inspect</a>
-      <a class="dl-btn" href="/recordings/{{ recording.name }}"
-         data-filename="{{ recording.name }}" download>↓ JSONL</a>
-      {% if recording.has_audio or recording.has_wav %}
-      <a class="dl-btn" href="/recordings/{{ recording.audio_name or recording.wav_name }}?download=1" download>↓ Audio</a>
-      {% endif %}
-      <form method="post" action="/api/recordings/delete" style="display:inline;margin:0"
-            onsubmit="return confirm('Delete {{ recording.name }}{% if recording.has_audio or recording.has_wav %} and its audio file{% endif %}? This cannot be undone.');">
-        <input type="hidden" name="filename" value="{{ recording.name }}">
-        <button class="del-btn" type="submit">Delete</button>
-      </form>
-    </div>
-  </div>
-  {% endfor %}
+        </td>
+        <td class="col-actions">
+          <div class="recording-actions">
+            <a class="view-btn" href="/analyze/{{ recording.name }}">Inspect</a>
+            <a class="dl-btn" href="/recordings/{{ recording.name }}"
+               data-filename="{{ recording.name }}" download>JSONL</a>
+            {% if recording.has_audio or recording.has_wav %}
+            <a class="dl-btn" href="/recordings/{{ recording.audio_name or recording.wav_name }}?download=1" download>Audio</a>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% else %}
 <div class="empty">No recordings yet.</div>
@@ -1586,12 +1764,72 @@
   </div>
 </div><!-- /panel-settings-system -->
 
-<!-- ── SETTINGS: Recording ── -->
+<!-- ── SETTINGS: Recording Options ── -->
 <div class="tab-panel{% if page == 'settings-recording' %} active{% endif %}" id="panel-settings-recording" role="tabpanel"{% if page != 'settings-recording' %} hidden{% endif %}>
   <div class="card">
-    <h2>Recording Settings</h2>
+    <h2>Recording Options</h2>
     <div class="field-note" style="margin-bottom:.75rem">
-      These defaults are used when you start a recording from the Record tab.
+      These defaults apply when you start a recording from Record.
+    </div>
+
+    <div class="heavy-ml-choice" id="settings-heavy-ml" role="radiogroup" aria-label="Heavy ML backend">
+      <label class="check-row">
+        <input type="radio" name="settings_heavy_ml" value="off" checked>
+        <div>
+          Heavy ML: Off
+          <span>YAMNet only. No CLAP or DASM.</span>
+        </div>
+      </label>
+      <label class="check-row">
+        <input type="radio" name="settings_heavy_ml" value="clap">
+        <div>
+          Heavy ML: CLAP
+          <span>Dynamic energy snippets on shared triggers. Requires rebuilt CLAP embeddings.</span>
+        </div>
+      </label>
+      <label class="check-row">
+        <input type="radio" name="settings_heavy_ml" value="dasm">
+        <div>
+          Heavy ML: DASM
+          <span>Fixed ±5&nbsp;s multilabel window. Requires models/dasm + baked query vectors.</span>
+        </div>
+      </label>
+    </div>
+
+    <label class="check-row" style="margin-top:1rem">
+      <input type="checkbox" id="settings-record-audio" value="on">
+      <div>
+        Record audio
+        <span id="record-audio-hint">
+          Saves ungained mic audio next to the JSONL. Format below
+          (default FLAC — lossless, usually much smaller than WAV).
+        </span>
+      </div>
+    </label>
+
+    <label for="settings-audio-format" style="margin-top:1.1rem">Recorded audio format</label>
+    <select id="settings-audio-format">
+      <option value="flac"{% if audio_format == 'flac' %} selected{% endif %}>FLAC (lossless, smaller — default)</option>
+      <option value="wav"{% if audio_format == 'wav' %} selected{% endif %}>WAV (uncompressed PCM)</option>
+    </select>
+    <div class="field-note">
+      Used when <strong>Record audio</strong> is enabled above.
+      Both are ungained mono 16-bit @ 48&nbsp;kHz — FLAC is lossless compression
+      (often ~40–60% of WAV size). Saved to <code>.env</code> as
+      <code>AUDIO_FORMAT</code>. Requires <code>soundfile</code> +
+      <code>libsndfile1</code> on the Pi for FLAC.
+    </div>
+    <div class="btn-row" style="margin-top:.5rem">
+      <button type="button" class="btn btn-start" id="settings-audio-format-save"
+              style="width:auto;margin:0;max-width:16rem">Save audio format</button>
+    </div>
+    <div class="inline-status" id="settings-audio-format-status"></div>
+  </div>
+
+  <div class="card">
+    <h2>Capture defaults</h2>
+    <div class="field-note" style="margin-bottom:.75rem">
+      Device, gate, and display calibration for this node.
     </div>
 
     <label for="settings-device-id">Device ID</label>
@@ -1624,24 +1862,6 @@
               style="width:auto;margin:0;max-width:16rem">Save display offset</button>
     </div>
     <div class="inline-status" id="settings-display-offset-status"></div>
-
-    <label for="settings-audio-format" style="margin-top:1.1rem">Recorded audio format</label>
-    <select id="settings-audio-format">
-      <option value="flac"{% if audio_format == 'flac' %} selected{% endif %}>FLAC (lossless, smaller — default)</option>
-      <option value="wav"{% if audio_format == 'wav' %} selected{% endif %}>WAV (uncompressed PCM)</option>
-    </select>
-    <div class="field-note">
-      Used when <strong>Record audio</strong> is checked on the Record tab.
-      Both are ungained mono 16-bit @ 48&nbsp;kHz — FLAC is lossless compression
-      (often ~40–60% of WAV size). Saved to <code>.env</code> as
-      <code>AUDIO_FORMAT</code>. Requires <code>soundfile</code> +
-      <code>libsndfile1</code> on the Pi for FLAC.
-    </div>
-    <div class="btn-row" style="margin-top:.5rem">
-      <button type="button" class="btn btn-start" id="settings-audio-format-save"
-              style="width:auto;margin:0;max-width:16rem">Save audio format</button>
-    </div>
-    <div class="inline-status" id="settings-audio-format-status"></div>
   </div>
 </div><!-- /panel-settings-recording -->
 
@@ -1927,9 +2147,11 @@
 <div id="bulk-delete-overlay" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-title" hidden>
   <div class="bulk-delete-panel">
     <h3 id="bulk-delete-title">Delete selected recordings?</h3>
-    <p id="bulk-delete-summary">This permanently removes the selected JSONL files and any sibling WAVs.</p>
-    <label for="bulk-delete-password">Admin password</label>
-    <input type="password" id="bulk-delete-password" autocomplete="current-password" placeholder="Type admin password to confirm">
+    <p id="bulk-delete-summary">This permanently removes the selected JSONL files and any sibling audio files.</p>
+    <div class="bulk-delete-password-wrap" id="bulk-delete-password-wrap">
+      <label for="bulk-delete-password">Admin password</label>
+      <input type="password" id="bulk-delete-password" autocomplete="current-password" placeholder="Type admin password to confirm">
+    </div>
     <div id="bulk-delete-error" class="inline-status err" style="margin-top:.55rem"></div>
     <div class="bulk-delete-actions">
       <button type="button" class="btn-cancel" id="bulk-delete-cancel">Cancel</button>
@@ -2180,7 +2402,7 @@ const PAGE_CRUMBS = {
   record: 'record',
   data: 'data-store',
   'settings-system': 'settings / system',
-  'settings-recording': 'settings / recording',
+  'settings-recording': 'settings / options',
   'settings-ml': 'settings / ml',
   'settings-data': 'settings / data',
   analyze: 'inspect',
@@ -2368,14 +2590,21 @@ function syncStartSettingsFromForm() {
   const alsa = document.getElementById('settings-alsa-device');
   const gate = document.getElementById('settings-gate-sensitivity');
   const audioFmt = document.getElementById('settings-audio-format');
+  const recordAudio = document.getElementById('settings-record-audio');
   const startDevice = document.getElementById('start-device-id');
   const startAlsa = document.getElementById('start-alsa-device');
   const startGate = document.getElementById('start-gate-sensitivity');
   const startAudioFmt = document.getElementById('start-audio-format');
+  const startHeavy = document.getElementById('start-heavy-ml');
+  const startRecordAudio = document.getElementById('start-record-audio');
   if (device && startDevice) startDevice.value = device.value;
   if (alsa && startAlsa) startAlsa.value = alsa.value;
   if (gate && startGate) startGate.value = gate.value;
   if (audioFmt && startAudioFmt) startAudioFmt.value = audioFmt.value;
+  if (startHeavy) startHeavy.value = selectedHeavyMl();
+  if (startRecordAudio) {
+    startRecordAudio.value = (recordAudio && recordAudio.checked) ? 'on' : '';
+  }
   updateRecordAudioHint();
 }
 
@@ -2387,11 +2616,24 @@ function updateRecordAudioHint() {
   const fmt = String(fmtEl.value || 'flac').toLowerCase();
   if (fmt === 'wav') {
     hint.textContent =
-      'Saves ungained mic WAV next to the JSONL (~330 MB/hour @ 48 kHz mono 16-bit). Download from the Data tab.';
+      'Saves ungained mic WAV next to the JSONL (~330 MB/hour @ 48 kHz mono 16-bit). Download from Data.';
   } else {
     hint.textContent =
-      'Saves ungained mic FLAC next to the JSONL (lossless; typically much smaller than WAV). Download from the Data tab.';
+      'Saves ungained mic FLAC next to the JSONL (lossless; typically much smaller than WAV). Download from Data.';
   }
+}
+
+function syncContinuousDurationUi() {
+  const continuous = document.getElementById('start-continuous');
+  const fields = document.getElementById('start-duration-fields');
+  const hours = document.getElementById('start-hours');
+  const minutes = document.getElementById('start-minutes');
+  const on = !!(continuous && continuous.checked);
+  if (fields) fields.classList.toggle('is-disabled', on);
+  [hours, minutes].forEach((el) => {
+    if (!el) return;
+    el.disabled = on;
+  });
 }
 
 
@@ -2400,7 +2642,19 @@ function updateRecordAudioHint() {
   if (el) el.addEventListener('change', syncStartSettingsFromForm);
   if (el) el.addEventListener('input', syncStartSettingsFromForm);
 });
+document.querySelectorAll('#settings-heavy-ml [name="settings_heavy_ml"]').forEach((el) => {
+  el.addEventListener('change', syncStartSettingsFromForm);
+});
+const settingsRecordAudio = document.getElementById('settings-record-audio');
+if (settingsRecordAudio) {
+  settingsRecordAudio.addEventListener('change', syncStartSettingsFromForm);
+}
+const startContinuous = document.getElementById('start-continuous');
+if (startContinuous) {
+  startContinuous.addEventListener('change', syncContinuousDurationUi);
+}
 syncStartSettingsFromForm();
+syncContinuousDurationUi();
 
 async function apiFetch(url, options = {}) {
   const opts = {
@@ -2587,6 +2841,7 @@ function applyViewerLocks() {
     'settings-gate-sensitivity',
     'settings-display-db-offset',
     'settings-display-offset-save',
+    'settings-record-audio',
     'settings-audio-format',
     'settings-audio-format-save',
     'trig-cooldown',
@@ -2602,6 +2857,9 @@ function applyViewerLocks() {
     const el = document.getElementById(id);
     if (el) lockForViewer(el, { block: el.tagName === 'INPUT' });
   });
+  document.querySelectorAll('#settings-heavy-ml [name="settings_heavy_ml"]').forEach((el) => {
+    lockForViewer(el);
+  });
 
   const startForm = document.getElementById('start-recording-form');
   if (startForm) {
@@ -2612,9 +2870,6 @@ function applyViewerLocks() {
   const stopBtn = document.querySelector('#status-stop-form button');
   if (stopBtn) lockForViewer(stopBtn);
 
-  document.querySelectorAll('.recording-actions form[action="/api/recordings/delete"] button').forEach((btn) => {
-    lockForViewer(btn);
-  });
   const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
   if (bulkDeleteBtn) lockForViewer(bulkDeleteBtn);
 
@@ -2939,8 +3194,9 @@ function syncConfInputs() {
 }
 
 function selectedHeavyMl() {
-  const el = document.querySelector('#start-recording-form [name="heavy_ml"]:checked');
-  return el ? String(el.value) : 'off';
+  const el = document.querySelector('#settings-heavy-ml [name="settings_heavy_ml"]:checked')
+    || document.getElementById('start-heavy-ml');
+  return normalizeHeavyMl(el && el.value);
 }
 
 function normalizeHeavyMl(value) {
@@ -2977,7 +3233,12 @@ function applyHeavyMlChrome(mode, { live = false, inspect = false } = {}) {
 }
 
 function syncLiveHeavyMlChrome() {
-  const mode = liveHeavyMl !== 'off' ? liveHeavyMl : selectedHeavyMl();
+  // While a recording is live, status.heavy_ml is authoritative (including "off").
+  // Do not fall back to Recording Options — that would show CLAP/DASM conf filters
+  // for models that are not actually running.
+  const statusCard = document.getElementById('status-card');
+  const live = !!(statusCard && !statusCard.hidden);
+  const mode = live ? normalizeHeavyMl(liveHeavyMl) : 'off';
   applyHeavyMlChrome(mode, { live: true });
 }
 
@@ -3038,8 +3299,9 @@ function wireConfInputs() {
   if (liveDasm) liveDasm.addEventListener('change', onDasm);
   if (ovDasm) ovDasm.addEventListener('change', onDasm);
 
-  document.querySelectorAll('#start-recording-form [name="heavy_ml"]').forEach((el) => {
+  document.querySelectorAll('#settings-heavy-ml [name="settings_heavy_ml"]').forEach((el) => {
     el.addEventListener('change', () => {
+      syncStartSettingsFromForm();
       if (liveHeavyMl === 'off') syncLiveHeavyMlChrome();
     });
   });
@@ -3430,7 +3692,7 @@ function updateLoudnessChart(payload) {
     if (p.l90_rel != null) l90.push({ x, y: p.l90_rel });
   }
   const yam = yamnetLabelSpans(points, yamConfMin);
-  const heavy = normalizeHeavyMl(liveHeavyMl !== 'off' ? liveHeavyMl : selectedHeavyMl());
+  const heavy = normalizeHeavyMl(liveHeavyMl);
   const clap = heavy === 'clap' ? clapMarkers(points, clapConfMin) : [];
   const dasm = heavy === 'dasm' ? dasmMarkers(points, dasmConfMin) : [];
   syncLiveHeavyMlChrome();
@@ -3534,8 +3796,8 @@ async function pollStatus() {
       liveHeavyMl = d.recording
         ? normalizeHeavyMl(d.heavy_ml)
         : 'off';
-      syncLiveHeavyMlChrome();
       setRecordingLayout(!!d.recording, d.recording_id || '', d.chunk_count || 0);
+      syncLiveHeavyMlChrome();
       const chunksEl = document.getElementById('stat-chunks');
       const elapsedEl = document.getElementById('stat-elapsed');
       const labelEl = document.getElementById('stat-label');
@@ -3572,34 +3834,181 @@ const START_ERROR_HINTS = {
   start_failed: 'Collector process exited before the first chunk.',
   network: 'Network/tunnel error while starting.',
   bad_response: 'Unexpected response from the start API.',
+  heavy_ml_exclusive: 'CLAP and DASM cannot both be enabled.',
+  invalid_duration: 'Set hours and/or minutes, or enable Continuous.',
 };
 
-function setStartProgress({ title, message, code, busy, err }) {
-  const box = document.getElementById('start-progress');
-  const titleEl = document.getElementById('start-progress-title');
-  const msgEl = document.getElementById('start-progress-msg');
-  const codeEl = document.getElementById('start-progress-code');
-  if (!box || !titleEl || !msgEl || !codeEl) return;
-  box.hidden = false;
-  box.classList.toggle('busy', !!busy);
-  box.classList.toggle('err', !!err);
-  titleEl.textContent = title || 'Starting recording';
-  msgEl.textContent = message || '';
-  if (code) {
-    const hint = START_ERROR_HINTS[code] || '';
-    codeEl.hidden = false;
-    codeEl.textContent = hint ? `Error code: ${code} — ${hint}` : `Error code: ${code}`;
-  } else {
-    codeEl.hidden = true;
-    codeEl.textContent = '';
+const START_LOADER_STEPS = ['request', 'launch', 'models', 'settle', 'chunk', 'live'];
+const START_LOADER_ICON_SVGS = {
+  request: '<svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>',
+  launch: '<svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+  models: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6M9 15h6M9 12h6"/></svg>',
+  settle: '<svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 19v4M8 23h8"/></svg>',
+  chunk: '<svg viewBox="0 0 24 24"><path d="M3 12h3l2-5 3 10 2-6 2 3h6"/></svg>',
+  live: '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',
+  error: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>',
+};
+
+let startLoaderActiveStep = null;
+
+function startLoaderStepEl(step) {
+  return document.querySelector(`#start-loader-steps [data-step="${step}"]`);
+}
+
+function setStartLoaderIcon(stepEl, kind) {
+  if (!stepEl) return;
+  const icon = stepEl.querySelector('.start-loader-icon');
+  if (!icon) return;
+  if (kind === 'spin') {
+    icon.innerHTML = '<span class="start-loader-spin" aria-hidden="true"></span>';
+    return;
+  }
+  icon.innerHTML = START_LOADER_ICON_SVGS[kind] || START_LOADER_ICON_SVGS.request;
+}
+
+function modelsStepCopy(heavy) {
+  if (heavy === 'dasm') {
+    return {
+      title: 'Load YAMNet + DASM',
+      detail: 'Warming up the multilabel DASM window…',
+    };
+  }
+  if (heavy === 'clap') {
+    return {
+      title: 'Load YAMNet + CLAP',
+      detail: 'Warming up event-driven CLAP…',
+    };
+  }
+  return {
+    title: 'Load YAMNet',
+    detail: 'Warming up the classifier…',
+  };
+}
+
+function showStartLoader({ heavy } = {}) {
+  const formView = document.getElementById('control-form-view');
+  const loaderView = document.getElementById('control-loader-view');
+  const heading = document.getElementById('start-loader-heading');
+  const sub = document.getElementById('start-loader-sub');
+  const err = document.getElementById('start-loader-error');
+  const actions = document.getElementById('start-loader-actions');
+  const formErr = document.getElementById('start-form-error');
+  if (formErr) {
+    formErr.hidden = true;
+    formErr.textContent = '';
+  }
+  if (formView) formView.hidden = true;
+  if (loaderView) loaderView.hidden = false;
+  if (heading) heading.textContent = 'Starting recording';
+  if (sub) sub.textContent = 'Preparing the collector…';
+  if (err) {
+    err.hidden = true;
+    err.innerHTML = '';
+  }
+  if (actions) actions.hidden = true;
+  startLoaderActiveStep = null;
+
+  const modelCopy = modelsStepCopy(normalizeHeavyMl(heavy));
+  START_LOADER_STEPS.forEach((step) => {
+    const el = startLoaderStepEl(step);
+    if (!el) return;
+    el.classList.remove('is-active', 'is-done', 'is-error');
+    el.classList.add('is-pending');
+    setStartLoaderIcon(el, step);
+    if (step === 'models') {
+      const titleEl = el.querySelector('[data-step-title]');
+      const detailEl = el.querySelector('[data-step-detail]');
+      if (titleEl) titleEl.textContent = modelCopy.title;
+      if (detailEl) detailEl.textContent = modelCopy.detail;
+    }
+  });
+}
+
+function setStartLoaderStep(step, { detail, sub } = {}) {
+  if (!START_LOADER_STEPS.includes(step)) return;
+  const idx = START_LOADER_STEPS.indexOf(step);
+  START_LOADER_STEPS.forEach((id, i) => {
+    const el = startLoaderStepEl(id);
+    if (!el) return;
+    el.classList.remove('is-pending', 'is-active', 'is-done', 'is-error');
+    if (i < idx) {
+      el.classList.add('is-done');
+      setStartLoaderIcon(el, 'check');
+    } else if (i === idx) {
+      el.classList.add('is-active');
+      setStartLoaderIcon(el, 'spin');
+      if (detail) {
+        const detailEl = el.querySelector('[data-step-detail]');
+        if (detailEl) detailEl.textContent = detail;
+      }
+    } else {
+      el.classList.add('is-pending');
+      setStartLoaderIcon(el, id);
+    }
+  });
+  startLoaderActiveStep = step;
+  const heading = document.getElementById('start-loader-heading');
+  const subEl = document.getElementById('start-loader-sub');
+  if (heading) heading.textContent = 'Starting recording';
+  if (subEl && sub) subEl.textContent = sub;
+}
+
+function finishStartLoaderStep(step, { detail } = {}) {
+  const el = startLoaderStepEl(step);
+  if (!el) return;
+  el.classList.remove('is-pending', 'is-active', 'is-error');
+  el.classList.add('is-done');
+  setStartLoaderIcon(el, 'check');
+  if (detail) {
+    const detailEl = el.querySelector('[data-step-detail]');
+    if (detailEl) detailEl.textContent = detail;
   }
 }
 
-function hideStartProgress() {
-  const box = document.getElementById('start-progress');
-  if (!box) return;
-  box.hidden = true;
-  box.classList.remove('busy', 'err');
+function setStartLoaderError({ message, code, step } = {}) {
+  const failStep = step || startLoaderActiveStep || 'request';
+  const el = startLoaderStepEl(failStep);
+  if (el) {
+    el.classList.remove('is-pending', 'is-active', 'is-done');
+    el.classList.add('is-error');
+    setStartLoaderIcon(el, 'error');
+  }
+  const heading = document.getElementById('start-loader-heading');
+  const subEl = document.getElementById('start-loader-sub');
+  const err = document.getElementById('start-loader-error');
+  const actions = document.getElementById('start-loader-actions');
+  if (heading) heading.textContent = 'Start failed';
+  if (subEl) subEl.textContent = 'Fix the issue below, then try again.';
+  if (err) {
+    const hint = code ? (START_ERROR_HINTS[code] || '') : '';
+    err.hidden = false;
+    err.innerHTML = `<strong>${message || 'Could not start the recording.'}</strong>`
+      + (code
+        ? `<code>Error code: ${code}${hint ? ` — ${hint}` : ''}</code>`
+        : '');
+  }
+  if (actions) actions.hidden = false;
+}
+
+function hideStartLoader() {
+  const formView = document.getElementById('control-form-view');
+  const loaderView = document.getElementById('control-loader-view');
+  if (loaderView) loaderView.hidden = true;
+  if (formView) formView.hidden = false;
+  startLoaderActiveStep = null;
+}
+
+function setStartFormError(message) {
+  const formErr = document.getElementById('start-form-error');
+  if (!formErr) return;
+  if (!message) {
+    formErr.hidden = true;
+    formErr.textContent = '';
+    return;
+  }
+  formErr.hidden = false;
+  formErr.textContent = message;
 }
 
 function sleepMs(ms) {
@@ -3611,6 +4020,7 @@ async function waitForFirstChunk({ enableClap, enableDasm, discardSeconds }) {
   const startedAt = Date.now();
   const deadline = startedAt + 90000;
   let sawProcess = false;
+  const secs = Math.max(1, Math.ceil(discardSeconds || 2));
 
   while (Date.now() < deadline) {
     let status = null;
@@ -3618,10 +4028,9 @@ async function waitForFirstChunk({ enableClap, enableDasm, discardSeconds }) {
       const res = await fetch('/api/status', { credentials: 'same-origin' });
       if (res.ok) status = await res.json();
     } catch {
-      setStartProgress({
-        title: 'Starting recording',
-        message: 'Waiting for status from the Pi…',
-        busy: true,
+      setStartLoaderStep('launch', {
+        detail: 'Waiting for status from the Pi…',
+        sub: 'Reconnecting to the node…',
       });
       await sleepMs(500);
       continue;
@@ -3634,10 +4043,12 @@ async function waitForFirstChunk({ enableClap, enableDasm, discardSeconds }) {
     if (recording) sawProcess = true;
 
     if (recording && chunks >= 1) {
-      setStartProgress({
-        title: 'Recording live',
-        message: `First chunk received (${chunks} so far). Opening live view…`,
-        busy: true,
+      finishStartLoaderStep('chunk', {
+        detail: `First chunk received (${chunks} so far).`,
+      });
+      setStartLoaderStep('live', {
+        detail: 'Opening the live chart…',
+        sub: 'Recording is live.',
       });
       return { ok: true };
     }
@@ -3647,37 +4058,30 @@ async function waitForFirstChunk({ enableClap, enableDasm, discardSeconds }) {
         ok: false,
         code: 'start_failed',
         message: 'Collector process stopped before the first chunk was written.',
+        step: 'chunk',
       };
     }
 
     if (!recording) {
-      setStartProgress({
-        title: 'Starting recording',
-        message: 'Launching collector process…',
-        busy: true,
+      setStartLoaderStep('launch', {
+        detail: 'Starting the capture process…',
+        sub: 'Launching collector…',
       });
     } else if (elapsed < 2500) {
-      setStartProgress({
-        title: 'Starting recording',
-        message: enableDasm
-          ? 'Loading YAMNet and DASM models…'
-          : (enableClap
-            ? 'Loading YAMNet and CLAP models…'
-            : 'Loading YAMNet model…'),
-        busy: true,
+      const copy = modelsStepCopy(enableDasm ? 'dasm' : (enableClap ? 'clap' : 'off'));
+      setStartLoaderStep('models', {
+        detail: copy.detail,
+        sub: copy.title + '…',
       });
     } else if (elapsed < 2500 + discardMs + 1500) {
-      const secs = Math.max(1, Math.ceil(discardSeconds || 2));
-      setStartProgress({
-        title: 'Starting recording',
-        message: `Settling microphone (discarding first ~${secs} s of startup noise)…`,
-        busy: true,
+      setStartLoaderStep('settle', {
+        detail: `Discarding the first ~${secs} s of startup noise…`,
+        sub: 'Settling the microphone…',
       });
     } else {
-      setStartProgress({
-        title: 'Starting recording',
-        message: 'Waiting for first audio chunk…',
-        busy: true,
+      setStartLoaderStep('chunk', {
+        detail: 'Listening for the first loudness sample…',
+        sub: 'Waiting for first chunk…',
       });
     }
 
@@ -3688,34 +4092,72 @@ async function waitForFirstChunk({ enableClap, enableDasm, discardSeconds }) {
     ok: false,
     code: 'start_timeout',
     message: 'Timed out waiting for the first chunk (90 s).',
+    step: 'chunk',
   };
 }
 
 const startRecordingForm = document.getElementById('start-recording-form');
 const startRecordingBtn = document.getElementById('start-recording-btn');
+const startLoaderDismiss = document.getElementById('start-loader-dismiss');
+if (startLoaderDismiss) {
+  startLoaderDismiss.addEventListener('click', () => {
+    hideStartLoader();
+    if (startRecordingBtn) {
+      startRecordingBtn.disabled = false;
+      startRecordingBtn.classList.remove('btn-disabled');
+    }
+  });
+}
 if (startRecordingForm) {
   startRecordingForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (guardViewerAction()) return;
+    setStartFormError('');
     if (startRecordingBtn) {
       startRecordingBtn.disabled = true;
       startRecordingBtn.classList.add('btn-disabled');
     }
     const heavy = selectedHeavyMl();
     syncStartSettingsFromForm();
-    setStartProgress({
-      title: 'Starting recording',
-      message: 'Sending start request…',
-      busy: true,
+    const continuousEl = document.getElementById('start-continuous');
+    const hoursEl = document.getElementById('start-hours');
+    const minutesEl = document.getElementById('start-minutes');
+    if (!(continuousEl && continuousEl.checked)) {
+      const h = Math.max(0, parseInt(hoursEl && hoursEl.value, 10) || 0);
+      const m = Math.max(0, Math.min(59, parseInt(minutesEl && minutesEl.value, 10) || 0));
+      if (h === 0 && m === 0) {
+        setStartFormError(START_ERROR_HINTS.invalid_duration);
+        if (startRecordingBtn) {
+          startRecordingBtn.disabled = false;
+          startRecordingBtn.classList.remove('btn-disabled');
+        }
+        return;
+      }
+      if (hoursEl) hoursEl.value = String(h);
+      if (minutesEl) minutesEl.value = String(m);
+    }
+
+    showStartLoader({ heavy });
+    setStartLoaderStep('request', {
+      detail: 'Contacting the node…',
+      sub: 'Sending start request…',
     });
 
     let startData = null;
     try {
+      // Disabled duration fields are omitted from FormData; re-enable briefly if needed.
+      const wasDisabled = !!(hoursEl && hoursEl.disabled);
+      if (wasDisabled) {
+        if (hoursEl) hoursEl.disabled = false;
+        if (minutesEl) minutesEl.disabled = false;
+      }
+      const body = new FormData(startRecordingForm);
+      if (wasDisabled) syncContinuousDurationUi();
       const res = await fetch('/api/start', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
-        body: new FormData(startRecordingForm),
+        body,
       });
       try {
         startData = await res.json();
@@ -3724,36 +4166,26 @@ if (startRecordingForm) {
       }
       if (!res.ok || !startData || !startData.ok) {
         const code = (startData && startData.code) || `http_${res.status}`;
-        setStartProgress({
-          title: 'Start failed',
+        setStartLoaderError({
           message: (startData && startData.error) || 'Could not start the collector.',
           code: String(code),
-          err: true,
+          step: 'request',
         });
-        if (startRecordingBtn) {
-          startRecordingBtn.disabled = false;
-          startRecordingBtn.classList.remove('btn-disabled');
-        }
         return;
       }
     } catch {
-      setStartProgress({
-        title: 'Start failed',
+      setStartLoaderError({
         message: 'Network error while contacting /api/start.',
         code: 'network',
-        err: true,
+        step: 'request',
       });
-      if (startRecordingBtn) {
-        startRecordingBtn.disabled = false;
-        startRecordingBtn.classList.remove('btn-disabled');
-      }
       return;
     }
 
-    setStartProgress({
-      title: 'Starting recording',
-      message: startData.message || 'Collector process started…',
-      busy: true,
+    finishStartLoaderStep('request', { detail: 'Start request accepted.' });
+    setStartLoaderStep('launch', {
+      detail: startData.message || 'Collector process started…',
+      sub: 'Launching collector…',
     });
 
     const wait = await waitForFirstChunk({
@@ -3762,19 +4194,15 @@ if (startRecordingForm) {
       discardSeconds: startData.startup_discard_s,
     });
     if (!wait.ok) {
-      setStartProgress({
-        title: 'Start failed',
+      setStartLoaderError({
         message: wait.message || 'Recording did not become live.',
         code: wait.code || 'start_failed',
-        err: true,
+        step: wait.step || 'chunk',
       });
-      if (startRecordingBtn) {
-        startRecordingBtn.disabled = false;
-        startRecordingBtn.classList.remove('btn-disabled');
-      }
       return;
     }
 
+    finishStartLoaderStep('live', { detail: 'Live view ready.' });
     window.location.href = '/record';
   });
 }
@@ -4791,12 +5219,16 @@ const generateReportBtn = document.getElementById('generate-report-btn');
 const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
 const bulkDeleteOverlay = document.getElementById('bulk-delete-overlay');
 const bulkDeleteSummary = document.getElementById('bulk-delete-summary');
+const bulkDeletePasswordWrap = document.getElementById('bulk-delete-password-wrap');
 const bulkDeletePassword = document.getElementById('bulk-delete-password');
 const bulkDeleteError = document.getElementById('bulk-delete-error');
 const bulkDeleteCancel = document.getElementById('bulk-delete-cancel');
 const bulkDeleteConfirm = document.getElementById('bulk-delete-confirm');
 const recordingsSelectAll = document.getElementById('recordings-select-all');
+const recordingsTbody = document.getElementById('recordings-tbody');
 const REPORT_OPTIONS_KEY = 'usc-report-options';
+let recordingsSortKey = 'started';
+let recordingsSortDir = 'desc';
 
 const TIME_BUDGET_COLORS = {
   'Traffic & Transit': '#0ea5e9',
@@ -4886,6 +5318,58 @@ function syncReportButton() {
     const cb = row.querySelector('.recording-select');
     row.classList.toggle('selected', !!(cb && cb.checked));
   });
+  if (recordingsSelectAll) {
+    const boxes = Array.from(document.querySelectorAll('.recording-select'));
+    const checked = boxes.filter((el) => el.checked).length;
+    recordingsSelectAll.checked = boxes.length > 0 && checked === boxes.length;
+    recordingsSelectAll.indeterminate = checked > 0 && checked < boxes.length;
+  }
+}
+
+function syncRecordingsSortHeaders() {
+  document.querySelectorAll('.recordings-table .th-sort').forEach((btn) => {
+    const key = btn.getAttribute('data-sort');
+    if (key === recordingsSortKey) {
+      btn.setAttribute('aria-sort', recordingsSortDir === 'asc' ? 'ascending' : 'descending');
+    } else {
+      btn.removeAttribute('aria-sort');
+    }
+  });
+}
+
+function sortRecordingsTable(key, { toggle = true } = {}) {
+  if (!recordingsTbody) return;
+  if (toggle && key === recordingsSortKey) {
+    recordingsSortDir = recordingsSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    recordingsSortKey = key;
+    // Newest / largest first feels natural for time and size columns.
+    recordingsSortDir = (key === 'name' || key === 'ml') ? 'asc' : 'desc';
+  }
+  const rows = Array.from(recordingsTbody.querySelectorAll('tr.recording-row'));
+  const attr = `data-sort-${key}`;
+  const dir = recordingsSortDir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    const rawA = a.getAttribute(attr);
+    const rawB = b.getAttribute(attr);
+    if (key === 'name' || key === 'ml') {
+      return dir * String(rawA || '').localeCompare(String(rawB || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+    }
+    const na = Number(rawA);
+    const nb = Number(rawB);
+    const va = Number.isFinite(na) ? na : -1;
+    const vb = Number.isFinite(nb) ? nb : -1;
+    if (va === vb) {
+      return String(a.getAttribute('data-sort-name') || '')
+        .localeCompare(String(b.getAttribute('data-sort-name') || ''), undefined, { numeric: true });
+    }
+    return dir * (va - vb);
+  });
+  rows.forEach((row) => recordingsTbody.appendChild(row));
+  syncRecordingsSortHeaders();
 }
 
 function closeBulkDeleteDialog() {
@@ -4893,6 +5377,7 @@ function closeBulkDeleteDialog() {
   bulkDeleteOverlay.classList.remove('active');
   bulkDeleteOverlay.hidden = true;
   if (bulkDeletePassword) bulkDeletePassword.value = '';
+  if (bulkDeletePasswordWrap) bulkDeletePasswordWrap.hidden = false;
   if (bulkDeleteError) {
     bulkDeleteError.textContent = '';
     bulkDeleteError.classList.remove('ok', 'err');
@@ -4907,16 +5392,21 @@ function openBulkDeleteDialog() {
   if (guardViewerAction()) return;
   const names = selectedRecordingNames();
   if (!names.length || !bulkDeleteOverlay) return;
-  const wavCount = names.reduce((acc, name) => {
+  const audioCount = names.reduce((acc, name) => {
     const row = document.querySelector(`.recording-row[data-recording-name="${CSS.escape(name)}"]`);
     return acc + (row && row.getAttribute('data-has-wav') === '1' ? 1 : 0);
   }, 0);
+  const single = names.length === 1;
   if (bulkDeleteSummary) {
     bulkDeleteSummary.textContent =
       `Permanently delete ${names.length} recording${names.length === 1 ? '' : 's'}` +
-      (wavCount ? ` (including ${wavCount} WAV file${wavCount === 1 ? '' : 's'})` : '') +
-      '. This cannot be undone.';
+      (audioCount
+        ? ` (including ${audioCount} audio file${audioCount === 1 ? '' : 's'})`
+        : '') +
+      '. This cannot be undone.' +
+      (single ? '' : ' Re-type the admin password to confirm.');
   }
+  if (bulkDeletePasswordWrap) bulkDeletePasswordWrap.hidden = single;
   if (bulkDeletePassword) bulkDeletePassword.value = '';
   if (bulkDeleteError) {
     bulkDeleteError.textContent = '';
@@ -4924,18 +5414,23 @@ function openBulkDeleteDialog() {
   }
   bulkDeleteOverlay.hidden = false;
   bulkDeleteOverlay.classList.add('active');
-  if (bulkDeletePassword) bulkDeletePassword.focus();
+  if (single) {
+    if (bulkDeleteConfirm) bulkDeleteConfirm.focus();
+  } else if (bulkDeletePassword) {
+    bulkDeletePassword.focus();
+  }
 }
 
 async function submitBulkDelete() {
   if (guardViewerAction()) return;
   const names = selectedRecordingNames();
-  const password = bulkDeletePassword ? bulkDeletePassword.value : '';
   if (!names.length) {
     closeBulkDeleteDialog();
     return;
   }
-  if (!password) {
+  const single = names.length === 1;
+  const password = bulkDeletePassword ? bulkDeletePassword.value : '';
+  if (!single && !password) {
     if (bulkDeleteError) {
       bulkDeleteError.textContent = 'Enter the admin password to confirm.';
       bulkDeleteError.classList.add('err');
@@ -4951,9 +5446,11 @@ async function submitBulkDelete() {
     bulkDeleteError.textContent = '';
     bulkDeleteError.classList.remove('ok', 'err');
   }
+  const payload = { files: names };
+  if (!single) payload.password = password;
   const { ok, status, data } = await apiFetch('/api/recordings/delete-bulk', {
     method: 'POST',
-    body: JSON.stringify({ files: names, password }),
+    body: JSON.stringify(payload),
   });
   if (ok && data && data.failed_count === 0) {
     window.location.href = '/data';
@@ -5104,6 +5601,14 @@ if (recordingsSelectAll) {
     syncReportButton();
   });
 }
+document.querySelectorAll('.recordings-table .th-sort').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const key = btn.getAttribute('data-sort');
+    if (!key) return;
+    sortRecordingsTable(key, { toggle: true });
+  });
+});
+syncRecordingsSortHeaders();
 if (generateReportBtn) {
   generateReportBtn.addEventListener('click', () => {
     const names = selectedRecordingNames();
