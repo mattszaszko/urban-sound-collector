@@ -322,7 +322,7 @@
                 border-radius:8px;padding:.4rem .85rem;cursor:pointer;font:inherit;font-size:.85rem}
   .settings-tab[aria-selected="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
   .settings-tab-panel[hidden]{display:none}
-  .live-chart-legend [data-heavy-legend][hidden]{display:none}
+  .live-chart-legend [data-heavy-legend][hidden]{display:none !important}
   .heavy-ml-badge{display:inline-block;font-size:.65rem;font-weight:700;letter-spacing:.03em;
     text-transform:uppercase;padding:.12rem .4rem;border-radius:4px;margin-left:.35rem;
     vertical-align:middle;border:1px solid var(--border);color:var(--muted);background:var(--bg)}
@@ -334,8 +334,11 @@
                   margin:.35rem 0 .55rem;font-size:.75rem;color:var(--muted)}
   .chart-conf-row label{display:inline-flex;align-items:center;gap:.4rem;margin:0;
                         font-size:.75rem;text-transform:none;letter-spacing:0;color:var(--muted)}
+  /* Author display:inline-flex above would otherwise override the hidden attribute. */
+  .chart-conf-row label[hidden]{display:none !important}
   .chart-conf-row input[type=number]{width:4.2rem;margin:0;padding:.25rem .4rem;
                                      font-size:.75rem}
+  #stat-heavy-ml[hidden]{display:none !important}
   .swatch.spectrum-grad{width:18px;height:3px;border-radius:1px;
                         background:linear-gradient(90deg,#6366F1,#10B981,#EAB308)}
   .swatch.spectrum-dark{background:#6366F1}
@@ -1181,7 +1184,7 @@
         {% endif %}
       </div>
     </div>
-    <div class="stat">
+    <div class="stat" id="stat-heavy-ml" hidden>
       <div class="stat-label">Last heavy ML</div>
       <div class="stat-value" id="stat-clap" style="font-size:.85rem">—</div>
     </div>
@@ -3240,8 +3243,10 @@ function applyHeavyMlChrome(mode, { live = false, inspect = false } = {}) {
   if (live) {
     const clapWrap = document.getElementById('live-clap-conf-wrap');
     const dasmWrap = document.getElementById('live-dasm-conf-wrap');
+    const heavyStat = document.getElementById('stat-heavy-ml');
     if (clapWrap) clapWrap.hidden = !showClap;
     if (dasmWrap) dasmWrap.hidden = !showDasm;
+    if (heavyStat) heavyStat.hidden = !(showClap || showDasm);
     document.querySelectorAll('#live-chart-legend [data-heavy-legend]').forEach((el) => {
       const kind = el.getAttribute('data-heavy-legend');
       el.hidden = !(kind === heavy);
