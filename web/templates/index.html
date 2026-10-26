@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Urban Sound Collector</title>
+<title>noiserisk</title>
+<link rel="icon" type="image/png" href="/static/noiserisk-logo.png">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -90,14 +91,15 @@
     border-bottom:1px solid var(--border);
   }
   .sidebar-brand-icon{
-    width:2.25rem;height:2.25rem;border-radius:8px;flex-shrink:0;
-    display:flex;align-items:center;justify-content:center;
-    background:var(--accent);color:#fff;
-    box-shadow:0 1px 2px rgba(2,132,199,.25);
+    width:2.35rem;height:2.35rem;border-radius:9px;flex-shrink:0;
+    display:block;overflow:hidden;
+    box-shadow:0 1px 2px rgba(2,8,23,.28);
   }
-  .sidebar-brand-icon svg{width:1.15rem;height:1.15rem}
-  .sidebar-brand h1{font-size:.95rem;font-weight:700;line-height:1.2;color:var(--text)}
-  .sidebar-brand .brand-sub{font-size:.7rem;color:var(--muted);font-weight:500;margin-top:.1rem}
+  .sidebar-brand-icon img{width:100%;height:100%;display:block;object-fit:cover}
+  .sidebar-brand h1{
+    font-size:1.05rem;font-weight:700;line-height:1.15;color:var(--text);
+    letter-spacing:.01em;text-transform:lowercase;
+  }
   .sidebar-device{padding:.85rem 1rem}
   .sidebar-device-card{
     padding:.7rem .8rem;border-radius:10px;border:1px solid var(--border);
@@ -1016,13 +1018,10 @@
   <div class="sidebar-scroll">
     <div class="sidebar-brand">
       <div class="sidebar-brand-icon" aria-hidden="true">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-        </svg>
+        <img src="/static/noiserisk-logo.png" alt="">
       </div>
       <div>
-        <h1>Urban Sound Collector</h1>
-        <div class="brand-sub">Acoustic Telemetry Node</div>
+        <h1>noiserisk</h1>
       </div>
     </div>
     <div class="sidebar-device">

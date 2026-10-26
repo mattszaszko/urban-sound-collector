@@ -26,6 +26,7 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
+from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 
 from core.audio_constants import (
@@ -146,11 +147,15 @@ from web.auth import (  # noqa: E402  (after env setup)
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Urban Sound Collector")
+app = FastAPI(title="noiserisk")
+_WEB_DIR = Path(__file__).resolve().parent
+_STATIC_DIR = _WEB_DIR / "static"
 _jinja_env = Environment(
-    loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
+    loader=FileSystemLoader(str(_WEB_DIR / "templates")),
     autoescape=True,
 )
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 def _render(template_name: str, **ctx) -> HTMLResponse:

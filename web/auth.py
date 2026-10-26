@@ -131,7 +131,8 @@ LOGIN_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Urban Sound Collector — Login</title>
+<title>noiserisk — Login</title>
+<link rel="icon" type="image/png" href="/static/noiserisk-logo.png">
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{font-family:system-ui,sans-serif;background:#0f172a;color:#f1f5f9;
@@ -139,7 +140,11 @@ LOGIN_HTML = """<!doctype html>
        padding:1rem}}
   .card{{background:#1e293b;border-radius:12px;padding:2rem;width:min(90vw,380px);
         box-shadow:0 4px 24px #0008}}
-  h1{{font-size:1.25rem;margin-bottom:.35rem;color:#38bdf8}}
+  .brand{{display:flex;align-items:center;gap:.75rem;margin-bottom:.85rem}}
+  .brand img{{width:2.5rem;height:2.5rem;border-radius:10px;display:block;
+             box-shadow:0 1px 2px #0006}}
+  h1{{font-size:1.35rem;color:#f1f5f9;letter-spacing:.01em;text-transform:lowercase;
+     font-weight:700;line-height:1.1}}
   .sub{{font-size:.8rem;color:#94a3b8;margin-bottom:1.25rem;line-height:1.4}}
   .role-toggle{{display:flex;gap:.35rem;margin-bottom:1rem;background:#0f172a;
                border:1px solid #334155;border-radius:8px;padding:.25rem}}
@@ -158,7 +163,10 @@ LOGIN_HTML = """<!doctype html>
 </head>
 <body>
 <div class="card">
-  <h1>🎙 Urban Sound Collector</h1>
+  <div class="brand">
+    <img src="/static/noiserisk-logo.png" alt="">
+    <h1>noiserisk</h1>
+  </div>
   <p class="sub">Choose how you want to sign in.</p>
   {error}
   <form method="post" action="/login">
