@@ -141,8 +141,8 @@ LOGIN_HTML = """<!doctype html>
   .card{{background:#1e293b;border-radius:12px;padding:2rem;width:min(90vw,380px);
         box-shadow:0 4px 24px #0008}}
   .brand{{display:flex;align-items:center;gap:.65rem;margin-bottom:.85rem}}
-  .brand img{{width:2.25rem;height:2.25rem;border-radius:9px;display:block;
-             line-height:0;box-shadow:0 1px 2px #0006}}
+  .brand img{{width:2.25rem;height:2.25rem;display:block;line-height:0;
+             border:0;box-shadow:none;background:transparent;object-fit:contain}}
   .brand-mark{{display:inline-flex;align-items:center;gap:.45rem;line-height:1}}
   h1{{margin:0;padding:0;font-size:1.35rem;color:#f1f5f9;letter-spacing:.01em;
      text-transform:lowercase;font-weight:700;line-height:1}}
