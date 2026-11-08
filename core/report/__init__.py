@@ -9,6 +9,7 @@ from core.report.aggregate import (
     top_peak_disturbances,
 )
 from core.report.comfort import build_comfort_rating, grade_from_score
+from core.report.lived_experience import build_lived_experience, compute_lden_db
 from core.report.segment import (
     AcousticEvent,
     energetic_leq,
@@ -25,7 +26,9 @@ __all__ = [
     "apply_report_segmentation_overrides",
     "build_comfort_rating",
     "build_dashboard_report",
+    "build_lived_experience",
     "build_time_budget",
+    "compute_lden_db",
     "energetic_leq",
     "finalize_event",
     "grade_from_score",

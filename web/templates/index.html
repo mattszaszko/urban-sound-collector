@@ -693,6 +693,36 @@
   .takeaway-box .takeaway-body{display:grid;gap:.55rem;max-width:62rem}
   .takeaway-box p{margin:0;color:var(--text)}
   .takeaway-box p:last-child{color:var(--muted)}
+  .lived-experience-box{margin-top:.85rem;padding:.9rem 1rem 1rem;border:1px solid var(--border);
+                        border-radius:8px;background:var(--bg)}
+  .lived-experience-box[hidden]{display:none !important}
+  .lived-experience-box .lived-k{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;
+                                 color:var(--muted);font-weight:600;margin:0 0 .35rem}
+  .lived-experience-box .lived-intro{margin:0 0 .85rem;font-size:.8rem;color:var(--muted);
+                                     line-height:1.45;max-width:62rem}
+  .lived-experience-box .lived-warning{margin:0 0 .75rem;padding:.45rem .6rem;border-radius:6px;
+                                       font-size:.75rem;line-height:1.4;color:var(--muted);
+                                       background:var(--surface);border:1px solid var(--border)}
+  .lived-grid{display:grid;grid-template-columns:1fr;gap:.65rem}
+  @media (min-width:900px){.lived-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  .lived-card{display:flex;flex-direction:column;gap:.45rem;min-width:0;
+              padding:.7rem .75rem .8rem;border:1px solid var(--border);border-radius:8px;
+              background:var(--surface)}
+  .lived-card .lived-title{font-size:.82rem;font-weight:700;color:var(--text);line-height:1.25;
+                           margin:0}
+  .lived-badge{display:inline-flex;align-items:center;gap:.3rem;align-self:flex-start;
+               padding:.2rem .5rem;border-radius:999px;font-size:.68rem;font-weight:650;
+               line-height:1.2;border:1px solid var(--border)}
+  .lived-badge svg{width:.85rem;height:.85rem;flex-shrink:0}
+  .lived-badge.tone-ok{color:#166534;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.28)}
+  .lived-badge.tone-watch{color:#a16207;background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.32)}
+  .lived-badge.tone-alert{color:#b91c1c;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3)}
+  html[data-theme="dark"] .lived-badge.tone-ok{color:#86efac}
+  html[data-theme="dark"] .lived-badge.tone-watch{color:#fcd34d}
+  html[data-theme="dark"] .lived-badge.tone-alert{color:#fca5a5}
+  .lived-card .lived-summary{margin:0;font-size:.78rem;color:var(--muted);line-height:1.45}
+  #rpt-zone-c-disturbances{margin:0 0 .85rem}
+  #rpt-zone-c-disturbances:empty{display:none}
   .report-methodology{margin:0;border:0;border-radius:0;background:transparent}
   .report-methodology > summary{cursor:pointer;list-style:none;padding:0;
                                 font-size:.72rem;font-weight:600;text-transform:uppercase;
@@ -1593,6 +1623,7 @@
     </div>
     <div class="report-summary" id="rpt-impact"></div>
     <div class="takeaway-box" id="rpt-takeaway" hidden></div>
+    <div class="lived-experience-box" id="rpt-lived-experience" hidden></div>
   </div>
   <div class="card report-zone" id="report-zone-b">
     <div class="report-zone-head">
@@ -1623,6 +1654,7 @@
         <button type="button" class="report-view-btn" data-budget-view="hourly" id="rpt-budget-view-hourly">By hour</button>
       </div>
     </div>
+    <div id="rpt-zone-c-disturbances"></div>
     <div class="report-budget-meta" id="rpt-budget-meta"></div>
     <div class="report-budget-legend" id="rpt-budget-legend" aria-label="Time budget categories"></div>
     <div id="rpt-budget-total" class="active">
@@ -1672,6 +1704,20 @@
           text summary from comfort grade, L50/L90/L10, typical-day peak hours,
           time-budget macros, night L<sub>eq</sub>, and the loudest Top&nbsp;3 peak —
           not an AI-generated essay.
+        </p>
+        <p>
+          <strong>Lived Experience &amp; Health Impact</strong> translates outdoor levels
+          into sleep, home-office, and baby-rest stories using fixed Dutch façade
+          assumptions (−30&nbsp;dB windows closed, −15&nbsp;dB open) — estimates, not measured
+          indoor levels. Sleep uses outdoor night L<sub>eq</sub>; daytime/annoyance framing
+          uses EU L<sub>den</sub> internally (the dashboard never displays L<sub>den</sub>).
+          Badge thresholds follow WHO-oriented indoor night (~30&nbsp;dBA) and speech
+          (~35–45&nbsp;dBA) heuristics.
+        </p>
+        <p>
+          <strong>Top 3 disturbances</strong> (loudest moments) appear under
+          <em>What is making the noise?</em>, ranked by LAFmax with Inspect links into
+          the recording timeline.
         </p>
         <p>
           <strong>Time budget charts</strong> classify every chunk: gated chunks count as
@@ -5833,7 +5879,7 @@ function mountDisturbanceSnippetCharts(rows) {
 function renderTopDisturbancesCard(rows) {
   const list = Array.isArray(rows) ? rows.slice(0, 3) : [];
   if (!list.length) {
-    return `<div class="disturbance-panel"><div class="k">Top 3 disturbances</div>` +
+    return `<div class="disturbance-panel"><div class="k">Top 3 disturbances · Loudest moments</div>` +
       `<div class="hint">No loud peaks in this selection</div></div>`;
   }
   const items = list.map((row, i) => {
@@ -5865,9 +5911,54 @@ function renderTopDisturbancesCard(rows) {
     </article>`;
   }).join('');
   return `<div class="disturbance-panel">
-    <div class="k">Top 3 disturbances</div>
+    <div class="k">Top 3 disturbances · Loudest moments</div>
     <div class="disturbance-cards">${items}</div>
   </div>`;
+}
+
+function livedBadgeIcon(tone) {
+  if (tone === 'ok') {
+    return '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.5 11.2 3.3 8l1.1-1.1 2.1 2.1 4.9-4.9L12.5 5.2z"/></svg>';
+  }
+  if (tone === 'alert') {
+    return '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1.5 14.5 13H1.5L8 1.5zm0 3.2-.9 5h1.8l-.9-5zM7.2 12.2h1.6V14H7.2z"/></svg>';
+  }
+  return '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1.5A6.5 6.5 0 1 0 14.5 8 6.51 6.51 0 0 0 8 1.5zm.7 9.3H7.3V9.5h1.4zm0-2.8H7.3V4.8h1.4z"/></svg>';
+}
+
+function renderLivedExperience(lived) {
+  const el = document.getElementById('rpt-lived-experience');
+  if (!el) return;
+  if (!lived || !Array.isArray(lived.dimensions) || !lived.dimensions.length) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const cards = lived.dimensions.map((dim) => {
+    const badge = dim.badge || {};
+    const tone = badge.tone === 'ok' || badge.tone === 'alert' ? badge.tone : 'watch';
+    return `<article class="lived-card" data-dim="${escapeHtml(dim.id || '')}">
+      <h3 class="lived-title">${escapeHtml(dim.title || '')}</h3>
+      <span class="lived-badge tone-${tone}">${livedBadgeIcon(tone)}${escapeHtml(badge.label || '')}</span>
+      <p class="lived-summary">${escapeHtml(dim.summary || '')}</p>
+    </article>`;
+  }).join('');
+  const warn = lived.warning
+    ? `<div class="lived-warning">${escapeHtml(lived.warning)}</div>`
+    : '';
+  el.hidden = false;
+  el.innerHTML =
+    `<div class="lived-k">${escapeHtml(lived.title || 'Lived Experience & Health Impact')}</div>` +
+    `<p class="lived-intro">${escapeHtml(lived.intro || '')}</p>` +
+    warn +
+    `<div class="lived-grid">${cards}</div>`;
+}
+
+function renderZoneCDisturbances(rows) {
+  const host = document.getElementById('rpt-zone-c-disturbances');
+  if (!host) return;
+  host.innerHTML = renderTopDisturbancesCard(rows);
+  mountDisturbanceSnippetCharts(rows);
 }
 
 const COMFORT_GRADES = [
@@ -5963,14 +6054,11 @@ function renderTypicalLevelCard(zoneA) {
 function renderReportImpact(zoneA) {
   const el = document.getElementById('rpt-impact');
   if (!el) return;
-  const tops = zoneA.top_disturbances;
   el.innerHTML = `
     <div class="report-summary-kpis">
       ${renderTypicalLevelCard(zoneA)}
       ${comfortRatingHtml(zoneA)}
-    </div>
-    ${renderTopDisturbancesCard(tops)}`;
-  mountDisturbanceSnippetCharts(tops);
+    </div>`;
 }
 
 function destroyChart(chart) {
@@ -6877,6 +6965,8 @@ function applyReportPayload(payload) {
   // After charts exist: show active panel and play unfurl / rise intro once.
   setReportBudgetView(reportBudgetView || 'total');
   renderReportBriefing(a.briefing || c.takeaway || '');
+  renderLivedExperience(a.lived_experience);
+  renderZoneCDisturbances(a.top_disturbances);
 }
 
 function escapeHtml(text) {

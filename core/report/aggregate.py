@@ -10,6 +10,7 @@ from core.audio_constants import YAMNET_CHUNK_DURATION_SECONDS
 from core.recording_overview import percentile_nearest
 from core.report.copy import build_takeaway
 from core.report.comfort import build_comfort_rating
+from core.report.lived_experience import build_lived_experience
 from core.report.macros import label_to_macro
 from core.report.segment import (
     AcousticChunk,
@@ -706,6 +707,9 @@ def build_dashboard_report(
         "chunk_count": len(all_chunks),
         "duration_s": total_duration_s if recording_summaries else None,
         "comfort_rating": build_comfort_rating(all_chunks),
+        "lived_experience": build_lived_experience(
+            all_chunks, top_disturbances=top_disturbances
+        ),
     }
 
     typical_day = build_hourly_profile(all_chunks)
