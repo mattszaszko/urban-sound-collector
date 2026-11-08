@@ -108,10 +108,7 @@ def _sleep_dimension(
             "icon": "sleep",
             "period_label": period,
             "badge": _badge("Night data needed", "watch"),
-            "summary": (
-                "This selection doesn’t include enough nighttime audio to judge "
-                "sleep. Add evening-to-morning recordings for a clearer picture."
-            ),
+            "summary": "Not enough night audio yet — add overnight recordings.",
             "exterior_db": lnight,
             "indoor_closed_db": indoor_closed,
             "indoor_open_db": indoor_open,
@@ -119,32 +116,16 @@ def _sleep_dimension(
 
     if indoor_closed <= SLEEP_OK_CLOSED and indoor_open <= SLEEP_OK_OPEN:
         badge = _badge("Well protected", "ok")
-        summary = (
-            "With windows closed, traffic should fade to a faint, distant hum that "
-            "is unlikely to disrupt deep sleep. Even with windows open for fresh air, "
-            "nighttime levels look manageable for most sleepers."
-        )
+        summary = "Quiet enough for sleep with windows closed or open."
     elif indoor_closed <= SLEEP_OK_CLOSED and indoor_open <= SLEEP_ALERT_OPEN:
         badge = _badge("Protected if windows closed", "watch")
-        summary = (
-            "With windows closed, traffic fades to a faint, distant hum that shouldn’t "
-            "disrupt deep sleep. With windows open for fresh air, passing vehicles and "
-            "nighttime spikes can break through and interrupt sleep cycles."
-        )
+        summary = "Fine with windows closed; open windows can interrupt sleep."
     elif indoor_closed <= SLEEP_OK_OPEN:
         badge = _badge("Easily disrupted when open", "watch")
-        summary = (
-            "Closed double-glazing still keeps most night noise at bay, but open "
-            "windows let urban traffic into the bedroom. Plan on closing windows for "
-            "uninterrupted rest, especially on busier nights."
-        )
+        summary = "Keep windows closed for uninterrupted rest."
     else:
         badge = _badge("High sleep disruption risk", "alert")
-        summary = (
-            "Nighttime levels outside are high enough that even closed windows may "
-            "not fully protect sleep. Open windows make awakenings from traffic and "
-            "spikes much more likely."
-        )
+        summary = "Even closed windows may not fully protect sleep."
 
     return {
         "id": "sleep",
@@ -173,10 +154,7 @@ def _office_dimension(
             "icon": "office",
             "period_label": period,
             "badge": _badge("Daytime data needed", "watch"),
-            "summary": (
-                "There isn’t enough daytime coverage to judge focus and calls. "
-                "Include daytime hours for a clearer home-office picture."
-            ),
+            "summary": "Not enough daytime audio yet — include working hours.",
             "exterior_db": lden,
             "indoor_closed_db": indoor_closed,
             "indoor_open_db": indoor_open,
@@ -184,32 +162,16 @@ def _office_dimension(
 
     if indoor_closed <= OFFICE_OK_CLOSED and indoor_open <= OFFICE_WATCH_CLOSED:
         badge = _badge("Good with windows closed", "ok")
-        summary = (
-            "During working hours, closed double-glazing provides a quiet backdrop "
-            "ideal for video calls and deep focus. Opening windows brings in urban "
-            "traffic that you may want to close again during meetings."
-        )
+        summary = "Quiet enough for calls and focus with windows closed."
     elif indoor_closed <= OFFICE_WATCH_CLOSED:
         badge = _badge("Calls need windows closed", "watch")
-        summary = (
-            "Closed glazing keeps concentration workable for most tasks. Opening "
-            "windows brings in enough street noise that calls and deep focus will "
-            "usually need them shut."
-        )
+        summary = "Workable when closed; open windows hurt calls and focus."
     elif indoor_closed <= OFFICE_ALERT_CLOSED:
         badge = _badge("Distracting with windows open", "watch")
-        summary = (
-            "Even with windows closed, the outdoor day is lively enough to notice. "
-            "Open windows make focus and video calls clearly harder — keep them "
-            "closed for meetings."
-        )
+        summary = "Keep windows closed for meetings and deep work."
     else:
         badge = _badge("Distracting even closed", "alert")
-        summary = (
-            "Outdoor levels stay high through the day. Closed windows help, but "
-            "expect a noticeable backdrop that can still compete with calls and "
-            "concentration."
-        )
+        summary = "Noticeable backdrop even with windows closed."
 
     return {
         "id": "office",
@@ -258,10 +220,7 @@ def _baby_dimension(
             "icon": "baby",
             "period_label": period,
             "badge": _badge("More data needed", "watch"),
-            "summary": (
-                "There isn’t enough day or night coverage yet to judge nap and "
-                "bedtime sensitivity for infants."
-            ),
+            "summary": "Not enough day or night coverage for nap and bedtime.",
             "exterior_db": exterior,
             "indoor_closed_db": closed_level,
             "indoor_open_db": open_level,
@@ -274,31 +233,16 @@ def _baby_dimension(
     if spike or (open_sensitive and not closed_ok):
         badge = _badge("Sensitive Environment Alert", "alert")
         summary = (
-            "Babies are particularly sensitive to sudden spikes (sirens, heavy trucks). "
-            "Insulated glazing helps daytime naps, but open windows let road noise "
-            "through that can startle light sleepers — and the loudest peaks here "
-            "are sharp enough to notice indoors."
+            "Loud peaks can startle light sleepers — keep windows closed for naps."
             if spike
-            else (
-                "Babies are particularly sensitive to sudden transient spikes. "
-                "With insulated glazing, naps are better protected, but open windows "
-                "let road noise through that can startle light sleepers."
-            )
+            else "Open windows let road noise through that can startle naps."
         )
     elif open_sensitive and closed_ok:
         badge = _badge("Sensitive when windows open", "watch")
-        summary = (
-            "With insulated glazing, daytime naps and bedtime are well protected. "
-            "If windows are open, sudden road noise risks startling light sleepers — "
-            "keep them closed during naps when you can."
-        )
+        summary = "Protected with windows closed; open windows can startle naps."
     else:
         badge = _badge("Protected naps (windows closed)", "ok")
-        summary = (
-            "With insulated glazing, daytime naps look well protected from typical "
-            "street noise. Open windows still raise the chance of brief startles from "
-            "passing vehicles, so closed is safer for light sleepers."
-        )
+        summary = "Typical street noise stays manageable with windows closed."
 
     return {
         "id": "baby",
@@ -355,11 +299,7 @@ def _who_dimension(
             "icon": "who",
             "period_label": "Outdoor façade (road traffic)",
             "badge": _badge("More data needed", "watch"),
-            "summary": (
-                "WHO road-traffic guidance uses outdoor night levels (≤45 dBA) and an "
-                "around-the-clock outdoor average (≤53 dBA). Add day and night coverage "
-                "to compare this location."
-            ),
+            "summary": "Add day and night coverage to compare with WHO limits.",
             "checks": [],
             "indoor_closed_db": None,
             "indoor_open_db": None,
@@ -370,34 +310,13 @@ def _who_dimension(
     meets_any = any(c["meets"] for c in checks)
     if meets_all:
         badge = _badge("Within WHO guideline", "ok")
-        summary = (
-            "Outdoor levels in this selection stay at or under WHO’s road-traffic "
-            "recommendations for night (45 dBA) and the around-the-clock average "
-            "(53 dBA) — a positive signal for long-term community noise exposure."
-        )
+        summary = "Outdoor levels stay within WHO road-traffic limits."
     elif meets_any:
         badge = _badge("Partly above WHO guideline", "watch")
-        failed = [c for c in checks if not c["meets"]]
-        bits = []
-        for c in failed:
-            bits.append(
-                f"{c['label'].lower()} is about {abs(c['delta_db']):.0f} dB over "
-                f"the {c['guideline_db']:.0f} dBA WHO mark"
-            )
-        summary = (
-            "Mixed result versus WHO road-traffic guidance: "
-            + "; ".join(bits)
-            + ". Closing windows still helps indoors, but the outdoor façade "
-            "already exceeds part of the recommended range."
-        )
+        summary = "Some outdoor periods exceed WHO road-traffic limits."
     else:
         badge = _badge("Above WHO guideline", "alert")
-        summary = (
-            "Outdoor levels exceed WHO’s road-traffic recommendations "
-            f"(night ≤{WHO_ROAD_LNIGHT_DB:.0f} dBA, around-the-clock "
-            f"≤{WHO_ROAD_LDEN_DB:.0f} dBA). That is a negative signal for long-term "
-            "annoyance and sleep disturbance risk at the façade."
-        )
+        summary = "Outdoor levels exceed WHO road-traffic limits."
 
     return {
         "id": "who",
@@ -479,9 +398,8 @@ def build_lived_experience(
     return {
         "title": "Lived Experience & Health Impact",
         "intro": (
-            "How this outdoor soundscape may feel indoors with typical Dutch "
-            "double glazing — windows closed versus open for ventilation. "
-            "These are estimates from outdoor measurements, not indoor readings."
+            "Estimated indoor levels with typical Dutch double glazing "
+            "(−30 dB closed, −15 dB open) — not measured indoors."
         ),
         "attenuation": {
             "closed_db": ATTEN_CLOSED_DB,

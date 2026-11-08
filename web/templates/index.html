@@ -709,14 +709,14 @@
   .lived-card{display:flex;flex-direction:column;gap:.45rem;min-width:0;
               padding:.7rem .75rem .8rem;border:1px solid var(--border);border-radius:8px;
               background:var(--surface)}
-  .lived-card .lived-card-head{display:flex;align-items:flex-start;gap:.55rem}
-  .lived-card .lived-dim-icon{flex:0 0 auto;width:2.15rem;height:2.15rem;border-radius:8px;
+  .lived-card .lived-card-head{display:flex;align-items:flex-start;gap:.7rem}
+  .lived-card .lived-dim-icon{flex:0 0 auto;width:3.1rem;height:3.1rem;border-radius:10px;
                               display:inline-flex;align-items:center;justify-content:center;
                               background:var(--bg);border:1px solid var(--border);color:var(--accent)}
-  .lived-card .lived-dim-icon svg{width:1.25rem;height:1.25rem}
-  .lived-card .lived-title{font-size:.82rem;font-weight:700;color:var(--text);line-height:1.25;
+  .lived-card .lived-dim-icon svg{width:2rem;height:2rem}
+  .lived-card .lived-title{font-size:.86rem;font-weight:700;color:var(--text);line-height:1.25;
                            margin:0}
-  .lived-card .lived-period{margin:.15rem 0 0;font-size:.65rem;color:var(--muted);line-height:1.3}
+  .lived-card .lived-period{margin:.2rem 0 0;font-size:.65rem;color:var(--muted);line-height:1.3}
   .lived-badge{display:inline-flex;align-items:center;gap:.3rem;align-self:flex-start;
                padding:.2rem .5rem;border-radius:999px;font-size:.68rem;font-weight:650;
                line-height:1.2;border:1px solid var(--border)}
@@ -734,18 +734,34 @@
                    color:var(--muted);font-weight:600}
   .lived-level .lv{font-size:.92rem;font-weight:700;margin-top:.12rem;
                    font-variant-numeric:tabular-nums;color:var(--text)}
-  .lived-who-checks{display:grid;gap:.35rem;margin-top:.1rem}
-  .lived-who-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
-                 gap:.25rem .55rem;padding:.4rem .45rem;border-radius:6px;background:var(--bg);
-                 border:1px solid var(--border);font-size:.72rem;line-height:1.35}
-  .lived-who-row .who-label{color:var(--muted);font-weight:600}
-  .lived-who-row .who-vals{font-variant-numeric:tabular-nums;color:var(--text);font-weight:650}
-  .lived-who-row .who-verdict{font-weight:700}
-  .lived-who-row.meets .who-verdict{color:#166534}
-  .lived-who-row.exceeds .who-verdict{color:#b91c1c}
+  .lived-who-checks{display:grid;gap:.45rem;margin-top:.1rem}
+  .lived-who-row{display:flex;flex-direction:column;gap:.4rem;padding:.5rem .55rem;
+                 border-radius:6px;background:var(--bg);border:1px solid var(--border)}
+  .lived-who-row-top{display:flex;align-items:center;justify-content:space-between;
+                     gap:.45rem;min-width:0}
+  .lived-who-row .who-label{color:var(--muted);font-weight:650;font-size:.68rem;
+                            text-transform:uppercase;letter-spacing:.04em;line-height:1.2}
+  .lived-who-row .who-verdict{flex:0 0 auto;padding:.12rem .4rem;border-radius:999px;
+                              font-size:.62rem;font-weight:700;line-height:1.2;
+                              border:1px solid transparent}
+  .lived-who-row.meets .who-verdict{color:#166534;background:rgba(34,197,94,.12);
+                                    border-color:rgba(34,197,94,.28)}
+  .lived-who-row.exceeds .who-verdict{color:#b91c1c;background:rgba(239,68,68,.12);
+                                      border-color:rgba(239,68,68,.3)}
   html[data-theme="dark"] .lived-who-row.meets .who-verdict{color:#86efac}
   html[data-theme="dark"] .lived-who-row.exceeds .who-verdict{color:#fca5a5}
-  .lived-card .lived-summary{margin:0;font-size:.78rem;color:var(--muted);line-height:1.45}
+  .lived-who-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.3rem}
+  .lived-who-metric{min-width:0}
+  .lived-who-metric .wk{font-size:.58rem;text-transform:uppercase;letter-spacing:.03em;
+                        color:var(--muted);font-weight:600;line-height:1.2}
+  .lived-who-metric .wv{margin-top:.12rem;font-size:.82rem;font-weight:750;
+                        font-variant-numeric:tabular-nums;color:var(--text);line-height:1.2}
+  .lived-who-metric.delta .wv{font-weight:700}
+  .lived-who-row.meets .lived-who-metric.delta .wv{color:#166534}
+  .lived-who-row.exceeds .lived-who-metric.delta .wv{color:#b91c1c}
+  html[data-theme="dark"] .lived-who-row.meets .lived-who-metric.delta .wv{color:#86efac}
+  html[data-theme="dark"] .lived-who-row.exceeds .lived-who-metric.delta .wv{color:#fca5a5}
+  .lived-card .lived-summary{margin:0;font-size:.76rem;color:var(--muted);line-height:1.4}
   #rpt-zone-c-disturbances{margin:.95rem 0 0}
   #rpt-zone-c-disturbances:empty{display:none}
   .report-methodology{margin:0;border:0;border-radius:0;background:transparent}
@@ -5955,16 +5971,48 @@ function livedBadgeIcon(tone) {
 function livedDimensionIcon(icon) {
   const key = String(icon || '');
   if (key === 'sleep') {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M4 18V11.5a2.5 2.5 0 0 1 2.5-2.5H11a3 3 0 0 1 3 3V18"/><path d="M17 8.2c.9-.3 1.5-1.1 1.5-2.1S17.9 4.3 17 4"/><path d="M19.5 9.5c1.1-.35 1.9-1.35 1.9-2.55S20.6 4.7 19.5 4.4"/><circle cx="7.2" cy="7.2" r="1.1" fill="currentColor" stroke="none"/></svg>';
+    return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
+      '<rect x="6" y="24" width="28" height="12" rx="3" fill="currentColor" opacity=".14"/>' +
+      '<path d="M8 36h32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M9 36V22.5A3.5 3.5 0 0 1 12.5 19H24a5 5 0 0 1 5 5V36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>' +
+      '<path d="M9 26h20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>' +
+      '<circle cx="34.5" cy="12.5" r="5.2" fill="currentColor" opacity=".18"/>' +
+      '<path d="M31.2 14.8c1.2-2.6 3.8-3.8 6.2-3.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+      '<path d="M37.8 8.2c.15-.9.7-1.55 1.45-1.7M40.1 10.6c.7-.15 1.25.15 1.55.75" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+      '<text x="38.2" y="22.2" fill="currentColor" font-size="7.2" font-weight="700" font-family="system-ui,sans-serif">z</text>' +
+      '<text x="41" y="18.2" fill="currentColor" font-size="5.6" font-weight="700" font-family="system-ui,sans-serif" opacity=".85">z</text>' +
+      '</svg>';
   }
   if (key === 'office') {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="10" rx="1.5"/><path d="M7 18h12"/><path d="M10 14v4"/><path d="M17 14v2"/><path d="M3 19h18"/></svg>';
+    return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
+      '<rect x="7" y="8" width="26" height="18" rx="2.5" fill="currentColor" opacity=".14"/>' +
+      '<rect x="7" y="8" width="26" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
+      '<rect x="10" y="11" width="20" height="12" rx="1.2" fill="currentColor" opacity=".22"/>' +
+      '<path d="M16 26v4M24 26v4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+      '<path d="M12 30h28" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M8 36h32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M34 18h5.5A2.5 2.5 0 0 1 42 20.5V30" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+      '<circle cx="39.5" cy="22.5" r="1.2" fill="currentColor"/>' +
+      '</svg>';
   }
   if (key === 'baby') {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h18"/><path d="M5 17V10.5A2.5 2.5 0 0 1 7.5 8h9A2.5 2.5 0 0 1 19 10.5V17"/><path d="M7 8V6.5A2.5 2.5 0 0 1 9.5 4h5A2.5 2.5 0 0 1 17 6.5V8"/><circle cx="12" cy="12.2" r="1.6"/><path d="M10.6 12.8c.4.5 1 .8 1.4.8s1-.3 1.4-.8"/></svg>';
+    return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
+      '<path d="M8 34h32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M10 34V20.5A4.5 4.5 0 0 1 14.5 16h19A4.5 4.5 0 0 1 38 20.5V34" fill="currentColor" opacity=".12"/>' +
+      '<path d="M10 34V20.5A4.5 4.5 0 0 1 14.5 16h19A4.5 4.5 0 0 1 38 20.5V34" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
+      '<path d="M13 16V12.5A4.5 4.5 0 0 1 17.5 8h13A4.5 4.5 0 0 1 35 12.5V16" fill="none" stroke="currentColor" stroke-width="2.2"/>' +
+      '<circle cx="24" cy="23.5" r="4.2" fill="currentColor" opacity=".2"/>' +
+      '<circle cx="24" cy="23.5" r="4.2" fill="none" stroke="currentColor" stroke-width="2"/>' +
+      '<path d="M21.4 25.4c.7.9 1.7 1.4 2.6 1.4s1.9-.5 2.6-1.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+      '<path d="M14 34V28M34 34V28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+      '<path d="M18 12.5h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity=".55"/>' +
+      '</svg>';
   }
-  // WHO / shield
-  return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 19 6.2v5.1c0 4.4-2.9 7.5-7 8.7-4.1-1.2-7-4.3-7-8.7V6.2L12 3.5z"/><path d="M9.2 12.1 11.2 14l3.8-4"/></svg>';
+  return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
+    '<path d="M24 6 38 11.5v10.2c0 8.4-5.6 14.4-14 16.8-8.4-2.4-14-8.4-14-16.8V11.5L24 6z" fill="currentColor" opacity=".14"/>' +
+    '<path d="M24 6 38 11.5v10.2c0 8.4-5.6 14.4-14 16.8-8.4-2.4-14-8.4-14-16.8V11.5L24 6z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>' +
+    '<path d="M17.5 24.2 22 28.6l8.8-9.2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '</svg>';
 }
 
 function fmtLivedDb(v) {
@@ -5972,28 +6020,45 @@ function fmtLivedDb(v) {
   return `${Number(v).toFixed(1)} dBA`;
 }
 
+function fmtLivedDelta(delta, meets) {
+  if (delta == null || !Number.isFinite(Number(delta))) return '—';
+  const n = Number(delta);
+  if (n === 0) return 'At limit';
+  const mag = Math.abs(n).toFixed(1) + ' dB';
+  return meets ? mag + ' under' : mag + ' over';
+}
+
 function livedLevelsHtml(dim) {
   if (dim.id === 'who') {
     const checks = Array.isArray(dim.checks) ? dim.checks : [];
     if (!checks.length) {
-      return '<div class="lived-who-checks"><div class="lived-who-row"><span class="who-label">WHO comparison</span><span class="who-vals">Not enough coverage</span></div></div>';
+      return '<div class="lived-who-checks"><div class="lived-who-row">' +
+        '<div class="lived-who-row-top"><span class="who-label">WHO comparison</span>' +
+        '<span class="who-verdict">No data</span></div></div></div>';
     }
     return '<div class="lived-who-checks">' + checks.map((c) => {
       const meets = !!c.meets;
       const cls = meets ? 'meets' : 'exceeds';
       const verdict = meets ? 'Within guideline' : 'Above guideline';
-      const delta = Number(c.delta_db);
-      const deltaTxt = Number.isFinite(delta)
-        ? (delta === 0
-          ? ' · at limit'
-          : (meets
-            ? ` · ${Math.abs(delta).toFixed(1)} dB under`
-            : ` · ${Math.abs(delta).toFixed(1)} dB over`))
-        : '';
       return `<div class="lived-who-row ${cls}">
-        <span class="who-label">${escapeHtml(c.label || '')}</span>
-        <span class="who-vals">${fmtLivedDb(c.measured_db)} vs ${fmtLivedDb(c.guideline_db)}${deltaTxt}</span>
-        <span class="who-verdict">${verdict}</span>
+        <div class="lived-who-row-top">
+          <span class="who-label">${escapeHtml(c.label || '')}</span>
+          <span class="who-verdict">${verdict}</span>
+        </div>
+        <div class="lived-who-metrics">
+          <div class="lived-who-metric">
+            <div class="wk">Measured</div>
+            <div class="wv">${fmtLivedDb(c.measured_db)}</div>
+          </div>
+          <div class="lived-who-metric">
+            <div class="wk">WHO limit</div>
+            <div class="wv">${fmtLivedDb(c.guideline_db)}</div>
+          </div>
+          <div class="lived-who-metric delta">
+            <div class="wk">Difference</div>
+            <div class="wv">${fmtLivedDelta(c.delta_db, meets)}</div>
+          </div>
+        </div>
       </div>`;
     }).join('') + '</div>';
   }
