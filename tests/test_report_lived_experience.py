@@ -10,6 +10,8 @@ from core.report.aggregate import build_dashboard_report
 from core.report.lived_experience import (
     ATTEN_CLOSED_DB,
     ATTEN_OPEN_DB,
+    WHO_ROAD_LDEN_DB,
+    WHO_ROAD_LNIGHT_DB,
     build_lived_experience,
     compute_lden_db,
     indoor_from_exterior,
@@ -168,6 +170,36 @@ class BadgeBoundaryTests(unittest.TestCase):
         blob = " ".join(d["summary"] for d in lived["dimensions"]).lower()
         self.assertNotIn("lden", blob)
         self.assertNotIn("l_den", blob)
+        sleep = next(d for d in lived["dimensions"] if d["id"] == "sleep")
+        self.assertEqual(sleep["indoor_closed_db"], indoor_from_exterior(42.0, ATTEN_CLOSED_DB))
+        self.assertEqual(sleep["indoor_open_db"], indoor_from_exterior(42.0, ATTEN_OPEN_DB))
+        self.assertEqual(sleep["icon"], "sleep")
+
+    def test_who_within_guideline(self) -> None:
+        # Quiet night + quiet day → under WHO road night 45 and Lden 53.
+        lived = build_lived_experience(
+            [_chunk(11, dba=40.0), _chunk(1, dba=38.0)]
+        )
+        assert lived is not None
+        who = next(d for d in lived["dimensions"] if d["id"] == "who")
+        self.assertEqual(who["badge"]["tone"], "ok")
+        self.assertEqual(who["badge"]["label"], "Within WHO guideline")
+        night = next(c for c in who["checks"] if c["id"] == "night")
+        self.assertTrue(night["meets"])
+        self.assertEqual(night["guideline_db"], WHO_ROAD_LNIGHT_DB)
+        full = next(c for c in who["checks"] if c["id"] == "full_day")
+        self.assertTrue(full["meets"])
+        self.assertEqual(full["guideline_db"], WHO_ROAD_LDEN_DB)
+
+    def test_who_above_guideline(self) -> None:
+        lived = build_lived_experience(
+            [_chunk(11, dba=70.0), _chunk(1, dba=60.0)]
+        )
+        assert lived is not None
+        who = next(d for d in lived["dimensions"] if d["id"] == "who")
+        self.assertEqual(who["badge"]["tone"], "alert")
+        self.assertEqual(who["badge"]["label"], "Above WHO guideline")
+        self.assertTrue(all(not c["meets"] for c in who["checks"]))
 
 
 class AggregateSmokeTests(unittest.TestCase):
@@ -185,7 +217,9 @@ class AggregateSmokeTests(unittest.TestCase):
         lived = report["zone_a"].get("lived_experience")
         self.assertIsNotNone(lived)
         assert lived is not None
-        self.assertEqual(len(lived["dimensions"]), 3)
+        self.assertEqual(len(lived["dimensions"]), 4)
+        ids = {d["id"] for d in lived["dimensions"]}
+        self.assertEqual(ids, {"sleep", "office", "baby", "who"})
         self.assertIn("metrics", lived)
         self.assertIn("lden_db", lived["metrics"])
 

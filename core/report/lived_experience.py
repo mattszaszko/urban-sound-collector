@@ -35,6 +35,11 @@ BABY_OK_CLOSED = 30.0
 BABY_WATCH_OPEN = 40.0
 BABY_PEAK_ALERT_DB = 70.0  # outdoor LAFmax spike concern
 
+# WHO Environmental Noise Guidelines (Europe, 2018) — road traffic, outdoor façade.
+# Lden guideline is used only for scoring; UI never labels the value as Lden.
+WHO_ROAD_LNIGHT_DB = 45.0
+WHO_ROAD_LDEN_DB = 53.0
+
 
 def indoor_from_exterior(exterior_db: float | None, atten_db: float) -> float | None:
     if exterior_db is None:
@@ -95,10 +100,13 @@ def _sleep_dimension(
     indoor_closed: float | None,
     indoor_open: float | None,
 ) -> dict[str, Any]:
+    period = "Night (23:00–07:00)"
     if lnight is None or indoor_closed is None or indoor_open is None:
         return {
             "id": "sleep",
             "title": "Sleep Quality & Rest",
+            "icon": "sleep",
+            "period_label": period,
             "badge": _badge("Night data needed", "watch"),
             "summary": (
                 "This selection doesn’t include enough nighttime audio to judge "
@@ -141,6 +149,8 @@ def _sleep_dimension(
     return {
         "id": "sleep",
         "title": "Sleep Quality & Rest",
+        "icon": "sleep",
+        "period_label": period,
         "badge": badge,
         "summary": summary,
         "exterior_db": lnight,
@@ -155,10 +165,13 @@ def _office_dimension(
     indoor_closed: float | None,
     indoor_open: float | None,
 ) -> dict[str, Any]:
+    period = "Day–evening–night average"
     if lden is None or indoor_closed is None or indoor_open is None:
         return {
             "id": "office",
             "title": "Home Office Suitability",
+            "icon": "office",
+            "period_label": period,
             "badge": _badge("Daytime data needed", "watch"),
             "summary": (
                 "There isn’t enough daytime coverage to judge focus and calls. "
@@ -201,6 +214,8 @@ def _office_dimension(
     return {
         "id": "office",
         "title": "Home Office Suitability",
+        "icon": "office",
+        "period_label": period,
         "badge": badge,
         "summary": summary,
         "exterior_db": lden,
@@ -215,26 +230,45 @@ def _baby_dimension(
     lden: float | None,
     night_closed: float | None,
     night_open: float | None,
+    day_closed: float | None,
     day_open: float | None,
     peak_lafmax: float | None,
 ) -> dict[str, Any]:
-    if night_closed is None and day_open is None:
+    # Prefer night for nap/bedtime levels; fall back to daytime outdoor → indoor.
+    if night_closed is not None:
+        period = "Night (naps & bedtime)"
+        closed_level = night_closed
+        open_level = night_open
+        exterior = lnight
+    elif day_closed is not None:
+        period = "Daytime (naps)"
+        closed_level = day_closed
+        open_level = day_open
+        exterior = None  # day mean only; avoid exposing weighted average
+    else:
+        period = "Naps & bedtime"
+        closed_level = None
+        open_level = None
+        exterior = lnight if lnight is not None else lden
+
+    if closed_level is None and open_level is None:
         return {
             "id": "baby",
             "title": "Baby Rest Experience",
+            "icon": "baby",
+            "period_label": period,
             "badge": _badge("More data needed", "watch"),
             "summary": (
                 "There isn’t enough day or night coverage yet to judge nap and "
                 "bedtime sensitivity for infants."
             ),
-            "exterior_db": lnight if lnight is not None else lden,
-            "indoor_closed_db": night_closed,
-            "indoor_open_db": night_open if night_open is not None else day_open,
+            "exterior_db": exterior,
+            "indoor_closed_db": closed_level,
+            "indoor_open_db": open_level,
         }
 
     spike = peak_lafmax is not None and float(peak_lafmax) >= BABY_PEAK_ALERT_DB
-    open_level = night_open if night_open is not None else day_open
-    closed_ok = night_closed is not None and night_closed <= BABY_OK_CLOSED
+    closed_ok = closed_level is not None and closed_level <= BABY_OK_CLOSED
     open_sensitive = open_level is not None and open_level > BABY_WATCH_OPEN
 
     if spike or (open_sensitive and not closed_ok):
@@ -269,11 +303,113 @@ def _baby_dimension(
     return {
         "id": "baby",
         "title": "Baby Rest Experience",
+        "icon": "baby",
+        "period_label": period,
         "badge": badge,
         "summary": summary,
-        "exterior_db": lnight if lnight is not None else lden,
-        "indoor_closed_db": night_closed,
+        "exterior_db": exterior,
+        "indoor_closed_db": closed_level,
         "indoor_open_db": open_level,
+    }
+
+
+def _who_dimension(
+    *,
+    lnight: float | None,
+    lden: float | None,
+) -> dict[str, Any]:
+    """Outdoor WHO road-traffic guideline card (positive if under, negative if over)."""
+    checks: list[dict[str, Any]] = []
+    if lnight is not None:
+        meets_night = float(lnight) <= WHO_ROAD_LNIGHT_DB
+        delta_n = round(float(lnight) - WHO_ROAD_LNIGHT_DB, 1)
+        checks.append(
+            {
+                "id": "night",
+                "label": "Night outdoors",
+                "measured_db": round(float(lnight), 1),
+                "guideline_db": WHO_ROAD_LNIGHT_DB,
+                "meets": meets_night,
+                "delta_db": delta_n,
+            }
+        )
+    if lden is not None:
+        meets_day = float(lden) <= WHO_ROAD_LDEN_DB
+        delta_d = round(float(lden) - WHO_ROAD_LDEN_DB, 1)
+        checks.append(
+            {
+                "id": "full_day",
+                "label": "Around-the-clock outdoors",
+                "measured_db": round(float(lden), 1),
+                "guideline_db": WHO_ROAD_LDEN_DB,
+                "meets": meets_day,
+                # Value comes from EU day–evening–night average; never name Lden in UI.
+                "delta_db": delta_d,
+            }
+        )
+
+    if not checks:
+        return {
+            "id": "who",
+            "title": "WHO Noise Guideline",
+            "icon": "who",
+            "period_label": "Outdoor façade (road traffic)",
+            "badge": _badge("More data needed", "watch"),
+            "summary": (
+                "WHO road-traffic guidance uses outdoor night levels (≤45 dBA) and an "
+                "around-the-clock outdoor average (≤53 dBA). Add day and night coverage "
+                "to compare this location."
+            ),
+            "checks": [],
+            "indoor_closed_db": None,
+            "indoor_open_db": None,
+            "exterior_db": None,
+        }
+
+    meets_all = all(c["meets"] for c in checks)
+    meets_any = any(c["meets"] for c in checks)
+    if meets_all:
+        badge = _badge("Within WHO guideline", "ok")
+        summary = (
+            "Outdoor levels in this selection stay at or under WHO’s road-traffic "
+            "recommendations for night (45 dBA) and the around-the-clock average "
+            "(53 dBA) — a positive signal for long-term community noise exposure."
+        )
+    elif meets_any:
+        badge = _badge("Partly above WHO guideline", "watch")
+        failed = [c for c in checks if not c["meets"]]
+        bits = []
+        for c in failed:
+            bits.append(
+                f"{c['label'].lower()} is about {abs(c['delta_db']):.0f} dB over "
+                f"the {c['guideline_db']:.0f} dBA WHO mark"
+            )
+        summary = (
+            "Mixed result versus WHO road-traffic guidance: "
+            + "; ".join(bits)
+            + ". Closing windows still helps indoors, but the outdoor façade "
+            "already exceeds part of the recommended range."
+        )
+    else:
+        badge = _badge("Above WHO guideline", "alert")
+        summary = (
+            "Outdoor levels exceed WHO’s road-traffic recommendations "
+            f"(night ≤{WHO_ROAD_LNIGHT_DB:.0f} dBA, around-the-clock "
+            f"≤{WHO_ROAD_LDEN_DB:.0f} dBA). That is a negative signal for long-term "
+            "annoyance and sleep disturbance risk at the façade."
+        )
+
+    return {
+        "id": "who",
+        "title": "WHO Noise Guideline",
+        "icon": "who",
+        "period_label": "Outdoor façade (road traffic)",
+        "badge": badge,
+        "summary": summary,
+        "checks": checks,
+        "indoor_closed_db": None,
+        "indoor_open_db": None,
+        "exterior_db": lnight if lnight is not None else lden,
     }
 
 
@@ -294,6 +430,7 @@ def build_lived_experience(
     sleep_open = indoor_from_exterior(lnight, ATTEN_OPEN_DB)
     office_closed = indoor_from_exterior(lden, ATTEN_CLOSED_DB)
     office_open = indoor_from_exterior(lden, ATTEN_OPEN_DB)
+    day_closed = indoor_from_exterior(metrics["lday_db"], ATTEN_CLOSED_DB)
     day_open = indoor_from_exterior(metrics["lday_db"], ATTEN_OPEN_DB)
 
     peak = None
@@ -319,9 +456,11 @@ def build_lived_experience(
             lden=lden,
             night_closed=sleep_closed,
             night_open=sleep_open,
+            day_closed=day_closed,
             day_open=day_open,
             peak_lafmax=peak,
         ),
+        _who_dimension(lnight=lnight, lden=lden),
     ]
 
     insufficient = not (
