@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>noiserisk</title>
 <link rel="icon" type="image/png" href="/static/noiserisk-logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,500,0,0&display=swap">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -713,7 +714,12 @@
   .lived-card .lived-dim-icon{flex:0 0 auto;width:3.1rem;height:3.1rem;border-radius:10px;
                               display:inline-flex;align-items:center;justify-content:center;
                               background:var(--bg);border:1px solid var(--border);color:var(--accent)}
-  .lived-card .lived-dim-icon svg{width:2rem;height:2rem}
+  .lived-card .lived-dim-icon .material-symbols-outlined{
+    font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;
+    font-size:1.75rem;line-height:1;letter-spacing:normal;text-transform:none;
+    display:inline-block;white-space:nowrap;direction:ltr;-webkit-font-smoothing:antialiased;
+    font-variation-settings:'FILL' 0,'wght' 500,'GRAD' 0,'opsz' 24;
+    user-select:none}
   .lived-card .lived-title{font-size:.86rem;font-weight:700;color:var(--text);line-height:1.25;
                            margin:0}
   .lived-card .lived-period{margin:.2rem 0 0;font-size:.65rem;color:var(--muted);line-height:1.3}
@@ -5969,50 +5975,15 @@ function livedBadgeIcon(tone) {
 }
 
 function livedDimensionIcon(icon) {
-  const key = String(icon || '');
-  if (key === 'sleep') {
-    return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
-      '<rect x="6" y="24" width="28" height="12" rx="3" fill="currentColor" opacity=".14"/>' +
-      '<path d="M8 36h32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
-      '<path d="M9 36V22.5A3.5 3.5 0 0 1 12.5 19H24a5 5 0 0 1 5 5V36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>' +
-      '<path d="M9 26h20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>' +
-      '<circle cx="34.5" cy="12.5" r="5.2" fill="currentColor" opacity=".18"/>' +
-      '<path d="M31.2 14.8c1.2-2.6 3.8-3.8 6.2-3.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
-      '<path d="M37.8 8.2c.15-.9.7-1.55 1.45-1.7M40.1 10.6c.7-.15 1.25.15 1.55.75" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
-      '<text x="38.2" y="22.2" fill="currentColor" font-size="7.2" font-weight="700" font-family="system-ui,sans-serif">z</text>' +
-      '<text x="41" y="18.2" fill="currentColor" font-size="5.6" font-weight="700" font-family="system-ui,sans-serif" opacity=".85">z</text>' +
-      '</svg>';
-  }
-  if (key === 'office') {
-    return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
-      '<rect x="7" y="8" width="26" height="18" rx="2.5" fill="currentColor" opacity=".14"/>' +
-      '<rect x="7" y="8" width="26" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
-      '<rect x="10" y="11" width="20" height="12" rx="1.2" fill="currentColor" opacity=".22"/>' +
-      '<path d="M16 26v4M24 26v4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
-      '<path d="M12 30h28" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
-      '<path d="M8 36h32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
-      '<path d="M34 18h5.5A2.5 2.5 0 0 1 42 20.5V30" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
-      '<circle cx="39.5" cy="22.5" r="1.2" fill="currentColor"/>' +
-      '</svg>';
-  }
-  if (key === 'baby') {
-    return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
-      '<path d="M8 34h32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
-      '<path d="M10 34V20.5A4.5 4.5 0 0 1 14.5 16h19A4.5 4.5 0 0 1 38 20.5V34" fill="currentColor" opacity=".12"/>' +
-      '<path d="M10 34V20.5A4.5 4.5 0 0 1 14.5 16h19A4.5 4.5 0 0 1 38 20.5V34" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
-      '<path d="M13 16V12.5A4.5 4.5 0 0 1 17.5 8h13A4.5 4.5 0 0 1 35 12.5V16" fill="none" stroke="currentColor" stroke-width="2.2"/>' +
-      '<circle cx="24" cy="23.5" r="4.2" fill="currentColor" opacity=".2"/>' +
-      '<circle cx="24" cy="23.5" r="4.2" fill="none" stroke="currentColor" stroke-width="2"/>' +
-      '<path d="M21.4 25.4c.7.9 1.7 1.4 2.6 1.4s1.9-.5 2.6-1.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
-      '<path d="M14 34V28M34 34V28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
-      '<path d="M18 12.5h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity=".55"/>' +
-      '</svg>';
-  }
-  return '<svg viewBox="0 0 48 48" aria-hidden="true">' +
-    '<path d="M24 6 38 11.5v10.2c0 8.4-5.6 14.4-14 16.8-8.4-2.4-14-8.4-14-16.8V11.5L24 6z" fill="currentColor" opacity=".14"/>' +
-    '<path d="M24 6 38 11.5v10.2c0 8.4-5.6 14.4-14 16.8-8.4-2.4-14-8.4-14-16.8V11.5L24 6z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>' +
-    '<path d="M17.5 24.2 22 28.6l8.8-9.2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '</svg>';
+  // Material Symbols Outlined ligatures
+  const map = {
+    sleep: 'bedtime',
+    office: 'laptop_mac',
+    baby: 'crib',
+    who: 'health_and_safety',
+  };
+  const name = map[String(icon || '')] || 'health_and_safety';
+  return `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
 }
 
 function fmtLivedDb(v) {
